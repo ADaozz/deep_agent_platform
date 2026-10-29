@@ -13,4 +13,4 @@ llm:
       reasoning_efforts: [high, low, max]
       models:
         deepseek-flash:
-          input: [text]
+          input: [text, image]

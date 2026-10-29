@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComp
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Icon from './Icon.vue'
+import FileBlock from './FileBlock.vue'
 import WorkProcess from './WorkProcess.vue'
 import { t, locale, theme, toggleLocale, toggleTheme } from './preferences'
 import { vPopoverPlacement } from './popoverPlacement'
@@ -19,6 +20,7 @@ const dismissed = ref(sessionStorage.getItem('notice-dismissed') === 'true')
 const workspaceEdit = ref(null), toolSchemas = ref({}), rulesText = ref(''), fileList = ref([])
 const previewFile = ref(null), previewDraft = ref(''), previewSaving = ref(false)
 const docxEditor = ref(null), docxReady = ref(false), docxDirty = ref(false), previewWorkspace = ref('')
+const previewOrigin = ref(null)
 const mcpJson = ref('')
 const modelConfig = ref(null), modelJson = ref(''), advanced = ref(false), attachments = ref([]), fileInput = ref(null)
 const uploading = ref(false), settingsSpaceId = ref('')
@@ -66,7 +68,13 @@ const statusLabels = computed(() => ({ idle: t('新会话'), queued: t('排队�
 const timeline = computed(() => conversationTimeline(events.value, selected.value?.status))
 const previewDocx = computed(() => previewFile.value?.format === 'docx')
 const previewDirty = computed(() => previewDocx.value ? docxDirty.value : !!previewFile.value?.editable && previewDraft.value !== previewFile.value.content)
-const previewUrl = computed(() => `/api/agent/workspaces/${previewWorkspace.value}/files/${(previewFile.value?.path || '').split('/').map(encodeURIComponent).join('/')}${previewFile.value?.revision ? '?v=' + encodeURIComponent(previewFile.value.revision) : ''}`)
+const previewUrl = computed(() => {
+  const origin = previewOrigin.value
+  const base = origin ? `${origin.kind === 'task' ? '/api/tasks' : '/api/agent/sessions'}/${encodeURIComponent(origin.id)}/artifacts/` : `/api/agent/workspaces/${previewWorkspace.value}/files/`
+  return base + (previewFile.value?.path || '').split('/').map(encodeURIComponent).join('/') + (previewFile.value?.revision ? '?v=' + encodeURIComponent(previewFile.value.revision) : '')
+})
+function fileOriginQuery(origin) { return origin ? `&artifact_id=${encodeURIComponent(origin.id)}&artifact_kind=${origin.kind}` : '' }
+const previewMediaUrl = computed(() => `/api/agent/workspaces/${previewWorkspace.value}/file-view?path=${encodeURIComponent(previewFile.value?.path || '')}${fileOriginQuery(previewOrigin.value)}`)
 function actionLabel(name) {
   const labels = { ...toolLabels.value, create_docx: t('activity.document'), create_pptx: t('activity.presentation'), create_xlsx: t('activity.spreadsheet') }
   return labels[name] || t(name?.startsWith('mcp') ? 'activity.external' : 'activity.action')
@@ -284,11 +292,12 @@ function closeModal() {
 }
 function docxChanged() { docxChanges++; docxDirty.value = true }
 async function showFiles() { await guard(async () => { fileList.value = await api('/agent/workspaces/' + spaceId.value + '/files'); modal.value = 'files'; popup.value = '' }) }
-async function openFilePreview(file) {
+async function openFilePreview(file, origin = null) {
   error.value = ''
   try {
-    const data = await api(`/agent/workspaces/${spaceId.value}/file?path=${encodeURIComponent(file.path)}`)
-    previewWorkspace.value = spaceId.value; docxReady.value = false; docxDirty.value = false
+    const workspaceId = origin?.workspace_id || spaceId.value
+    const data = await api(`/agent/workspaces/${workspaceId}/file?path=${encodeURIComponent(file.path)}${fileOriginQuery(origin)}`)
+    previewWorkspace.value = workspaceId; previewOrigin.value = origin; docxReady.value = false; docxDirty.value = false
     previewFile.value = data; previewDraft.value = data.content || ''; modal.value = 'file'
   } catch (e) { toast(e.message) }
 }
@@ -301,10 +310,10 @@ async function saveFile() {
       const savedChanges = docxChanges
       const blob = await docxEditor.value.exportDocument()
       const form = new FormData(); form.append('file', blob, fileName(previewFile.value.path)); form.append('revision', previewFile.value.revision)
-      data = await api(`/agent/workspaces/${previewWorkspace.value}/document?path=${encodeURIComponent(previewFile.value.path)}`, { method: 'PUT', body: form })
+      data = await api(`/agent/workspaces/${previewWorkspace.value}/document?path=${encodeURIComponent(previewFile.value.path)}${fileOriginQuery(previewOrigin.value)}`, { method: 'PUT', body: form })
       docxDirty.value = docxChanges !== savedChanges
     } else {
-      data = await api(`/agent/workspaces/${previewWorkspace.value}/file`, { method: 'PUT', body: { path: previewFile.value.path, content: previewDraft.value } })
+      data = await api(`/agent/workspaces/${previewWorkspace.value}/file`, { method: 'PUT', body: { path: previewFile.value.path, content: previewDraft.value, ...(previewOrigin.value ? { artifact_id: previewOrigin.value.id, artifact_kind: previewOrigin.value.kind } : {}) } })
     }
     previewFile.value = data; previewDraft.value = data.content
     toast('file.saved')
@@ -361,7 +370,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
       <div v-if="loading" class="loading"><Icon name="LoaderCircle" class="spin" /> {{ t("Loading workspace…") }}</div>
       <div v-else-if="mainView === 'history'" class="history-view"><div class="section-eyebrow">{{ t("YOUR WORKSPACE") }}</div><h1>{{ t("Chats") }}</h1><input v-model="search" class="search-input" :placeholder='t("Search chats…")'><button v-for="s in visibleSessions" :key="s.id" class="history-row" @click="openSession(s.id)"><Icon name="MessageSquare" /><div><strong>{{ sessionTitle(s) }}</strong><small>{{ s.model_id }} · {{ dateLabel(s) }}</small></div><span class="status-tag" :class="s.status">{{ statusLabels[s.status] }}</span><Icon name="ChevronRight" /></button><div v-if="!visibleSessions.length" class="empty-state"><Icon name="MessagesSquare" :size="28" /><h3>{{ t("No chats yet") }}</h3><p>{{ t("Start a new chat to bring your ideas to life.") }}</p><button class="primary" @click="newChat">{{ t("New chat") }}</button></div></div>
 
-      <div v-else-if="legacy" class="legacy-view"><div class="section-eyebrow">{{ t("PREVIOUS TASK") }}</div><h2>{{ legacy.prompt }}</h2><div v-html="html(legacy.output)" class="markdown"></div><p v-if="legacy.error" class="error-inline">{{ t(legacy.error) }}</p><section v-if="legacy.artifacts?.length" class="output-files"><div class="output-files-heading"><Icon name="FileBox" :size="14" />{{ t("artifacts.title") }}</div><a v-for="f in legacy.artifacts" :key="f" class="file-block" :href="`/api/tasks/${legacy.id}/artifacts/${encodeURIComponent(f)}`" download><span class="file-block-icon"><Icon :name="fileIcon(f)" :size="17" /></span><span class="file-block-text"><strong>{{ fileName(f) }}</strong><small>{{ t("artifacts.download") }}</small></span><Icon name="Download" :size="15" /></a></section></div>
+      <div v-else-if="legacy" class="legacy-view"><div class="section-eyebrow">{{ t("PREVIOUS TASK") }}</div><h2>{{ legacy.prompt }}</h2><div v-html="html(legacy.output)" class="markdown"></div><p v-if="legacy.error" class="error-inline">{{ t(legacy.error) }}</p><section v-if="legacy.artifacts?.length" class="output-files"><div class="output-files-heading"><Icon name="FileBox" :size="14" />{{ t("artifacts.title") }}</div><FileBlock v-for="f in legacy.artifacts" :key="f" :path="f" :download-url="`/api/tasks/${legacy.id}/artifacts/${encodeURIComponent(f)}`" @preview="openFilePreview({ path: f }, { kind: 'task', id: legacy.id, workspace_id: legacy.workspace_id })" /></section></div>
 
       <div v-else class="workspace-page" :class="{ 'has-session': selected }">
         <div v-if="!selected" class="home-content">
@@ -373,12 +382,12 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
           <div class="session-meta"><span class="workspace-chip"><Icon name="Folder" :size="13" />{{ workspace?.name }}</span><span class="status-tag" :class="selected.status">{{ statusLabels[selected.status] }}</span></div>
           <template v-for="b in timeline" :key="b.key">
             <div v-if="b.lead" class="message-label agent-label"><img src="/favicon.svg" alt=""> {{ t("Agent") }}</div>
-            <article v-if="b.kind === 'user'" class="user-message"><div class="message-label">{{ t("You") }}</div><div>{{ b.content }}</div><div v-if="b.attachments?.length" class="message-attachments"><a v-for="file in b.attachments" :key="file.id" :href="`/api/agent/workspaces/${spaceId}/files/${file.path.split('/').map(encodeURIComponent).join('/')}`" download><Icon name="Paperclip" :size="13" />{{ file.name }}</a></div></article>
+            <article v-if="b.kind === 'user'" class="user-message"><div class="message-label">{{ t("You") }}</div><div>{{ b.content }}</div><div v-if="b.attachments?.length" class="message-attachments"><a v-for="file in b.attachments" :key="file.id" @click.prevent="openFilePreview(file)" :href="`/api/agent/workspaces/${spaceId}/files/${file.path.split('/').map(encodeURIComponent).join('/')}`" download><Icon name="Paperclip" :size="13" />{{ file.name }}</a></div></article>
             <WorkProcess v-else-if="b.kind === 'process'" :process="b" :action-label="actionLabel" :status-labels="statusLabels" />
             <article v-else-if="b.kind === 'assistant'" class="assistant-message"><div v-html="html(b.content)" class="markdown"></div></article>
             <section v-else-if="b.kind === 'files'" class="output-files">
               <div class="output-files-heading"><Icon name="FileBox" :size="14" />{{ t("artifacts.title") }}</div>
-              <div v-for="file in b.files" :key="file.path" class="file-block" role="button" tabindex="0" @click="openFilePreview(file)" @keydown.enter.prevent="openFilePreview(file)" @keydown.space.prevent="openFilePreview(file)"><span class="file-block-icon"><Icon :name="fileIcon(file.path)" :size="17" /></span><span class="file-block-text"><strong>{{ fileName(file.path) }}</strong><small>{{ t("artifacts.preview") }}<template v-if="file.size !== undefined"> · {{ fileSize(file.size) }}</template></small></span><a class="file-block-download" :href="`/api/agent/workspaces/${spaceId}/files/${file.path.split('/').map(encodeURIComponent).join('/')}`" download :aria-label="t('Download')" @click.stop><Icon name="Download" :size="15" /></a></div>
+              <FileBlock v-for="file in b.files" :key="file.path" :path="file.path" :size="file.size" :download-url="`/api/agent/workspaces/${spaceId}/files/${file.path.split('/').map(encodeURIComponent).join('/')}`" @preview="openFilePreview(file)" />
             </section>
             <div v-else class="turn-note"><Icon name="CornerDownRight" :size="14" />{{ b.type === 'steer' ? t('追加指令') : t('后续任务') }}：{{ b.content }}</div>
           </template>
@@ -386,7 +395,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
           <div v-if="selected.error" class="session-error"><Icon name="CircleAlert" />{{ t(selected.error) }}</div>
           <section v-if="selected.artifacts.length" class="output-files">
             <div class="output-files-heading"><Icon name="FileBox" :size="14" />{{ t("artifacts.title") }}</div>
-            <a v-for="file in selected.artifacts" :key="file" class="file-block" :href="`/api/agent/sessions/${selected.id}/artifacts/${encodeURIComponent(file)}`" download><span class="file-block-icon"><Icon :name="fileIcon(file)" :size="17" /></span><span class="file-block-text"><strong>{{ fileName(file) }}</strong><small>{{ t("artifacts.download") }}</small></span><Icon name="Download" :size="15" /></a>
+            <FileBlock v-for="file in selected.artifacts" :key="file" :path="file" :download-url="`/api/agent/sessions/${selected.id}/artifacts/${encodeURIComponent(file)}`" @preview="openFilePreview({ path: file }, { kind: 'session', id: selected.id, workspace_id: selected.workspace_id })" />
           </section>
           <section v-if="selected.status === 'waiting_confirmation'" class="approval-panel"><div class="panel-title"><Icon name="ShieldCheck" />{{ t("Review tool calls") }}</div><p>{{ t("Agent 请求执行以下操作，请逐项确认。") }}</p><div v-for="call in selected.pending_tool_calls" :key="call.toolCallId" class="approval-call"><div><strong>{{ actionLabel(call.name) }}</strong><select v-model="decisions[call.toolCallId]" :aria-label="t('reviewTool', { name: actionLabel(call.name) })"><option :value="undefined">{{ t("Approve") }}</option><option value="approve">{{ t("Approve") }}</option><option value="reject">{{ t("Reject") }}</option></select></div><dl class="approval-details"><div v-for="(field, index) in approvalFields(call)" :key="index"><dt>{{ field.label }}</dt><dd><pre>{{ field.content }}</pre></dd></div></dl></div><button class="primary" @click="approval">{{ t("Submit decisions") }} <Icon name="ArrowUpRight" :size="14" /></button></section>
           <section v-if="selected.status === 'waiting_human'" class="approval-panel"><div class="panel-title"><Icon name="MessageCircleQuestion" />{{ selected.human_input.title || t('Agent needs your input') }}</div><p>{{ selected.human_input.reason }}</p><h4>{{ selected.human_input.question }}</h4><div v-for="field in selected.human_input.fields" :key="field.id" class="field"><label :for="'human-' + field.id">{{ field.label }}{{ field.required ? ' *' : '' }}</label><select v-if="['single_select', 'multi_select'].includes(field.type)" :id="'human-' + field.id" v-model="humanValues[field.id]" :multiple="field.type === 'multi_select'"><option v-for="o in field.options" :key="o.value" :value="o.value">{{ o.label }} {{ o.description }}</option></select><input v-else-if="field.type === 'boolean'" :id="'human-' + field.id" type="checkbox" v-model="humanValues[field.id]"><textarea v-else :id="'human-' + field.id" v-model="humanValues[field.id]" :placeholder="field.placeholder"></textarea></div><button class="primary" @click="answer">{{ t("Continue") }} <Icon name="ArrowRight" :size="14" /></button></section>
@@ -465,6 +474,8 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
             <div v-if="previewFile" class="file-preview-meta"><code>{{ previewFile.path }}</code><small>{{ fileSize(previewFile.size) }}</small></div>
             <DocxEditor v-if="previewDocx" :key="previewWorkspace + previewFile.path" ref="docxEditor" :url="previewUrl" @ready="docxReady = $event" @change="docxChanged" @error="error = $event" @save="saveFile" />
             <textarea v-else-if="previewFile?.editable" v-model="previewDraft" class="code-input file-editor" spellcheck="false" :aria-label="t('File content')" @keydown.ctrl.s.prevent="saveFile" @keydown.meta.s.prevent="saveFile"></textarea>
+            <img v-else-if="previewFile?.format === 'image'" class="file-image-preview" :src="previewMediaUrl" :alt="fileName(previewFile.path)">
+            <iframe v-else-if="previewFile?.format === 'pdf'" class="file-pdf-preview" :src="previewMediaUrl" :title="fileName(previewFile.path)"></iframe>
             <div v-else-if="previewFile" class="file-preview-empty"><Icon name="FileBox" :size="32" /><p>{{ t('file.reason.' + (previewFile.reason || 'unknown')) }}</p></div>
           </div>
           <div v-if="error" class="modal-error" role="alert">{{ t(error) }}</div>

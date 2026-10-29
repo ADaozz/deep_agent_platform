@@ -21,6 +21,8 @@ main{padding-right:24px;margin-left:var(--sidebar-width);min-height:100dvh;trans
 .file-block>svg{flex-shrink:0;color:var(--text-muted)}
 .file-block-download{display:flex;align-items:center;justify-content:center;flex:0 0 26px;height:26px;border-radius:5px;color:var(--text-muted)}
 .file-block-download:hover{color:var(--text-primary);background:var(--surface-hover)}
+.file-block-open{display:flex;align-items:center;gap:10px;flex:1;min-width:0;align-self:stretch;text-align:left}
+.file-block-open .file-block-text{flex:1;min-width:0}
 .file-preview-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font-size:11px;color:var(--text-muted)}
 .file-preview-meta code{font-family:'SFMono-Regular',Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .file-editor{width:100%;height:55vh;min-height:260px;resize:none;padding:12px;border:1px solid var(--border);border-radius:7px}
@@ -36,6 +38,8 @@ main{padding-right:24px;margin-left:var(--sidebar-width);min-height:100dvh;trans
 .file-preview-drawer .file-preview{display:flex;flex-direction:column;flex:1;min-height:0}
 .file-preview-drawer .file-preview-meta{flex-shrink:0}
 .file-preview-drawer .file-editor{flex:1;height:auto;min-height:0}
+.file-image-preview{display:block;max-width:100%;min-height:0;object-fit:contain;flex:1}
+.file-pdf-preview{width:100%;flex:1;min-height:0;border:0}
 .file-preview-drawer:has(.docx-preview){width:min(1000px,100vw)}
 .file-preview-drawer .docx-preview{padding:0}
 .docx-preview>.file-preview-meta{padding:12px 20px;margin-bottom:0}

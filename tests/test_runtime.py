@@ -358,6 +358,58 @@ def test_docx_editor_roundtrip_and_save_guards(client, monkeypatch, tmp_path):
     assert path.read_bytes() == edited
 
 
+@pytest.mark.parametrize('kind', ['session', 'task'])
+def test_artifact_preview_and_edit_preserves_source(client, kind):
+    import io
+    from docx import Document
+
+    d.put(kind, {'id': 'artifact-preview', 'workspace_id': 'writing'})
+    root = d.DATA / 'artifacts' / 'writing' / 'artifact-preview'
+    root.mkdir(parents=True)
+    (root / 'notes.md').write_text('Artifact original')
+    doc = Document()
+    doc.add_paragraph('Original document')
+    doc.save(root / 'report.docx')
+    source = {'artifact_id': 'artifact-preview', 'artifact_kind': kind}
+    preview = client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md', **source})
+    assert preview.status_code == 200
+    assert preview.json()['content'] == 'Artifact original'
+    saved = client.put('/api/agent/workspaces/writing/file', json={'path': 'notes.md', 'content': 'Edited artifact', **source})
+    assert saved.status_code == 200
+    assert (root / 'notes.md').read_text() == 'Edited artifact'
+    preview = client.get('/api/agent/workspaces/writing/file', params={'path': 'report.docx', **source}).json()
+    assert preview['format'] == 'docx'
+    doc.paragraphs[0].text = 'Edited document'
+    output = io.BytesIO()
+    doc.save(output)
+    saved = client.put('/api/agent/workspaces/writing/document', params={'path': 'report.docx', **source},
+        files={'file': ('report.docx', output.getvalue())}, data={'revision': preview['revision']})
+    assert saved.status_code == 200, saved.text
+    assert Document(root / 'report.docx').paragraphs[0].text == 'Edited document'
+    assert not (d.DATA / 'workspaces' / 'writing' / 'files' / 'report.docx').exists()
+    assert client.get('/api/agent/workspaces/office/file', params={'path': 'report.docx', **source}).status_code == 404
+    assert client.get('/api/agent/workspaces/writing/file', params={'path': '../../notes.md', **source}).status_code == 404
+    assert client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md', **source, 'artifact_kind': 'workspace'}).status_code == 422
+
+
+def test_inline_image_and_pdf_preview(client):
+    root = d.DATA / 'workspaces' / 'writing' / 'files'
+    root.mkdir(parents=True)
+    for name, payload, format, media in [('picture.png', b'\x89PNG\r\n', 'image', 'image/png'),
+        ('report.pdf', b'%PDF-1.7', 'pdf', 'application/pdf')]:
+        (root / name).write_bytes(payload)
+        meta = client.get('/api/agent/workspaces/writing/file', params={'path': name}).json()
+        assert meta['format'] == format
+        response = client.get('/api/agent/workspaces/writing/file-view', params={'path': name})
+        assert response.status_code == 200
+        assert response.headers['content-type'] == media
+        assert response.headers['content-disposition'].startswith('inline;')
+        assert response.content == payload
+    (root / 'page.html').write_text('<script>alert(1)</script>')
+    assert client.get('/api/agent/workspaces/writing/file-view', params={'path': 'page.html'}).status_code == 422
+    assert client.get('/api/agent/workspaces/writing/file-view', params={'path': '../escape.png'}).status_code == 404
+
+
 def test_upload_size_limit_and_sanitized_filename(client, monkeypatch):
     monkeypatch.setattr(rt, 'MAX_UPLOAD_BYTES', 10)
     assert client.post('/api/agent/workspaces/writing/uploads', files={'file': ('big.txt', b'x' * 11)}).status_code == 413

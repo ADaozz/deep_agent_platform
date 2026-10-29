@@ -594,12 +594,22 @@ def download(workspace_id: str, filename: str):
     return FileResponse(path, filename=path.name)
 
 
-def workspace_file(workspace_id, filename):
+def workspace_file(workspace_id, filename, artifact_id=None, artifact_kind='session'):
     try:
         d.get('workspace', workspace_id)
     except KeyError:
         raise HTTPException(404, '工作空间不存在')
     root = d.DATA / 'workspaces' / workspace_id / 'files'
+    if artifact_id:
+        if artifact_kind not in ('session', 'task'):
+            raise HTTPException(422, '文件来源无效')
+        try:
+            record = d.get(artifact_kind, artifact_id)
+        except KeyError:
+            raise HTTPException(404, '文件不存在')
+        if record['workspace_id'] != workspace_id:
+            raise HTTPException(404, '文件不存在')
+        root = d.DATA / 'artifacts' / workspace_id / record['id']
     path = root / filename
     if not path.resolve().is_relative_to(root.resolve()) or not path.is_file() or path.is_symlink():
         raise HTTPException(404, '文件不存在')
@@ -611,13 +621,17 @@ def text_file(path):
 
 
 @router.get('/workspaces/{workspace_id}/file')
-def preview_file(workspace_id: str, path: str):
-    root, target = workspace_file(workspace_id, path)
+def preview_file(workspace_id: str, path: str, artifact_id: str | None = None, artifact_kind: str = 'session'):
+    root, target = workspace_file(workspace_id, path, artifact_id, artifact_kind)
     size = target.stat().st_size
     if target.suffix.lower() == '.docx':
         return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False,
             'content': '', 'reason': 'binary', 'format': 'docx',
             'revision': hashlib.sha256(target.read_bytes()).hexdigest()}
+    media_type = mimetypes.guess_type(target.name)[0]
+    if media_type in ('image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'):
+        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False,
+            'content': '', 'reason': '', 'format': 'pdf' if media_type == 'application/pdf' else 'image'}
     if not text_file(target):
         return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False, 'content': '', 'reason': 'binary'}
     if size > MAX_TEXT_FILE_BYTES:
@@ -635,14 +649,27 @@ def preview_file(workspace_id: str, path: str):
     return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': True, 'content': content, 'reason': ''}
 
 
+@router.get('/workspaces/{workspace_id}/file-view')
+def view_file(workspace_id: str, path: str, artifact_id: str | None = None, artifact_kind: str = 'session'):
+    _, target = workspace_file(workspace_id, path, artifact_id, artifact_kind)
+    media_type = mimetypes.guess_type(target.name)[0]
+    if media_type not in ('image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'):
+        raise HTTPException(422, '该文件不支持内嵌预览')
+    return FileResponse(target, filename=target.name, media_type=media_type, content_disposition_type='inline',
+        headers={'X-Content-Type-Options': 'nosniff'})
+
+
 class FileContent(BaseModel):
     path: str = Field(min_length=1, max_length=1024)
     content: str = Field(max_length=MAX_TEXT_FILE_BYTES)
+    artifact_id: str | None = None
+    artifact_kind: str = 'session'
 
 
 @router.put('/workspaces/{workspace_id}/document')
-async def save_document(workspace_id: str, path: str, file: UploadFile = File(...), revision: str = Form(...)):
-    root, target = workspace_file(workspace_id, path)
+async def save_document(workspace_id: str, path: str, file: UploadFile = File(...), revision: str = Form(...),
+    artifact_id: str | None = None, artifact_kind: str = 'session'):
+    root, target = workspace_file(workspace_id, path, artifact_id, artifact_kind)
     try:
         if target.suffix.lower() != '.docx':
             raise HTTPException(422, '仅支持保存 DOCX 文件')
@@ -668,14 +695,14 @@ async def save_document(workspace_id: str, path: str, file: UploadFile = File(..
             raise HTTPException(500, '文件保存失败')
         finally:
             temporary.unlink(missing_ok=True)
-        return preview_file(workspace_id, path)
+        return preview_file(workspace_id, path, artifact_id, artifact_kind)
     finally:
         await file.close()
 
 
 @router.put('/workspaces/{workspace_id}/file')
 def save_file(workspace_id: str, value: FileContent):
-    root, target = workspace_file(workspace_id, value.path)
+    root, target = workspace_file(workspace_id, value.path, value.artifact_id, value.artifact_kind)
     if not text_file(target):
         raise HTTPException(422, '该文件不支持在线编辑')
     data = value.content.encode('utf-8')
