@@ -1,0 +1,12 @@
+README.md
+SKILL.md
+examples/plan.example.json
+examples/sample_output.docx
+examples/sample_template.docx
+references/architecture.md
+references/extensions.md
+references/operations.md
+requirements-dev.txt
+requirements.txt
+scripts/office_docx.py
+tests/test_skill.py

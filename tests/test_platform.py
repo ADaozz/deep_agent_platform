@@ -84,8 +84,10 @@ def test_real_core_executes_workspace_tool(client):
         def bind_tools(self, tools, **kwargs):
             names = [t.get('name') if isinstance(t, dict) else t.name for t in tools]
             assert 'create_docx' in names
-            assert 'execute' not in names
-            assert 'read_file' not in names
+            assert 'execute' in names
+            assert 'read_file' in names
+            assert 'task' in names
+            assert 'write_todos' not in names
             return self
 
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -169,3 +171,40 @@ def test_env_reference_and_invalid_default(client, monkeypatch):
     assert client.post('/api/workspaces/office/tasks',json={'prompt':'test'}).status_code == 422
     config['default']='provider/missing'
     assert client.put('/api/models',json={'llm':config,'revision':1}).status_code == 422
+
+
+def test_cli_reasoning_default_and_explicit_native_default(client, monkeypatch):
+    from platform_app import models, runtime
+    monkeypatch.setattr(runtime.POOL, 'submit', lambda *args: None)
+    config = model_configuration()
+    config['models']['provider']['reasoning_efforts'] = ['high', 'low']
+    value = client.put('/api/models', json={'llm': config, 'revision': 0}).json()
+    assert value['default_reasoning_effort'] == 'high'
+    assert value['profiles'][0]['default_reasoning_effort'] == 'high'
+    assert models.selection()['reasoning_effort'] == 'high'
+    assert models.selection(effort=None)['reasoning_effort'] is None
+    session = client.post('/api/agent/sessions', json={'workspace_id': 'writing'}).json()
+    assert session['model_id'] == 'provider/demo'
+    assert session['reasoning_effort'] == 'high'
+    explicit = client.post('/api/agent/sessions', json={'workspace_id': 'writing', 'reasoning_effort': None}).json()
+    assert explicit['reasoning_effort'] is None
+
+
+def test_cli_yaml_config_import(client, tmp_path, monkeypatch):
+    from platform_app import models
+    import yaml
+    config = model_configuration(key='${TEST_MODEL_CONFIG_KEY}')
+    config['models']['provider']['reasoning_efforts'] = ['high', 'low']
+    path = tmp_path / 'models.yaml'
+    path.write_text(yaml.safe_dump({'llm': config}))
+    monkeypatch.setenv('PLATFORM_CONFIG', str(path))
+    monkeypatch.setenv('TEST_MODEL_CONFIG_KEY', 'private-config-test-key')
+    value = client.get('/api/models').json()
+    assert value['llm']['default'] == 'provider/demo'
+    assert value['default_reasoning_effort'] == 'high'
+    assert value['profiles'][0]['configured']
+    assert 'private-config-test-key' not in str(value)
+    # The UI can save the imported native YAML into encrypted platform storage.
+    assert client.put('/api/models', json={'llm': value['llm'], 'revision': 0}).status_code == 200
+    path.unlink()
+    assert models.current()[0] == config

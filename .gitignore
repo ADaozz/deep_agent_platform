@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 .platform/
 .env
+frontend/node_modules/
+platform_app/web/
+cursor-agents-replica.zip
+*:Zone.Identifier

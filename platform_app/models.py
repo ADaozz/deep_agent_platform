@@ -3,12 +3,15 @@ import copy
 import json
 import os
 import re
+from pathlib import Path
+import yaml
 from cryptography.fernet import Fernet
 from agent.config import Settings
 from . import domain as d
 
 MASK = '__UNCHANGED_SECRET__'
 ENV = re.compile(r'^\$\{[A-Za-z_][A-Za-z0-9_]*\}$')
+UNSET = object()
 
 
 def cipher():
@@ -38,6 +41,15 @@ def current():
         row = d.get('model_config', 'llm')
         return unseal(row['encrypted']), row['revision']
     except KeyError:
+        path = Path(os.environ.get('PLATFORM_CONFIG', d.DATA / 'config.yaml')).expanduser()
+        if path.is_file():
+            config = yaml.safe_load(path.read_text(encoding='utf-8'))
+            if not isinstance(config, dict) or not isinstance(config.get('llm'), dict):
+                raise ValueError('配置文件必须包含 llm 配置')
+            validate(config['llm'])
+            return config['llm'], 0
+        if os.environ.get('PLATFORM_CONFIG'):
+            raise FileNotFoundError('PLATFORM_CONFIG 指向的配置文件不存在')
         if all(os.environ.get(n) for n in ('PLATFORM_MODEL', 'PLATFORM_API_KEY', 'PLATFORM_BASE_URL')):
             return {'default':'environment/model','models':{'environment':{'base_url':os.environ['PLATFORM_BASE_URL'],'api_key':'${PLATFORM_API_KEY}','api':'chat_completions','models':{'model':{'model':os.environ['PLATFORM_MODEL']}}}}}, 0
         return {'default':'','timeout':60,'models':{}}, 0
@@ -54,7 +66,7 @@ def transform(value, fn):
 def validate(config):
     # References may be configured before a server environment variable is supplied.
     structural = transform(config, lambda v: 'sk-validation' if isinstance(v, str) and ENV.fullmatch(v) else v)
-    return Settings.from_mapping({'llm':structural, 'subagents':{'enabled':False}})
+    return Settings.from_mapping({'llm':structural})
 
 
 def restore(value, previous):
@@ -72,12 +84,13 @@ def public():
         parsed = validate(config)
         for profile in parsed.list_profiles():
             try:
-                real = Settings.from_mapping({'llm':config, 'subagents':{'enabled':False}}).get_profile(profile.id)
+                real = Settings.from_mapping({'llm':config}).get_profile(profile.id)
                 ready = bool(real.api_key)
             except ValueError:
                 ready = False
-            profiles.append({'id':profile.id, 'model':profile.model, 'api':profile.api, 'reasoning_efforts':list(profile.reasoning_efforts), 'configured':ready})
-    return {'llm':transform(config, lambda v: v if isinstance(v,str) and ENV.fullmatch(v) else MASK), 'revision':revision, 'profiles':profiles}
+            profiles.append({'id':profile.id, 'model':profile.model, 'api':profile.api, 'reasoning_efforts':list(profile.reasoning_efforts), 'default_reasoning_effort':profile.reasoning_efforts[0] if profile.reasoning_efforts else None, 'configured':ready})
+    default_effort = next((p['default_reasoning_effort'] for p in profiles if p['id'] == config['default']), None)
+    return {'llm':transform(config, lambda v: v if isinstance(v,str) and ENV.fullmatch(v) else MASK), 'revision':revision, 'profiles':profiles, 'default_reasoning_effort':default_effort}
 
 
 def save(config, revision):
@@ -91,14 +104,16 @@ def save(config, revision):
     return public()
 
 
-def selection(model_id=None, effort=None):
+def selection(model_id=None, effort=UNSET):
     config, _ = current()
     if not config['models']:
         raise LookupError('请在网页的模型配置中新增模型来源和模型')
     parsed = validate(config)
     profile = parsed.get_profile(model_id or config['default'])
+    if effort is UNSET:
+        effort = profile.reasoning_efforts[0] if profile.reasoning_efforts else None
     if effort is not None and effort not in profile.reasoning_efforts:
         raise ValueError('该模型不支持所选思考强度')
     # Fail before queueing if a referenced credential is absent.
-    Settings.from_mapping({'llm':config, 'subagents':{'enabled':False}})
+    Settings.from_mapping({'llm':config})
     return {'encrypted':seal(config), 'id':profile.id, 'reasoning_effort':effort}

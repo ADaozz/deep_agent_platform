@@ -12,12 +12,24 @@ from pydantic import BaseModel, Field
 
 from . import domain as d
 from . import models as m
+from . import runtime
 
 app = FastAPI(title='Deep Agent Platform')
 POOL = ThreadPoolExecutor(max_workers=4)
 d.init()
+runtime.initialize()
+app.include_router(runtime.router)
 STATIC = Path(__file__).parent / 'static'
 app.mount('/static', StaticFiles(directory=STATIC), name='static')
+WEB = Path(__file__).parent / 'web'
+if WEB.exists():
+    app.mount('/assets', StaticFiles(directory=WEB / 'assets'), name='web-assets')
+    app.mount('/fonts', StaticFiles(directory=WEB / 'fonts'), name='web-fonts')
+
+
+@app.get('/favicon.svg')
+def favicon():
+    return FileResponse(WEB / 'favicon.svg')
 
 
 def find(kind, key):
@@ -29,7 +41,7 @@ def find(kind, key):
 
 @app.get('/')
 def index():
-    return FileResponse(STATIC / 'index.html')
+    return FileResponse((WEB if (WEB / 'index.html').exists() else STATIC) / 'index.html')
 
 
 @app.get('/api/status')
@@ -59,7 +71,12 @@ def update_models(value: ModelConfig):
 
 @app.get('/api/workspaces')
 def workspaces():
-    return d.all_records('workspace')
+    return [d.effective_workspace(w['id']) for w in d.all_records('workspace')]
+
+
+@app.get('/api/tool-catalog')
+def tool_catalog():
+    return [{'name': name, 'description': f'创建真实的 {name[7:].upper()} 文件并返回文件名。', 'schema': schema, 'enabled': True} for name, schema in d.TOOL_SCHEMAS.items()]
 
 
 @app.put('/api/workspaces/{workspace_id}')
@@ -68,13 +85,18 @@ def update_workspace(workspace_id: str, value: dict):
         previous = find('workspace', workspace_id)
         if value.get('revision') != previous['revision']:
             raise HTTPException(409, '配置已更新，请刷新后重试')
-        value = {**previous, **{k: v for k, v in value.items() if k in ('name', 'description', 'system_prompt', 'rules', 'skills', 'tools')}}
+        edits = {k: v for k, v in value.items() if k in ('name', 'description', 'system_prompt', 'rules', 'skills', 'tools', 'core_tools', 'mcp', 'bind_all', 'skill_bindings')}
+        if workspace_id == 'everything' and edits.get('bind_all', previous.get('bind_all', True)):
+            for field in ('skills', 'tools', 'core_tools', 'mcp', 'skill_bindings'):
+                edits.pop(field, None)
+        value = {**previous, **edits}
         try:
             d.validate_config(value)
         except Exception as exc:
             raise HTTPException(422, str(exc))
         value['revision'] += 1
-        return d.put('workspace', value)
+        d.put('workspace', value)
+        return d.effective_workspace(workspace_id)
 
 
 class NewWorkspace(BaseModel):
@@ -109,7 +131,7 @@ class Prompt(BaseModel):
 def create_task(workspace_id: str, value: Prompt):
     workspace = find('workspace', workspace_id)
     try:
-        selected = m.selection(value.model_id, value.reasoning_effort)
+        selected = m.selection(value.model_id, value.reasoning_effort if 'reasoning_effort' in value.model_fields_set else m.UNSET)
     except LookupError as exc:
         raise HTTPException(503, str(exc))
     except ValueError:
@@ -127,24 +149,27 @@ def create_task(workspace_id: str, value: Prompt):
 def run_task(record, model=None, raise_errors=False):
     runner = None
     try:
-        from agent import AgentRunner, create_agent
+        from agent import AgentRunner
+        from .agent_factory import prepare_agent
         from agent.config import Settings, SubAgentConfig, SandboxConfig
-        from deepagents.backends import StateBackend
         from agent.llm import build_chat_model
         from dataclasses import replace
         record['status'] = 'running'
         d.put('task', record)
         adapter = d.WorkspaceAdapter(record['config'], record['id'])
-        settings = Settings(trust_env=True, subagents=SubAgentConfig(enabled=False), sandbox=SandboxConfig(workspace=adapter.root), hidden_tools=('ls', 'read_file', 'write_file', 'edit_file', 'delete', 'execute', 'task', 'request_human_input', 'web_search', 'read_subagent_log'))
-        # The core is shared; each invocation receives only this workspace snapshot.
-        # StateBackend exposes no host filesystem or shell. Office handlers own output paths.
+        hidden = d.hidden_tools(record['config'])
+        settings = Settings(trust_env=True, subagents=SubAgentConfig(enabled='task' not in hidden),
+            sandbox=SandboxConfig(workspace=adapter.root, mode='full-access', protected_config_dir=d.DATA / 'configuration',
+                protected_files=(d.DATA / 'platform.sqlite', d.DATA / 'model-config.key', d.DATA / 'runtime')),
+            hidden_tools=hidden)
+        # Compatibility tasks use the same native sandbox and delegation capabilities.
         if model is None:
             snapshot = record['model_snapshot']
-            parsed = Settings.from_mapping({'llm':m.unseal(snapshot['encrypted']), 'subagents':{'enabled':False}})
+            parsed = Settings.from_mapping({'llm':m.unseal(snapshot['encrypted'])})
             profile = parsed.get_profile(snapshot['id'])
             settings = replace(settings, llm_profiles=parsed.llm_profiles, llm_default=profile.id, request_timeout=parsed.request_timeout)
             model = build_chat_model(profile, reasoning_effort=snapshot['reasoning_effort'], trust_env=True, timeout=parsed.request_timeout)
-        prepared = create_agent(settings=settings, model=model, backend=StateBackend(), instructions=adapter.instructions, skills=[], extra_tools=adapter.tools())
+        prepared = prepare_agent(settings=settings, model=model, instructions=adapter.instructions, skills=[], extra_tools=adapter.tools())
         runner = AgentRunner(prepared=prepared, settings=settings)
         result = runner.invoke(record['prompt'])
         record.update(status=result.status, output=result.output or '')

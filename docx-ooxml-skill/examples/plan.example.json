@@ -1,0 +1,14 @@
+{
+  "source_sha256": "REPLACE_WITH_INSPECT_SHA256",
+  "operations": [
+    {
+      "op": "insert_blocks",
+      "after_body_index": -1,
+      "blocks": [
+        "<w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>复杂 DOCX 示例</w:t></w:r></w:p>",
+        "<w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>第一章 项目概述</w:t></w:r></w:p>",
+        "<w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><w:t>本报告为 OOXML 段落格式示例，保留 Word 原生可编辑文本。</w:t></w:r></w:p>"
+      ]
+    }
+  ]
+}

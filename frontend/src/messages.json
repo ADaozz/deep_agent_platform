@@ -1,0 +1,1302 @@
+{
+  "展开或收起侧栏": {
+    "zh": "展开或收起侧栏",
+    "en": "Toggle sidebar"
+  },
+  "Toggle sidebar · Ctrl+Alt+B": {
+    "zh": "切换侧栏 · Ctrl+Alt+B",
+    "en": "Toggle sidebar · Ctrl+Alt+B"
+  },
+  "搜索会话": {
+    "zh": "搜索会话",
+    "en": "Search chats"
+  },
+  "New Chat": {
+    "zh": "新建对话",
+    "en": "New Chat"
+  },
+  "会话历史": {
+    "zh": "会话历史",
+    "en": "Chat history"
+  },
+  "History": {
+    "zh": "历史记录",
+    "en": "History"
+  },
+  "工作区文件": {
+    "zh": "工作区文件",
+    "en": "Workspace files"
+  },
+  "WORKSPACES": {
+    "zh": "工作区",
+    "en": "WORKSPACES"
+  },
+  "新建工作区": {
+    "zh": "新建工作区",
+    "en": "New workspace"
+  },
+  "RECENT CHATS": {
+    "zh": "最近对话",
+    "en": "RECENT CHATS"
+  },
+  "Your ideas start here.": {
+    "zh": "从这里开始实现你的想法。",
+    "en": "Your ideas start here."
+  },
+  "模型配置": {
+    "zh": "模型配置",
+    "en": "Model settings"
+  },
+  "Settings": {
+    "zh": "设置",
+    "en": "Settings"
+  },
+  "LOCAL": {
+    "zh": "本地",
+    "en": "LOCAL"
+  },
+  "Agents": {
+    "zh": "智能体",
+    "en": "Agents"
+  },
+  "工作区配置": {
+    "zh": "工作区配置",
+    "en": "Workspace settings"
+  },
+  "Loading workspace…": {
+    "zh": "正在加载工作区…",
+    "en": "Loading workspace…"
+  },
+  "YOUR WORKSPACE": {
+    "zh": "你的工作区",
+    "en": "YOUR WORKSPACE"
+  },
+  "Chats": {
+    "zh": "对话",
+    "en": "Chats"
+  },
+  "Search chats…": {
+    "zh": "搜索对话…",
+    "en": "Search chats…"
+  },
+  "No chats yet": {
+    "zh": "暂无对话",
+    "en": "No chats yet"
+  },
+  "Start a new chat to bring your ideas to life.": {
+    "zh": "新建对话，让你的想法成为现实。",
+    "en": "Start a new chat to bring your ideas to life."
+  },
+  "New chat": {
+    "zh": "新建对话",
+    "en": "New chat"
+  },
+  "All chats": {
+    "zh": "所有对话",
+    "en": "All chats"
+  },
+  "PREVIOUS TASK": {
+    "zh": "历史任务",
+    "en": "PREVIOUS TASK"
+  },
+  "Connect a model to get started": {
+    "zh": "连接模型，开始使用",
+    "en": "Connect a model to get started"
+  },
+  "配置模型，即可在工作区使用 Deep Agent 的完整能力": {
+    "zh": "配置模型，即可在工作区使用 Deep Agent 的完整能力",
+    "en": "Set up a model to use Deep Agent in your workspace"
+  },
+  "Set up model": {
+    "zh": "配置模型",
+    "en": "Set up model"
+  },
+  "关闭提示": {
+    "zh": "关闭提示",
+    "en": "Dismiss notice"
+  },
+  "Your workspace is ready": {
+    "zh": "工作区已就绪",
+    "en": "Your workspace is ready"
+  },
+  "You": {
+    "zh": "你",
+    "en": "You"
+  },
+  "Agent": {
+    "zh": "智能体",
+    "en": "Agent"
+  },
+  "Thinking": {
+    "zh": "思考过程",
+    "en": "Thinking"
+  },
+  "Pause": {
+    "zh": "暂停",
+    "en": "Pause"
+  },
+  "Stop": {
+    "zh": "停止",
+    "en": "Stop"
+  },
+  "Review tool calls": {
+    "zh": "审批工具调用",
+    "en": "Review tool calls"
+  },
+  "Agent 请求执行以下操作，请逐项确认。": {
+    "zh": "Agent 请求执行以下操作，请逐项确认。",
+    "en": "Agent is requesting these actions. Review each one before continuing."
+  },
+  "Approve": {
+    "zh": "批准",
+    "en": "Approve"
+  },
+  "Reject": {
+    "zh": "拒绝",
+    "en": "Reject"
+  },
+  "Submit decisions": {
+    "zh": "提交审批",
+    "en": "Submit decisions"
+  },
+  "Continue": {
+    "zh": "继续",
+    "en": "Continue"
+  },
+  "Agent paused": {
+    "zh": "Agent 已暂停",
+    "en": "Agent paused"
+  },
+  "Choose workspace": {
+    "zh": "选择工作区",
+    "en": "Choose workspace"
+  },
+  "Search workspaces…": {
+    "zh": "搜索工作区…",
+    "en": "Search workspaces…"
+  },
+  "New workspace": {
+    "zh": "新建工作区",
+    "en": "New workspace"
+  },
+  "Workspace settings": {
+    "zh": "工作区设置",
+    "en": "Workspace settings"
+  },
+  "运行环境": {
+    "zh": "运行环境",
+    "en": "Runtime"
+  },
+  "Runtime": {
+    "zh": "运行环境",
+    "en": "Runtime"
+  },
+  "Local workspace": {
+    "zh": "本地工作区",
+    "en": "Local workspace"
+  },
+  "文件和命令由内核在工作区沙箱内执行。具有副作用的操作需要审批。": {
+    "zh": "文件和命令由内核在工作区沙箱内执行。具有副作用的操作需要审批。",
+    "en": "The core runs files and commands in the workspace sandbox. Actions that make changes require approval."
+  },
+  "Browse workspace files": {
+    "zh": "浏览工作区文件",
+    "en": "Browse workspace files"
+  },
+  "Tool permission ·": {
+    "zh": "工具权限 ·",
+    "en": "Tool permission ·"
+  },
+  "Ask before changes": {
+    "zh": "更改前询问",
+    "en": "Ask before changes"
+  },
+  "Auto-approve in sandbox": {
+    "zh": "沙箱内自动批准",
+    "en": "Auto-approve in sandbox"
+  },
+  "Auto-approve 会自动执行工具并开放沙箱网络；MCP 仍在宿主执行。": {
+    "zh": "自动批准会执行所有工具并开放沙箱网络；MCP 仍在宿主执行。",
+    "en": "Auto-approve runs tools and enables sandbox networking; MCP still runs on the host."
+  },
+  "Compact context": {
+    "zh": "压缩上下文",
+    "en": "Compact context"
+  },
+  "配置工作区": {
+    "zh": "配置工作区",
+    "en": "Configure workspace"
+  },
+  "任务输入": {
+    "zh": "任务输入",
+    "en": "Task input"
+  },
+  "添加上下文和工具": {
+    "zh": "添加上下文和工具",
+    "en": "Add context and tools"
+  },
+  "Add context & tools": {
+    "zh": "添加上下文和工具",
+    "en": "Add context & tools"
+  },
+  "Attach images": {
+    "zh": "添加图片",
+    "en": "Attach images"
+  },
+  "Up to 4": {
+    "zh": "最多 4 张",
+    "en": "Up to 4"
+  },
+  "Workspace tools": {
+    "zh": "工作区工具",
+    "en": "Workspace tools"
+  },
+  "Skills": {
+    "zh": "技能",
+    "en": "Skills"
+  },
+  "Workspace files": {
+    "zh": "工作区文件",
+    "en": "Workspace files"
+  },
+  "Select model": {
+    "zh": "选择模型",
+    "en": "Select model"
+  },
+  "Add a model provider to start.": {
+    "zh": "添加模型来源以开始使用。",
+    "en": "Add a model provider to start."
+  },
+  "未就绪": {
+    "zh": "未就绪",
+    "en": "Not ready"
+  },
+  "Manage models": {
+    "zh": "管理模型",
+    "en": "Manage models"
+  },
+  "思考强度": {
+    "zh": "思考强度",
+    "en": "Reasoning effort"
+  },
+  "Reasoning effort": {
+    "zh": "思考强度",
+    "en": "Reasoning effort"
+  },
+  "Default": {
+    "zh": "默认",
+    "en": "Default"
+  },
+  "Queue": {
+    "zh": "加入队列",
+    "en": "Queue"
+  },
+  "查看工作区文件": {
+    "zh": "查看工作区文件",
+    "en": "View workspace files"
+  },
+  "tokens": {
+    "zh": "Token",
+    "en": "tokens"
+  },
+  "关闭错误": {
+    "zh": "关闭错误",
+    "en": "Dismiss error"
+  },
+  "Previous task": {
+    "zh": "历史任务",
+    "en": "Previous task"
+  },
+  "A little idea. A new beginning.": {
+    "zh": "一个小想法，一次新开始。",
+    "en": "A little idea. A new beginning."
+  },
+  "Build something, explore a question, or create your next document.": {
+    "zh": "构建新作品、探索问题，或创建下一份文档。",
+    "en": "Build something, explore a question, or create your next document."
+  },
+  "Your chats will appear here.": {
+    "zh": "你的对话将显示在这里。",
+    "en": "Your chats will appear here."
+  },
+  "关闭设置": {
+    "zh": "关闭设置",
+    "en": "Close settings"
+  },
+  "工作区名称": {
+    "zh": "工作区名称",
+    "en": "Workspace name"
+  },
+  "描述": {
+    "zh": "描述",
+    "en": "Description"
+  },
+  "System prompt": {
+    "zh": "系统提示词",
+    "en": "System prompt"
+  },
+  "Rules": {
+    "zh": "规则",
+    "en": "Rules"
+  },
+  "每行一条规则": {
+    "zh": "每行一条规则",
+    "en": "One rule per line"
+  },
+  "配置保存后用于新会话；现有会话保留创建时的配置快照。": {
+    "zh": "配置保存后用于新会话；现有会话保留创建时的配置快照。",
+    "en": "Saved settings apply to new chats. Existing chats keep their original configuration."
+  },
+  "Core tools": {
+    "zh": "内核工具",
+    "en": "Core tools"
+  },
+  "使用 deep_agent_cli 的原生工具，具有副作用的操作交由内核请求审批。": {
+    "zh": "使用 deep_agent_cli 的原生工具，具有副作用的操作交由内核请求审批。",
+    "en": "Use native deep_agent_cli tools. The core requests approval for actions that make changes."
+  },
+  "编辑已注册工具的描述与 JSON Schema。参数名称和必填项需保留。": {
+    "zh": "编辑已注册工具的描述与 JSON Schema。参数名称和必填项需保留。",
+    "en": "Edit registered tool descriptions and JSON Schema. Keep parameter names and required fields."
+  },
+  "此工作区没有额外的 Office 工具，仍可使用上方内核工具。": {
+    "zh": "此工作区没有额外的 Office 工具，仍可使用上方内核工具。",
+    "en": "No extra Office tools in this workspace. Core tools remain available above."
+  },
+  "启用此工具": {
+    "zh": "启用此工具",
+    "en": "Enable this tool"
+  },
+  "Description": {
+    "zh": "描述",
+    "en": "Description"
+  },
+  "MCP servers": {
+    "zh": "MCP 服务",
+    "en": "MCP servers"
+  },
+  "沿用内核的 MCP 配置。支持 stdio 和 streamable_http；stdio 在服务宿主运行，凭据通过环境变量引用。": {
+    "zh": "沿用内核的 MCP 配置。支持 stdio 和 streamable_http；stdio 在服务宿主运行，凭据通过环境变量引用。",
+    "en": "Uses the core MCP configuration. Supports stdio and streamable_http. Stdio runs on the host; credentials use environment variable references."
+  },
+  "MCP JSON 配置": {
+    "zh": "MCP JSON 配置",
+    "en": "MCP JSON configuration"
+  },
+  "Workspace skills": {
+    "zh": "工作区技能",
+    "en": "Workspace skills"
+  },
+  "Skill 将生成标准 SKILL.md，并作为只读目录提供给内核按需加载。": {
+    "zh": "Skill 将生成标准 SKILL.md，并作为只读目录提供给内核按需加载。",
+    "en": "Skills generate standard SKILL.md files in a read-only directory for the core to load on demand."
+  },
+  "Add skill": {
+    "zh": "添加技能",
+    "en": "Add skill"
+  },
+  "No skills yet. Add a reusable workflow.": {
+    "zh": "暂无技能，添加可复用的工作流程。",
+    "en": "No skills yet. Add a reusable workflow."
+  },
+  "Skill": {
+    "zh": "技能",
+    "en": "Skill"
+  },
+  "Enabled": {
+    "zh": "已启用",
+    "en": "Enabled"
+  },
+  "Disabled": {
+    "zh": "已禁用",
+    "en": "Disabled"
+  },
+  "Name": {
+    "zh": "名称",
+    "en": "Name"
+  },
+  "e.g. Code review": {
+    "zh": "例如：代码审查",
+    "en": "e.g. Code review"
+  },
+  "When should Agent use this skill?": {
+    "zh": "Agent 应在什么情况下使用这个技能？",
+    "en": "When should Agent use this skill?"
+  },
+  "Instructions": {
+    "zh": "操作指引",
+    "en": "Instructions"
+  },
+  "Describe the workflow, rules and expected output…": {
+    "zh": "描述工作流程、规则和预期输出…",
+    "en": "Describe the workflow, rules and expected output…"
+  },
+  "Applies to new chats": {
+    "zh": "适用于新对话",
+    "en": "Applies to new chats"
+  },
+  "Cancel": {
+    "zh": "取消",
+    "en": "Cancel"
+  },
+  "Save changes": {
+    "zh": "保存更改",
+    "en": "Save changes"
+  },
+  "Providers & models": {
+    "zh": "来源与模型",
+    "en": "Providers & models"
+  },
+  "Advanced JSON": {
+    "zh": "高级 JSON",
+    "en": "Advanced JSON"
+  },
+  "Add a model": {
+    "zh": "添加模型",
+    "en": "Add a model"
+  },
+  "兼容 deep_agent_cli 配置，支持 Chat Completions 和 Responses。": {
+    "zh": "兼容 deep_agent_cli 配置，支持 Chat Completions 和 Responses。",
+    "en": "Compatible with deep_agent_cli settings. Supports Chat Completions and Responses."
+  },
+  "来源名称": {
+    "zh": "来源名称",
+    "en": "Provider name"
+  },
+  "模型 ID": {
+    "zh": "模型 ID",
+    "en": "Model ID"
+  },
+  "Provider model ID": {
+    "zh": "服务商模型 ID",
+    "en": "Provider model ID"
+  },
+  "API Key 或 ${ENV_VAR}": {
+    "zh": "API Key 或 ${ENV_VAR}",
+    "en": "API Key or ${ENV_VAR}"
+  },
+  "密钥在服务端加密保存，读取时脱敏。": {
+    "zh": "密钥在服务端加密保存，读取时脱敏。",
+    "en": "Keys are encrypted on the server and masked when read."
+  },
+  "API 协议": {
+    "zh": "API 协议",
+    "en": "API protocol"
+  },
+  "逗号分隔": {
+    "zh": "逗号分隔",
+    "en": "Comma-separated"
+  },
+  "模型支持图片输入": {
+    "zh": "模型支持图片输入",
+    "en": "Model supports image input"
+  },
+  "编辑完整 llm 配置，可删除模型、修改默认模型和模型参数。保留 __UNCHANGED_SECRET__ 可沿用已保存的密钥。": {
+    "zh": "编辑完整 llm 配置，可删除模型、修改默认模型和模型参数。保留 __UNCHANGED_SECRET__ 可沿用已保存的密钥。",
+    "en": "Edit the full llm configuration to remove models or change defaults and parameters. Keep __UNCHANGED_SECRET__ to reuse saved keys."
+  },
+  "模型高级 JSON 配置": {
+    "zh": "模型高级 JSON 配置",
+    "en": "Advanced model JSON configuration"
+  },
+  "models configured": {
+    "zh": "个模型已配置",
+    "en": "models configured"
+  },
+  "A dedicated space for your tools, skills and ideas.": {
+    "zh": "为你的工具、技能和想法创建专属空间。",
+    "en": "A dedicated space for your tools, skills and ideas."
+  },
+  "Workspace name": {
+    "zh": "工作区名称",
+    "en": "Workspace name"
+  },
+  "e.g. Development": {
+    "zh": "例如：开发工作区",
+    "en": "e.g. Development"
+  },
+  "Create workspace": {
+    "zh": "创建工作区",
+    "en": "Create workspace"
+  },
+  "· 内核工作区文件": {
+    "zh": "· 内核工作区文件",
+    "en": "· Core workspace files"
+  },
+  "No files yet.": {
+    "zh": "暂无文件。",
+    "en": "No files yet."
+  },
+  "No chats yet.": {
+    "zh": "暂无对话。",
+    "en": "No chats yet."
+  },
+  "Queued…": {
+    "zh": "排队中…",
+    "en": "Queued…"
+  },
+  "Agent is working…": {
+    "zh": "Agent 正在执行…",
+    "en": "Agent is working…"
+  },
+  "Agent needs your input": {
+    "zh": "Agent 需要你的回复",
+    "en": "Agent needs your input"
+  },
+  "Start from scratch": {
+    "zh": "从零开始",
+    "en": "Start from scratch"
+  },
+  "Add instructions while Agent works…": {
+    "zh": "在 Agent 执行时追加指令…",
+    "en": "Add instructions while Agent works…"
+  },
+  "Ask a follow-up…": {
+    "zh": "继续提问…",
+    "en": "Ask a follow-up…"
+  },
+  "Ask Agent to build, fix bugs, explore": {
+    "zh": "让 Agent 构建、修复问题或探索想法",
+    "en": "Ask Agent to build, fix bugs, explore"
+  },
+  "追加指令": {
+    "zh": "追加指令",
+    "en": "Add instructions"
+  },
+  "后续任务": {
+    "zh": "后续任务",
+    "en": "Follow-up task"
+  },
+  "发送任务": {
+    "zh": "发送任务",
+    "en": "Send task"
+  },
+  "Enter to steer · Queue for a follow-up": {
+    "zh": "Enter 追加指令 · 可将后续任务加入队列",
+    "en": "Enter to steer · Queue for a follow-up"
+  },
+  "Enter to send · Shift+Enter for a new line": {
+    "zh": "Enter 发送 · Shift+Enter 换行",
+    "en": "Enter to send · Shift+Enter for a new line"
+  },
+  "工作区设置": {
+    "zh": "工作区设置",
+    "en": "Workspace settings"
+  },
+  "Model settings": {
+    "zh": "模型设置",
+    "en": "Model settings"
+  },
+  "Search chats": {
+    "zh": "搜索对话",
+    "en": "Search chats"
+  },
+  "General": {
+    "zh": "通用",
+    "en": "General"
+  },
+  "Tools": {
+    "zh": "工具",
+    "en": "Tools"
+  },
+  "Ready": {
+    "zh": "已就绪",
+    "en": "Ready"
+  },
+  "Key missing": {
+    "zh": "缺少密钥",
+    "en": "Key missing"
+  },
+  "Saving…": {
+    "zh": "正在保存…",
+    "en": "Saving…"
+  },
+  "Save configuration": {
+    "zh": "保存配置",
+    "en": "Save configuration"
+  },
+  "Add model": {
+    "zh": "添加模型",
+    "en": "Add model"
+  },
+  "列出文件": {
+    "zh": "列出文件",
+    "en": "List files"
+  },
+  "读取文件": {
+    "zh": "读取文件",
+    "en": "Read files"
+  },
+  "写入文件": {
+    "zh": "写入文件",
+    "en": "Write files"
+  },
+  "编辑文件": {
+    "zh": "编辑文件",
+    "en": "Edit files"
+  },
+  "删除文件": {
+    "zh": "删除文件",
+    "en": "Delete files"
+  },
+  "文件匹配": {
+    "zh": "文件匹配",
+    "en": "Find files"
+  },
+  "搜索内容": {
+    "zh": "搜索内容",
+    "en": "Search contents"
+  },
+  "执行命令": {
+    "zh": "执行命令",
+    "en": "Run commands"
+  },
+  "子 Agent 委派": {
+    "zh": "子 Agent 委派",
+    "en": "Delegate to subagent"
+  },
+  "子任务日志": {
+    "zh": "子任务日志",
+    "en": "Subagent logs"
+  },
+  "向用户提问": {
+    "zh": "向用户提问",
+    "en": "Ask the user"
+  },
+  "联网搜索": {
+    "zh": "联网搜索",
+    "en": "Web search"
+  },
+  "新会话": {
+    "zh": "新会话",
+    "en": "New chat"
+  },
+  "排队中": {
+    "zh": "排队中",
+    "en": "Queued"
+  },
+  "执行中": {
+    "zh": "执行中",
+    "en": "Running"
+  },
+  "已完成": {
+    "zh": "已完成",
+    "en": "Completed"
+  },
+  "执行失败": {
+    "zh": "执行失败",
+    "en": "Failed"
+  },
+  "等待审批": {
+    "zh": "等待审批",
+    "en": "Awaiting approval"
+  },
+  "等待回复": {
+    "zh": "等待回复",
+    "en": "Awaiting input"
+  },
+  "已暂停": {
+    "zh": "已暂停",
+    "en": "Paused"
+  },
+  "等待继续": {
+    "zh": "等待继续",
+    "en": "Ready to continue"
+  },
+  "已取消": {
+    "zh": "已取消",
+    "en": "Cancelled"
+  },
+  "已中断": {
+    "zh": "已中断",
+    "en": "Interrupted"
+  },
+  "请求失败，请检查输入配置": {
+    "zh": "请求失败，请检查输入配置",
+    "en": "Request failed. Check your configuration."
+  },
+  "请先处理审批、提问或暂停，再发送下一条消息": {
+    "zh": "请先处理审批、提问或暂停，再发送下一条消息",
+    "en": "Resolve the pending approval, question or pause before sending another message."
+  },
+  "模型配置已排队，将在内核安全边界生效": {
+    "zh": "模型配置已排队，将在内核安全边界生效",
+    "en": "Model settings are queued and will apply at the next safe boundary."
+  },
+  "最多添加 4 张图片，每张不超过 10MB": {
+    "zh": "最多添加 4 张图片，每张不超过 10MB",
+    "en": "Attach up to 4 images, each no larger than 10MB."
+  },
+  "工作区配置已保存；新会话使用新配置": {
+    "zh": "工作区配置已保存；新会话使用新配置",
+    "en": "Workspace settings saved. New chats will use the updated configuration."
+  },
+  "工作区已创建": {
+    "zh": "工作区已创建",
+    "en": "Workspace created."
+  },
+  "请填写来源、模型 ID、端点和 API Key": {
+    "zh": "请填写来源、模型 ID、端点和 API Key",
+    "en": "Enter the provider, model ID, base URL and API key."
+  },
+  "来源名称请使用字母、数字、下划线或短横线": {
+    "zh": "来源名称请使用字母、数字、下划线或短横线",
+    "en": "Use letters, numbers, underscores or hyphens in the provider name."
+  },
+  "模型配置已保存": {
+    "zh": "模型配置已保存",
+    "en": "Model settings saved."
+  },
+  "权限配置已交给内核，将在安全边界生效": {
+    "zh": "权限配置已交给内核，将在安全边界生效",
+    "en": "Permission settings will apply at the next safe boundary."
+  },
+  "appearance": {
+    "zh": "外观",
+    "en": "Appearance"
+  },
+  "theme.dark": {
+    "zh": "切换到夜间模式",
+    "en": "Switch to dark mode"
+  },
+  "theme.light": {
+    "zh": "切换到浅色模式",
+    "en": "Switch to light mode"
+  },
+  "language.switch": {
+    "zh": "Switch to English",
+    "en": "切换为中文"
+  },
+  "reviewTool": {
+    "zh": "审批 {name}",
+    "en": "Review {name}"
+  },
+  "removeImage": {
+    "zh": "移除 {name}",
+    "en": "Remove {name}"
+  },
+  "deleteSkill": {
+    "zh": "删除技能 {name}",
+    "en": "Delete skill {name}"
+  },
+  "document.title": {
+    "zh": "Deep Agent · 工作区",
+    "en": "Deep Agent · Workspace"
+  },
+  "请在网页的模型配置中新增模型来源和模型": {
+    "zh": "请在网页的模型配置中新增模型来源和模型",
+    "en": "Add a provider and model in Model settings first."
+  },
+  "模型、思考强度或密钥配置无效": {
+    "zh": "模型、思考强度或密钥配置无效",
+    "en": "Invalid model, reasoning effort or API key configuration."
+  },
+  "工作空间不存在": {
+    "zh": "工作空间不存在",
+    "en": "Workspace not found."
+  },
+  "会话不存在": {
+    "zh": "会话不存在",
+    "en": "Chat not found."
+  },
+  "配置已更新，请刷新后重试": {
+    "zh": "配置已更新，请刷新后重试",
+    "en": "Settings have changed. Refresh and try again."
+  },
+  "模型配置已更新，请重新打开后编辑": {
+    "zh": "模型配置已更新，请重新打开后编辑",
+    "en": "Model settings have changed. Reopen the editor and try again."
+  },
+  "当前会话正在执行": {
+    "zh": "当前会话正在执行",
+    "en": "This chat is already running."
+  },
+  "请先处理当前审批、提问或暂停": {
+    "zh": "请先处理当前审批、提问或暂停",
+    "en": "Resolve the pending approval, question or pause first."
+  },
+  "请先处理当前中断再压缩上下文": {
+    "zh": "请先处理当前中断再压缩上下文",
+    "en": "Resolve the pending interaction before compacting context."
+  },
+  "任务队列已满": {
+    "zh": "任务队列已满",
+    "en": "The task queue is full."
+  },
+  "当前没有待审批工具": {
+    "zh": "当前没有待审批工具",
+    "en": "No tool calls are awaiting approval."
+  },
+  "当前没有待回答问题": {
+    "zh": "当前没有待回答问题",
+    "en": "No questions are awaiting an answer."
+  },
+  "当前会话未暂停": {
+    "zh": "当前会话未暂停",
+    "en": "This chat is not paused."
+  },
+  "请对每一个待审批工具作出决定": {
+    "zh": "请对每一个待审批工具作出决定",
+    "en": "Review every pending tool call."
+  },
+  "Agent 尚未运行": {
+    "zh": "Agent 尚未运行",
+    "en": "Agent has not started yet."
+  },
+  "指令不能为空": {
+    "zh": "指令不能为空",
+    "en": "Instructions cannot be empty."
+  },
+  "图片格式无效或超过 10MB": {
+    "zh": "图片格式无效或超过 10MB",
+    "en": "Invalid image format or image larger than 10MB."
+  },
+  "此模型在会话创建后新增，请新建会话使用": {
+    "zh": "此模型在会话创建后新增，请新建会话使用",
+    "en": "This model was added after the chat was created. Start a new chat to use it."
+  },
+  "模型或思考强度配置无效": {
+    "zh": "模型或思考强度配置无效",
+    "en": "Invalid model or reasoning effort configuration."
+  },
+  "请在 Agent 初始化完成后切换权限模式": {
+    "zh": "请在 Agent 初始化完成后切换权限模式",
+    "en": "Wait for Agent to initialize before changing permissions."
+  },
+  "当前运行环境不支持此权限模式": {
+    "zh": "当前运行环境不支持此权限模式",
+    "en": "This runtime does not support that permission mode."
+  },
+  "文件不存在": {
+    "zh": "文件不存在",
+    "en": "File not found."
+  },
+  "内核执行失败，请检查服务端日志及模型配置。": {
+    "zh": "内核执行失败，请检查服务端日志及模型配置。",
+    "en": "The core failed. Check the server logs and model settings."
+  },
+  "Bubblewrap 沙箱不可用，请检查主机 user namespace 与 bwrap 配置。": {
+    "zh": "Bubblewrap 沙箱不可用，请检查主机 user namespace 与 bwrap 配置。",
+    "en": "Bubblewrap is unavailable. Check user namespaces and the bwrap configuration on the host."
+  },
+  "Agent 执行失败，请检查模型配置与服务端日志。": {
+    "zh": "Agent 执行失败，请检查模型配置与服务端日志。",
+    "en": "Agent failed. Check model settings and server logs."
+  },
+  "服务重启，本轮已中断；可发送新消息恢复会话。": {
+    "zh": "服务重启，本轮已中断；可发送新消息恢复会话。",
+    "en": "The server restarted and interrupted this turn. Send a new message to resume the chat."
+  },
+  "Filebase": {
+    "zh": "文件库",
+    "en": "Filebase"
+  },
+  "e.g. openai": {
+    "zh": "例如：openai",
+    "en": "e.g. openai"
+  },
+  "mcp.example": {
+    "zh": "格式：{ \"enabled\": true, \"servers\": { \"name\": { \"transport\": \"streamable_http\", \"url\": \"https://example.com/mcp\" } } }",
+    "en": "Example: { \"enabled\": true, \"servers\": { \"name\": { \"transport\": \"streamable_http\", \"url\": \"https://example.com/mcp\" } } }"
+  },
+  "密钥占位符没有对应的已保存密钥": {
+    "zh": "密钥占位符没有对应的已保存密钥",
+    "en": "The key placeholder has no previously saved key."
+  },
+  "该模型不支持所选思考强度": {
+    "zh": "该模型不支持所选思考强度",
+    "en": "The model does not support this reasoning effort."
+  },
+  "工作空间名称不能为空": {
+    "zh": "工作空间名称不能为空",
+    "en": "Workspace name cannot be empty."
+  },
+  "system_prompt 必须是文本": {
+    "zh": "system_prompt 必须是文本",
+    "en": "System prompt must be text."
+  },
+  "rules 必须是文本列表": {
+    "zh": "rules 必须是文本列表",
+    "en": "Rules must be a list of text entries."
+  },
+  "skills 必须包含 name 和 content": {
+    "zh": "skills 必须包含 name 和 content",
+    "en": "Each skill must include a name and content."
+  },
+  "内核工具配置无效": {
+    "zh": "内核工具配置无效",
+    "en": "Invalid core tool configuration."
+  },
+  "MCP 配置需要 enabled 和 servers": {
+    "zh": "MCP 配置需要 enabled 和 servers",
+    "en": "MCP configuration requires enabled and servers fields."
+  },
+  "Skill 需要非空名称、文本描述和有效的启用状态": {
+    "zh": "Skill 需要非空名称、文本描述和有效的启用状态",
+    "en": "A skill requires a name, text description and valid enabled state."
+  },
+  "工具必须绑定唯一的已注册处理器": {
+    "zh": "工具必须绑定唯一的已注册处理器",
+    "en": "Each tool must use a unique registered handler."
+  },
+  "工具需要 description 和 enabled": {
+    "zh": "工具需要 description 和 enabled",
+    "en": "Tools require description and enabled fields."
+  },
+  "schema 必须保留处理器参数与 required；可修改描述和约束": {
+    "zh": "schema 必须保留处理器参数与 required；可修改描述和约束",
+    "en": "Keep handler parameters and required fields in the schema. Descriptions and constraints may be edited."
+  },
+  "当前工作空间未启用该工具": {
+    "zh": "当前工作空间未启用该工具",
+    "en": "This tool is disabled in the current workspace."
+  },
+  "服务已重启，请创建新任务重试。": {
+    "zh": "服务已重启，请创建新任务重试。",
+    "en": "The server restarted. Create a new task to try again."
+  },
+  "当前任务已满，请稍后再试": {
+    "zh": "当前任务已满，请稍后再试",
+    "en": "The task queue is full. Try again later."
+  },
+  "内核未完成此任务；请检查服务端日志与模型配置。": {
+    "zh": "内核未完成此任务；请检查服务端日志与模型配置。",
+    "en": "The core did not complete this task. Check server logs and model settings."
+  },
+  "记录不存在": {
+    "zh": "记录不存在",
+    "en": "Record not found."
+  },
+  "模型配置无效：请检查来源、默认模型、API 协议和参数；格式与 deep_agent_cli 的 llm 配置一致。": {
+    "zh": "模型配置无效：请检查来源、默认模型、API 协议和参数；格式与 deep_agent_cli 的 llm 配置一致。",
+    "en": "Invalid model configuration. Check the provider, default model, API protocol and parameters against the deep_agent_cli llm format."
+  },
+  "模型、思考强度或密钥环境变量无效，请检查模型配置。": {
+    "zh": "模型、思考强度或密钥环境变量无效，请检查模型配置。",
+    "en": "Invalid model, reasoning effort or key environment variable. Check model settings."
+  },
+  "Agent 执行失败，请检查模型连接及服务端运行环境。": {
+    "zh": "Agent 执行失败，请检查模型连接及服务端运行环境。",
+    "en": "Agent failed. Check the model connection and server environment."
+  },
+  "操作不存在": {
+    "zh": "操作不存在",
+    "en": "Action not found."
+  },
+  "未知操作": {
+    "zh": "未知操作",
+    "en": "Unknown action."
+  },
+  "Permission": {
+    "zh": "权限",
+    "en": "Permission"
+  },
+  "permission.askDescription": {
+    "zh": "修改文件、执行命令、联网检索及 MCP 操作前询问。",
+    "en": "Ask before file changes, commands, web search and MCP operations."
+  },
+  "permission.allowDescription": {
+    "zh": "自动批准全部工具调用，开放沙箱网络。",
+    "en": "Auto-approve all tools and enable sandbox networking."
+  },
+  "permission.pending": {
+    "zh": "已排队，将在内核安全边界生效。",
+    "en": "Queued; applies at the next safe boundary in the core."
+  },
+  "permission.saved": {
+    "zh": "权限模式已更新",
+    "en": "Permission mode updated."
+  },
+  "sandbox.fullAccess": {
+    "zh": "沙箱默认 full-access，可访问虚拟机文件系统；工具是否审批由 Permission 控制。",
+    "en": "Sandbox defaults to full-access with access to the VM filesystem. Permission controls tool approval."
+  },
+  "permission.confirmTitle": {
+    "zh": "启用 ALLOW？",
+    "en": "Enable ALLOW?"
+  },
+  "permission.allowWarning": {
+    "zh": "与 CLI 一致：自动批准全部工具，包括写入、删除和宿主 MCP；命令可访问网络。切回 ask 不会停止已经运行的操作。",
+    "en": "As in the CLI, ALLOW auto-approves all tools, including writes, deletes and host MCP, and enables command networking. Switching back to ask does not stop work already running."
+  },
+  "permission.typeAllow": {
+    "zh": "输入 ALLOW 确认",
+    "en": "Type ALLOW to confirm"
+  },
+  "permission.enableAllow": {
+    "zh": "启用 ALLOW",
+    "en": "Enable ALLOW"
+  },
+  "请输入 ALLOW 确认自动批准模式": {
+    "zh": "请输入 ALLOW 确认自动批准模式",
+    "en": "Type ALLOW to confirm auto-approve mode."
+  },
+  "请先处理当前交互再切换权限模式": {
+    "zh": "请先处理当前交互再切换权限模式",
+    "en": "Finish the current interaction before changing permission mode."
+  },
+  "workspace.manage": {
+    "zh": "管理工作区",
+    "en": "Manage workspaces"
+  },
+  "workspace.configure": {
+    "zh": "配置 {name}",
+    "en": "Configure {name}"
+  },
+  "workspace.configureTarget": {
+    "zh": "配置工作区",
+    "en": "Configure workspace"
+  },
+  "workspace.bindAll": {
+    "zh": "自动绑定全部工具与 Skill",
+    "en": "Automatically bind all tools and skills"
+  },
+  "workspace.bindAllHint": {
+    "zh": "Everything 自动汇总全部工具、其他工作区的 Skill 和 CLI Skill。请在来源工作区编辑，或关闭通用设置中的自动绑定后自定义。",
+    "en": "Everything includes all tools, workspace skills and CLI skills. Edit resources in their source workspace, or turn off automatic binding in General to customize."
+  },
+  "workspace.cliSkills": {
+    "zh": "CLI 已安装的 Skill",
+    "en": "Installed CLI skills"
+  },
+  "upload.drop": {
+    "zh": "松开即可上传文件",
+    "en": "Drop files to upload"
+  },
+  "upload.files": {
+    "zh": "上传文件",
+    "en": "Upload files"
+  },
+  "upload.remove": {
+    "zh": "移除文件 {name}",
+    "en": "Remove file {name}"
+  },
+  "upload.limit": {
+    "zh": "每次最多添加 10 个文件，每个不超过 20MB",
+    "en": "Attach up to 10 files, each no larger than 20MB."
+  },
+  "upload.defaultPrompt": {
+    "zh": "请读取并分析我上传的文件。",
+    "en": "Read and analyze the uploaded files."
+  },
+  "每个文件不能超过 20MB": {
+    "zh": "每个文件不能超过 20MB",
+    "en": "Each file must be no larger than 20MB."
+  },
+  "不能上传空文件": {
+    "zh": "不能上传空文件",
+    "en": "Empty files cannot be uploaded."
+  },
+  "上传文件不存在": {
+    "zh": "上传文件不存在",
+    "en": "Uploaded file not found in this workspace."
+  },
+  "上传文件不能重复": {
+    "zh": "上传文件不能重复",
+    "en": "The same file cannot be attached twice."
+  },
+  "文件名无效": {
+    "zh": "文件名无效",
+    "en": "Invalid file name."
+  },
+  "上传目录无效": {
+    "zh": "上传目录无效",
+    "en": "Invalid upload directory."
+  },
+  "model.back": {
+    "zh": "返回模型列表",
+    "en": "Back to models"
+  },
+  "model.editEffort": {
+    "zh": "编辑 {name} 的思考强度",
+    "en": "Edit reasoning effort for {name}"
+  },
+  "usage.cacheHit": {
+    "zh": "缓存命中率",
+    "en": "Cache hit"
+  },
+  "usage.cacheUnavailable": {
+    "zh": "最近一次模型请求未返回可用的缓存统计",
+    "en": "No cache usage was reported for the latest model request."
+  },
+  "usage.cacheDetails": {
+    "zh": "最近一次模型请求：缓存命中 {cached} / 输入 {total} Token",
+    "en": "Latest model request: {cached} cached / {total} input tokens"
+  },
+  "activity.operations": {
+    "zh": "{count} 项操作",
+    "en": "{count} actions"
+  },
+  "activity.action": {
+    "zh": "执行操作",
+    "en": "Perform action"
+  },
+  "activity.external": {
+    "zh": "调用外部服务",
+    "en": "Use external service"
+  },
+  "activity.document": {
+    "zh": "创建文档",
+    "en": "Create document"
+  },
+  "activity.presentation": {
+    "zh": "创建演示文稿",
+    "en": "Create presentation"
+  },
+  "activity.spreadsheet": {
+    "zh": "创建表格",
+    "en": "Create spreadsheet"
+  },
+  "activity.ended": {
+    "zh": "已结束",
+    "en": "Finished"
+  },
+  "activity.command": {
+    "zh": "执行命令",
+    "en": "Command"
+  },
+  "activity.file": {
+    "zh": "文件",
+    "en": "File"
+  },
+  "activity.address": {
+    "zh": "地址",
+    "en": "Address"
+  },
+  "activity.query": {
+    "zh": "搜索内容",
+    "en": "Search query"
+  },
+  "activity.content": {
+    "zh": "操作内容",
+    "en": "Content"
+  },
+  "activity.original": {
+    "zh": "原内容",
+    "en": "Original content"
+  },
+  "activity.replacement": {
+    "zh": "替换内容",
+    "en": "Replacement content"
+  },
+  "activity.operation": {
+    "zh": "1 项操作",
+    "en": "1 action"
+  },
+  "抓取网页": {
+    "zh": "抓取网页",
+    "en": "Fetch web page"
+  },
+  "process.title": {
+    "zh": "工作过程",
+    "en": "Work process"
+  },
+  "process.processing": {
+    "zh": "正在处理",
+    "en": "Processing"
+  },
+  "process.running": {
+    "zh": "运行中",
+    "en": "Running"
+  },
+  "process.thinking": {
+    "zh": "思考",
+    "en": "Thinking"
+  },
+  "process.rememberThoughts": {
+    "zh": "展开或收起思考，将记住你的偏好",
+    "en": "Expand or collapse thinking; your preference is remembered"
+  },
+  "process.progress": {
+    "zh": "已完成 {done} / {total} 项操作",
+    "en": "{done} / {total} operations completed"
+  },
+  "process.details": {
+    "zh": "查看详情",
+    "en": "View details"
+  },
+  "process.truncated": {
+    "zh": "结果较长，仅显示前部分内容。",
+    "en": "Long result; showing the first part."
+  },
+  "skills.configureHint": {
+    "zh": "配置已安装 Skill 在当前工作区的启用状态。脚本、参考资料和操作指引随 Skill 一同加载。",
+    "en": "Choose which installed skills to enable for this workspace. Scripts, references and instructions load with each skill."
+  },
+  "skills.empty": {
+    "zh": "尚未发现已安装的 Skill。",
+    "en": "No installed skills found."
+  },
+  "skills.enable": {
+    "zh": "启用技能 {name}",
+    "en": "Enable skill {name}"
+  },
+  "skills.installed": {
+    "zh": "已安装 · deep_agent_cli",
+    "en": "Installed · deep_agent_cli"
+  },
+  "skills.workspaceBound": {
+    "zh": "工作区已绑定",
+    "en": "Bound to workspace"
+  },
+  "artifacts.title": {
+    "zh": "输出文件",
+    "en": "Output files"
+  },
+  "artifacts.download": {
+    "zh": "点击下载",
+    "en": "Click to download"
+  },
+  "artifacts.preview": {
+    "zh": "点击预览",
+    "en": "Click to preview"
+  },
+  "Download": {
+    "zh": "下载",
+    "en": "Download"
+  },
+  "Save": {
+    "zh": "保存",
+    "en": "Save"
+  },
+  "File preview": {
+    "zh": "文件预览",
+    "en": "File preview"
+  },
+  "File content": {
+    "zh": "文件内容",
+    "en": "File content"
+  },
+  "file.saved": {
+    "zh": "已保存",
+    "en": "Saved"
+  },
+  "file.reason.binary": {
+    "zh": "该文件是二进制文件，暂不支持在线编辑。",
+    "en": "Binary files cannot be edited here."
+  },
+  "file.reason.too_large": {
+    "zh": "文件较大，请下载后查看。",
+    "en": "This file is too large to preview. Download it instead."
+  },
+  "file.reason.encoding": {
+    "zh": "该文件不是 UTF-8 文本，暂不支持在线编辑。",
+    "en": "This file is not UTF-8 text and cannot be edited here."
+  },
+  "file.reason.unknown": {
+    "zh": "该文件暂不支持在线编辑。",
+    "en": "This file cannot be edited here."
+  },
+  "file.docxLoading": {
+    "zh": "正在打开 Word 文档…",
+    "en": "Opening Word document…"
+  },
+  "file.docxError": {
+    "zh": "文档编辑器加载失败，请重新打开或下载文件查看。",
+    "en": "Could not load the document editor. Reopen it or download the file."
+  },
+  "file.discardChanges": {
+    "zh": "还有未保存的修改，确定关闭吗？",
+    "en": "Discard unsaved changes and close?"
+  }
+}
