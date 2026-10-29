@@ -9,6 +9,7 @@ from fastapi import APIRouter,HTTPException
 from fastapi.responses import Response,FileResponse
 from pydantic import BaseModel,Field
 from platform_app import domain as d
+from platform_app.artifact_runtime import validate_embedded_resources
 
 spec=importlib.util.spec_from_file_location('pptx_feature_engine',Path(__file__).parent/'scripts'/'office_pptx.py')
 engine=importlib.util.module_from_spec(spec); spec.loader.exec_module(engine)
@@ -76,6 +77,7 @@ class Presentations:
         return result
     def _execute(self,action,args):
         self.root.mkdir(parents=True,exist_ok=True); identity=args['presentation_id']; store=PresentationStore(self.presentation_path(identity))
+        if store.path.is_file():validate_embedded_resources(store.path)
         grant_key=self.actor+':'+identity
         if action!='init':
             try:grant=d.get('artifact_grant',grant_key)
@@ -87,6 +89,7 @@ class Presentations:
                 if template:
                     template=(self.root/template).resolve()
                     if not template.is_relative_to(self.root.resolve()) or not template.is_file():raise ValueError('Template must be a library file')
+                    validate_embedded_resources(template)
                 result=store.init(identity,template,args.get('mode','normal'),args.get('theme','corporate_blue'))
                 d.put('artifact_grant',dict(id=grant_key,path=str(store.path),actor=self.actor,presentation_id=identity,scope=['init','apply_one','status','check_slide','review','restore','finalize']))
                 return result

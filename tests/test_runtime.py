@@ -11,6 +11,23 @@ from platform_app import domain as d, models as m, runtime as rt
 from platform_app.main import app
 
 
+def current_id():
+    sessions = d.all_records('session')
+    return sessions[-1]['id'] if sessions else rt.create_session(rt.NewSession(model_id='test/model'))['id']
+
+
+def files_root():
+    return d.files_root(current_id())
+
+
+def file_api():
+    return '/api/agent/sessions/' + current_id() + '/files'
+
+
+def upload_api():
+    return '/api/agent/sessions/' + current_id() + '/uploads'
+
+
 class CoreModel(BaseChatModel):
     target: str
 
@@ -90,9 +107,8 @@ def client(tmp_path, monkeypatch):
     ws['core_tools'] = {'read_file': False}
     ws['skills'] = [{'name': 'Test skill', 'description': 'Test reusable workflow', 'content': 'Use precise output.', 'enabled': True}]
     d.put('settings', ws)
-    target = str(tmp_path / 'files' / 'hello.txt')
     def build_model(profile, **kwargs):
-        model = CoreModel(target=target)
+        model = CoreModel(target=str(files_root() / 'hello.txt'))
         object.__setattr__(model, '_deep_agent_model_id', profile.id)
         return model
     monkeypatch.setattr('agent.llm.build_chat_model', build_model)
@@ -126,7 +142,7 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     session_id = new_session(client)
     response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'write a file'})
     assert response.status_code == 202, response.text
-    target = tmp_path / 'files' / 'hello.txt'
+    target = files_root() / 'hello.txt'
     assert not target.exists()  # real HITL prevents the actual write
     assert approve(client, session_id).status_code == 202
     saved = client.get('/api/agent/sessions/' + session_id).json()
@@ -150,8 +166,8 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     saved = client.get('/api/agent/sessions/' + session_id).json()
     assert saved['status'] == 'completed', saved
     assert 'restored' in saved['output']
-    assert client.get('/api/agent/files/hello.txt').text == 'from the real kernel'
-    assert client.get('/api/agent/files/%2E%2E/%2E%2E/platform.sqlite').status_code == 404
+    assert client.get(file_api() + '/hello.txt').text == 'from the real kernel'
+    assert client.get(file_api() + '/%2E%2E/%2E%2E/platform.sqlite').status_code == 404
 
 
 def test_completed_session_journal_retains_streams_and_persisted_timestamps(client):
@@ -197,27 +213,30 @@ def test_configuration_snapshot_and_runtime_model_switch(client):
     assert 'secret-adapter-test' not in client.get('/api/agent/sessions').text
 
 
-def test_permission_before_first_message_and_full_access_default(client, tmp_path):
+def test_permission_mode_does_not_disable_default_isolation(client, tmp_path):
     assert client.post('/api/agent/sessions', json={'permission_mode': 'allow'}).status_code == 422
     session_id = new_session(client)
     base = f'/api/agent/sessions/{session_id}'
     record = client.get(base).json()
-    assert record['sandbox_mode'] == 'full-access'
+    assert record['sandbox_mode'] == 'restricted'
     assert record['permission_mode'] == 'ask'
     assert client.put(base + '/permission', json={'mode': 'allow'}).status_code == 422
     assert client.put(base + '/permission', json={'mode': 'allow', 'confirmation': 'ALLOW'}).status_code == 200
     assert client.post(base + '/messages', json={'text': 'write a file'}).status_code == 202
     record = client.get(base).json()
     assert record['status'] == 'completed', record
-    assert (tmp_path / 'files/hello.txt').exists()
+    assert (files_root() / 'hello.txt').exists()
     runner = rt.RUNTIMES[session_id].runner
     assert runner.permission_mode().value == 'allow'
-    assert runner.sandbox_mode() == 'full-access'
+    assert runner.sandbox_mode() == 'restricted'
     # A file outside the file library is visible through the actual full-access backend.
     external = tmp_path / 'host-visible.txt'
     external.write_text('full-access-ok')
     result = runner.prepared.backend.download_files([str(external)])
-    assert result[0].content == b'full-access-ok'
+    assert result[0].error
+    response = client.put(f'/api/agent/sessions/{session_id}/sandbox', json={'mode':'full-access','confirmation':'FULL_ACCESS'})
+    assert response.status_code == 200, response.text
+    assert runner.prepared.backend.download_files([str(external)])[0].content == b'full-access-ok'
     # Platform credentials retain the native protected-file boundary.
     protected = runner.prepared.backend.download_files([str(tmp_path / 'model-config.key')])
     assert protected[0].error
@@ -280,13 +299,13 @@ def test_mcp_config_uses_native_validator(client):
 
 
 def test_shared_file_upload_reaches_real_core(client):
-    response = client.post('/api/agent/uploads', files={'file': ('notes.txt', b'uploaded-content-read-by-native-tool', 'text/plain')})
+    response = client.post(upload_api(), files={'file': ('notes.txt', b'uploaded-content-read-by-native-tool', 'text/plain')})
     assert response.status_code == 201, response.text
     file = response.json()
-    assert client.get('/api/agent/files/' + file['path']).content == b'uploaded-content-read-by-native-tool'
+    assert client.get(file_api() + '/' + file['path']).content == b'uploaded-content-read-by-native-tool'
     assert client.post('/api/agent/workspaces/missing/uploads', files={'file': ('x.txt', b'x')}).status_code == 404
-    assert client.post('/api/agent/uploads', files={'file': ('empty.txt', b'')}).status_code == 422
-    session_id = new_session(client)
+    assert client.post(upload_api(), files={'file': ('empty.txt', b'')}).status_code == 422
+    session_id = current_id()
     url = f'/api/agent/sessions/{session_id}/messages'
     assert client.post(url, json={'text': 'inspect uploaded file', 'upload_ids': [file['id']]}).status_code == 202
     record = client.get('/api/agent/sessions/' + session_id).json()
@@ -296,31 +315,31 @@ def test_shared_file_upload_reaches_real_core(client):
     assert any(e['type'] == 'tool_completed' and 'uploaded-content-read-by-native-tool' in e.get('content', '') for e in d.all_records('event'))
     assert client.post(url, json={'text': 'x', 'upload_ids': [file['id'], file['id']]}).status_code == 422
     other = client.post('/api/agent/sessions', json={'model_id': 'test/model'}).json()
-    assert client.post(f'/api/agent/sessions/{other["id"]}/messages', json={'text': 'hello', 'upload_ids': [file['id']]}).status_code == 202
+    assert client.post(f'/api/agent/sessions/{other["id"]}/messages', json={'text': 'hello', 'upload_ids': [file['id']]}).status_code == 404
 
 
 def test_file_library_download_and_guards(client, tmp_path):
-    root = d.files_root()
+    root = files_root()
     root.mkdir(parents=True, exist_ok=True)
     (root / 'nested').mkdir()
     payload = b'# Hello'
     (root / 'nested' / 'notes.md').write_bytes(payload)
-    response = client.get('/api/agent/files/nested/notes.md')
+    response = client.get(file_api() + '/nested/notes.md')
     assert response.status_code == 200
     assert response.content == payload
     assert response.headers['content-disposition'].startswith('attachment;')
-    assert client.get('/api/agent/files').json() == [
+    assert client.get(file_api()).json() == [
         {'path': 'nested/notes.md', 'size': len(payload)}]
     outside = tmp_path / 'outside.md'
     outside.write_text('private')
     (root / 'link.md').symlink_to(outside)
-    assert client.get('/api/agent/files/link.md').status_code == 404
-    assert client.get('/api/agent/files/%2E%2E/platform.sqlite').status_code == 404
+    assert client.get(file_api() + '/link.md').status_code == 404
+    assert client.get(file_api() + '/%2E%2E/platform.sqlite').status_code == 404
     assert client.get('/api/agent/workspaces/missing/files/notes.md').status_code == 404
 
 
 def test_file_preview_and_edit_endpoints_removed(client):
-    root = d.files_root()
+    root = files_root()
     root.mkdir(parents=True, exist_ok=True)
     notes = root / 'notes.md'
     notes.write_text('Original')
@@ -332,41 +351,35 @@ def test_file_preview_and_edit_endpoints_removed(client):
     assert notes.read_text() == 'Original'
 
 
-@pytest.mark.parametrize('kind,base', [('session', '/api/agent/sessions'), ('task', '/api/tasks')])
-def test_artifact_download_preserves_source(client, kind, base):
-    d.put(kind, {'id': 'artifact-download', })
-    root = d.DATA / 'artifacts' / 'artifact-download'
-    root.mkdir(parents=True)
+def test_artifact_download_preserves_source(client):
+    base='/api/agent/sessions'
+    d.put('session', {'id': 'artifact-download'})
+    root = d.artifact_root('artifact-download')
+    root.mkdir(parents=True, exist_ok=True)
     (root / 'notes.md').write_text('Artifact original')
     response = client.get(f'{base}/artifact-download/artifacts/notes.md')
     assert response.status_code == 200
     assert response.content == b'Artifact original'
     assert response.headers['content-disposition'].startswith('attachment;')
-    assert not (d.files_root() / 'notes.md').exists()
+    assert not (d.files_root('artifact-download') / 'notes.md').exists()
 
 
 def test_upload_size_limit_and_sanitized_filename(client, monkeypatch):
     monkeypatch.setattr(rt, 'MAX_UPLOAD_BYTES', 10)
-    assert client.post('/api/agent/uploads', files={'file': ('big.txt', b'x' * 11)}).status_code == 413
-    response = client.post('/api/agent/uploads', files={'file': ('../../notes.txt', b'hello')})
+    assert client.post(upload_api(), files={'file': ('big.txt', b'x' * 11)}).status_code == 413
+    response = client.post(upload_api(), files={'file': ('../../notes.txt', b'hello')})
     assert response.status_code == 201
     assert response.json()['name'] == 'notes.txt'
     assert response.json()['path'].startswith('uploads/')
 
 
-def test_real_core_cache_usage_and_historical_checkpoint_backfill(client):
+def test_real_core_cache_usage_persists_and_does_not_leak_between_calls(client):
     session_id = new_session(client)
     assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'cached answer'}).status_code == 202
     record = client.get('/api/agent/sessions/' + session_id).json()
     assert record['usage']['input_tokens'] == 1000
     assert record['usage']['cache_read_input_tokens'] == 750
     assert record['usage']['cache_hit_rate'] == 0.75
-    # Existing records stored only top-level token counts; recover actual details
-    # from the native delta checkpoint without making a model request.
-    saved = d.get('session', session_id)
-    saved['usage'].pop('cache_read_input_tokens')
-    saved['usage'].pop('cache_hit_rate')
-    d.put('session', saved)
     rt.initialize()
     assert client.get('/api/agent/sessions/' + session_id).json()['usage']['cache_hit_rate'] == 0.75
     # A later request without cache fields must not inherit the prior hit rate.
@@ -374,29 +387,20 @@ def test_real_core_cache_usage_and_historical_checkpoint_backfill(client):
     assert client.get('/api/agent/sessions/' + session_id).json()['usage']['cache_hit_rate'] is None
 
 
-@pytest.mark.parametrize('entrypoint', ['session', 'legacy'])
-def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch, entrypoint):
-    if entrypoint == 'session':
-        target = d.files_root() / 'delegated.txt'
-        def build_model(profile, **kwargs):
-            model = DelegationModel(target=str(target))
-            object.__setattr__(model, '_deep_agent_model_id', profile.id)
-            return model
-        monkeypatch.setattr('agent.llm.build_chat_model', build_model)
-        monkeypatch.setattr('agent.runner.build_chat_model', build_model)
-        session_id = new_session(client)
-        assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'Delegate an independent file task.'}).status_code == 202
-        record = client.get('/api/agent/sessions/' + session_id).json()
-        assert record['status'] == 'completed', record
-        assert rt.RUNTIMES[session_id].runner.settings.subagents.enabled
-        assert any(e['type'] == 'subagents_changed' and e['result'].get('count') == 1 for e in d.all_records('event'))
-    else:
-        from platform_app.main import run_task
-        target = d.DATA / 'artifacts' / 'legacy-delegation' / 'delegated.txt'
-        record = dict(id='legacy-delegation',  prompt='Delegate an independent file task.', config=d.get('settings', 'global'), status='queued', output='', error=None, revision=1)
-        run_task(record, model=DelegationModel(target=str(target)), raise_errors=True)
-        record = d.get('task', record['id'])
-        assert record['status'] == 'completed', record
+def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch):
+    session_id = new_session(client)
+    target = files_root() / 'delegated.txt'
+    def build_model(profile, **kwargs):
+        model = DelegationModel(target=str(target))
+        object.__setattr__(model, '_deep_agent_model_id', profile.id)
+        return model
+    monkeypatch.setattr('agent.llm.build_chat_model', build_model)
+    monkeypatch.setattr('agent.runner.build_chat_model', build_model)
+    assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'Delegate an independent file task.'}).status_code == 202
+    record = client.get('/api/agent/sessions/' + session_id).json()
+    assert record['status'] == 'completed', record
+    assert rt.RUNTIMES[session_id].runner.settings.subagents.enabled
+    assert any(e['type'] == 'subagents_changed' and e['result'].get('count') == 1 for e in d.all_records('event'))
     assert target.read_text() == 'delegated-ok'
     assert record['output'] == 'Main agent received subagent result.'
 
@@ -417,7 +421,7 @@ def test_global_config_freezes_session_snapshot(client, monkeypatch, tmp_path):
     assert client.put('/api/settings', json=config).status_code == 200
     assert any(s['name'] == 'New skill' for s in client.get('/api/settings').json()['skills'])
     assert all(s['name'] != 'New skill' for s in snapshot['skills'])
-    assert 'workspace_id' not in session
+    assert session['workspace_id'] == rt.resolve(session['id']).workspace_id
     assert client.post(f'/api/agent/sessions/{session["id"]}/messages', json={'text': 'hello'}).status_code == 202
     assert client.get('/api/agent/sessions/' + session['id']).json()['status'] == 'completed'
     runner = rt.RUNTIMES[session['id']].runner
@@ -508,7 +512,7 @@ def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monk
             return self
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             completed = [m for m in messages if isinstance(m, ToolMessage)]
-            root = d.files_root()
+            root = files_root()
             if not completed:
                 name, args = 'docx_init', {'document_id': 'report'}
             else:
@@ -554,8 +558,8 @@ def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monk
     rebuilt = rt.runtime(session_id); rebuilt.build(); rebuilt.artifact_services['docx'].sync()
     assert len([e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]) == 11
     # Internal version database is never downloadable/listed in the file library.
-    assert all('.docx-state' not in item['path'] for item in client.get('/api/agent/files').json())
-    assert client.get('/api/agent/files/.docx-state/report.docx/history.sqlite').status_code == 404
+    assert all('.docx-state' not in item['path'] for item in client.get(file_api()).json())
+    assert client.get(file_api() + '/.docx-state/report.docx/history.sqlite').status_code == 404
 
 
 def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
@@ -563,7 +567,7 @@ def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
     from dataclasses import dataclass
     session_id = new_session(client)
     runtime = rt.runtime(session_id)
-    root = d.files_root(); root.mkdir(parents=True, exist_ok=True)
+    root = files_root(); root.mkdir(parents=True, exist_ok=True)
     runtime.artifact_services['docx'] = Documents(root, lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
     runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
@@ -589,7 +593,7 @@ def test_docx_steering_persists_viewed_revision_and_uses_current_version(client)
     from platform_app.documents import Documents
     from unittest.mock import Mock
     session_id = new_session(client); runtime = rt.runtime(session_id)
-    root = d.files_root()
+    root = files_root()
     runtime.artifact_services['docx'] = Documents(root, lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
     runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
@@ -610,7 +614,7 @@ def test_nested_native_docx_is_tracked_and_downloadable(client):
     from platform_app.documents import Documents
     from docx import Document
     session_id=new_session(client); runtime=rt.runtime(session_id)
-    root=d.files_root(); (root/'reports').mkdir(parents=True)
+    root=files_root(); (root/'reports').mkdir(parents=True)
     document=Document(); document.add_paragraph('Native nested report'); document.save(root/'reports'/'report.docx')
     runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].detect_external()
@@ -631,7 +635,7 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
         doc.save(output/'preview.pdf'); page.get_pixmap().save(output/'page-001.png'); doc.close()
     monkeypatch.setattr(engine.o,'run_render',render)
     session_id=new_session(client); runtime=rt.runtime(session_id)
-    root=d.files_root()
+    root=files_root()
     runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))),live_preview=True)
     docs=runtime.artifact_services['docx']
     docs.execute('init',dict(document_id='report'))
@@ -653,7 +657,7 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
 def test_invalid_native_write_keeps_last_committed_document_visible(client):
     from platform_app.documents import Documents
     session_id=new_session(client); runtime=rt.runtime(session_id)
-    root=d.files_root()
+    root=files_root()
     runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].execute('init',dict(document_id='report'))
     original=(root/'report.docx').read_bytes()
@@ -678,11 +682,58 @@ def test_agent_runs_with_both_format_features_uninstalled(client):
 
 
 def test_native_conversation_storage_is_not_an_output_or_download(client):
-    root=d.files_root();internal=root/'.deepagents'/'conversation_history'
+    root=files_root();internal=root/'.deepagents'/'conversation_history'
     internal.mkdir(parents=True);(internal/'session_private.md').write_text('internal trace')
     (root/'report.txt').write_text('public output')
     assert rt.changed_files(root,{})==[{'path':'report.txt','size':13}]
-    assert client.get('/api/agent/files/.deepagents/conversation_history/session_private.md').status_code==404
-    assert client.get('/api/agent/files').json()==[{'path':'report.txt','size':13}]
+    assert client.get(file_api() + '/.deepagents/conversation_history/session_private.md').status_code==404
+    assert client.get(file_api()).json()==[{'path':'report.txt','size':13}]
     event=rt.public_event(dict(type='output_files',files=[dict(path='.deepagents/conversation_history/session_private.md'),dict(path='report.txt')]))
     assert event['files']==[dict(path='report.txt')]
+
+
+def test_sandbox_confirmation_pending_boundary_and_restart(client):
+    session_id=new_session(client);base=f'/api/agent/sessions/{session_id}'
+    assert client.put(base+'/sandbox',json={'mode':'full-access'}).status_code==422
+    assert client.post('/api/agent/sessions',json={'sandbox_mode':'full-access'}).status_code==422
+    assert client.post(base+'/messages',json={'text':'hello'}).status_code==202
+    runner=rt.RUNTIMES[session_id].runner
+    assert runner.sandbox_mode()=='restricted'
+    record=d.get('session',session_id);record['status']='running';d.put('session',record)
+    response=client.put(base+'/sandbox',json={'mode':'full-access','confirmation':'FULL_ACCESS'})
+    assert response.json()['pending_sandbox_mode']=='full-access'
+    assert runner.sandbox_mode()=='restricted'
+    runner.apply_pending_config_if_idle()
+    assert client.get(base).json()['sandbox_mode']=='full-access'
+    assert client.get(base).json()['pending_sandbox_mode'] is None
+    record=d.get('session',session_id);record['status']='completed';d.put('session',record)
+    runner.close();runner.session_store.close();rt.RUNTIMES.pop(session_id)
+    assert client.post(base+'/messages',json={'text':'hello again'}).status_code==202
+    assert rt.RUNTIMES[session_id].runner.sandbox_mode()=='full-access'
+    assert client.put(base+'/sandbox',json={'mode':'restricted'}).json()['sandbox_mode']=='restricted'
+
+
+
+
+def test_unscoped_host_mcp_is_not_started(client, monkeypatch):
+    config=d.get('settings','global')
+    config['mcp']={'enabled':True,'servers':{'host-files':{'transport':'stdio','command':'/must-not-start','args':[]}}}
+    d.put('settings',config)
+    session_id=new_session(client)
+    assert client.post(f'/api/agent/sessions/{session_id}/messages',json={'text':'hello'}).status_code==202
+    assert client.get('/api/agent/sessions/'+session_id).json()['status']=='completed'
+    assert not any('host-files' in name for name in rt.RUNTIMES[session_id].runner.prepared.model_tool_names)
+    assert any(e['type']=='resource_policy' and e['component']=='mcp' and e['status']=='blocked' for e in rt.journal(session_id,0))
+
+
+def test_failed_native_sandbox_rebuild_keeps_old_policy_and_clears_pending(client,monkeypatch):
+    session_id=new_session(client);base=f'/api/agent/sessions/{session_id}'
+    client.post(base+'/messages',json={'text':'hello'})
+    backend=rt.RUNTIMES[session_id].runner.prepared.backend
+    def fail(mode):raise ValueError('Simulated invalid mount')
+    monkeypatch.setattr(backend,'apply_sandbox_mode',fail)
+    response=client.put(base+'/sandbox',json={'mode':'full-access','confirmation':'FULL_ACCESS'})
+    assert response.status_code==503
+    record=client.get(base).json()
+    assert record['sandbox_mode']=='restricted' and record['pending_sandbox_mode'] is None
+    assert any(e['type']=='runtime_config_failed' for e in rt.journal(session_id,0))

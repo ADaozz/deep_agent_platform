@@ -32,7 +32,7 @@ def create_router(host, DocumentStore):
         if document_id not in record.get('documents', {}):
             raise HTTPException(404, '文档不属于当前会话')
         try:
-            root = d.files_root()
+            root = d.files_root(session_id)
             path = root / record['documents'][document_id]['path']
             if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()) or '.docx-state' in path.relative_to(root).parts:
                 raise ValueError('Invalid document path')

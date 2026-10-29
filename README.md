@@ -1,6 +1,6 @@
 # Deep Agent Platform
 
-基于 Vue 3 + Vite 的Agent 界面，视觉与交互参考用户提供的 `cursor-agents-replica.zip`。FastAPI 托管构建产物和 API，所有新会话由 [ADaozz/deep_agent_cli](https://github.com/ADaozz/deep_agent_cli) 的 `AgentSpec` / `build_agent` / `AgentRunner` 执行，固定提交 `f190baa2e08a160f1cf8e2c1575cf3261e0bd826`，没有复制推理循环。
+基于 Vue 3 + Vite 的 Agent 界面，视觉与交互参考用户提供的 `cursor-agents-replica.zip`。FastAPI 托管构建产物和 API，所有新会话由 [ADaozz/deep_agent_cli](https://github.com/ADaozz/deep_agent_cli) 的 `AgentSpec` / `build_agent` / `AgentRunner` 执行，固定提交 `7faddcb00220bbe169a781d14efab42cbd5be720`，没有复制推理循环。
 
 这是本机单用户服务，监听 `127.0.0.1:8080`，尚无账号认证和多人租户隔离。
 
@@ -14,7 +14,7 @@ python3 -m venv .venv
 npm --prefix frontend install
 node --test tests/*.test.mjs
 npm --prefix frontend run build
-.venv/bin/uvicorn platform_app.main:app --host 127.0.0.1 --port 8080
+PLATFORM_DATA_DIR=.platform-thread .venv/bin/uvicorn platform_app.main:app --host 127.0.0.1 --port 8080
 ```
 
 打开 `http://127.0.0.1:8080`。点击左下角 Settings 或输入框模型菜单的 Manage models，添加模型来源、模型 ID、Base URL、API Key、API 协议和支持的思考强度。未配置模型时可编辑 Agent 设置，发送任务会明确提示缺少配置。
@@ -25,7 +25,7 @@ npm --prefix frontend run build
 
 右上角提供浅色／夜间模式与中文／English 切换。首次打开跟随系统配色和浏览器语言，手动选择保存在本地浏览器，刷新后继续生效。界面标签、菜单、配置弹窗、状态提示和日期随语言更新；用户的会话内容与配置保持原文。侧栏文件入口为 Filebase（文件库）。
 
-文件库展示统一文件库并提供下载；聊天附件和输出文件块可点击直接下载。DOCX 和 PPTX 是两个独立、可卸载的扩展，可在侧栏「扩展功能」中分别启用、停用或卸载，不与主 Agent 执行逻辑耦合；卸载不删除产物与版本。部署方式见 [可选 Office 功能](docs/optional-office-features.md)。
+会话文件页展示当前 Thread 的私有文件并提供下载；聊天附件和输出文件块可点击直接下载。DOCX 和 PPTX 是两个独立、可卸载的扩展，可在侧栏「扩展功能」中分别启用、停用或卸载，不与主 Agent 执行逻辑耦合；卸载不删除产物与版本。部署方式见 [可选 Office 功能](docs/optional-office-features.md)。
 
 DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PPTX 逐元素构建，提供缩略图、即时原生元素预览及完成页的正式渲染。两者只读、支持运行中纠偏，最终文件保持可编辑。未完成实际视觉审查时标记草稿。详见 [DOCX 说明](docs/docx-streaming.md) 和 [PPTX Skill](pptx-ooxml-skill/README.md)。
 
@@ -33,23 +33,23 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 - 统一 Agent 设置，可编辑系统提示词、规则、原生工具开关、额外 Office 工具和 Skill。
 - 切换模型和思考强度，支持 Chat Completions 与 Responses。运行中的修改交给内核在安全边界应用。会话创建后新增的模型需新建会话使用。
 - 持久化多轮会话与 SSE 流式执行时间线：思考摘要、工具调用和执行结果按实际发生顺序纵向展示，各个调用独立保留。运行内容最多显示五行，内部滚动并自动跟随最新内容；向上浏览时暂停跟随。步骤结束自动收成一行，Agent 本轮真正结束后再收成一行任务概要。点击可展开完整输入、输出与历史，刷新重连后仍可恢复。
-- 输入框底部显示最近一次模型请求的输入 Token 和缓存命中率（缓存读取的输入 Token / 总输入 Token），支持 DeepSeek 和兼容接口的真实统计。未返回统计时显示 `—`，明确返回零命中时显示 `0%`；悬停可查看命中与输入 Token。历史会话可从原生 checkpoint 补齐缓存字段，无需重新调用模型。
-- 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话与兼容任务接口均启用原生 `task` / `read_subagent_log`，按 CLI 默认策略委派子 Agent，并保留并发控制、取消传播与结果返回。
-- 输入框加号直接上传文件，每条消息最多 10 个文件、每个 20MB。文件存入统一文件库，随消息传入可供 Agent 读取的路径；若模型支持图片输入，则最多 4 张符合条件的图片同时通过内核图片附件接口发送。
-- 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认，与 CLI 一致。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具并开放沙箱网络，MCP 工具仍在宿主运行。
-- 文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的文件以文件块展示，点击直接下载；原版任务历史保留。
+- 输入框底部显示最近一次模型请求的输入 Token 和缓存命中率（缓存读取的输入 Token / 总输入 Token），支持 DeepSeek 和兼容接口的真实统计。未返回统计时显示 `—`，明确返回零命中时显示 `0%`；悬停可查看命中与输入 Token。使用当前布局持久化记录中的真实统计值。
+- 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话启用原生 `task` / `read_subagent_log`，按 CLI 默认策略委派子 Agent，并保留并发控制、取消传播与结果返回。
+- 输入框加号直接上传文件，每条消息最多 10 个文件、每个 20MB。文件存入当前 Thread 的私有文件库，随消息传入可供 Agent 读取的路径；若模型支持图片输入，则最多 4 张符合条件的图片同时通过内核图片附件接口发送。
+- 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认，与 CLI 一致。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具，不改变文件系统隔离模式；restricted 下 execute 始终隔离宿主网络。未提供 Thread 作用域适配的宿主 MCP 服务不会启动。
+- 文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的文件以文件块展示，点击直接下载。
 
 ## 工具、Skill 和 MCP
 
 侧栏「Agent 设置」统一配置提示词、规则、工具、Skill 和 MCP。所有新会话使用这份配置，已有会话保留各自的配置快照。平台不再提供工作区创建、切换、资源聚合、按工作区筛选或独立文件目录。
 
-**Core tools** 通过全局设置控制原生工具是否对模型可见。`write_todos` 已从平台移除，主 Agent、子 Agent 与兼容接口均不向模型暴露该工具。未启用的工具通过内核 `hidden_tools` 排除。联网工具直接使用 DeepSeek [Search / Fetch API](https://api-docs.deepseek.com/guides/search/)：`web_search` → `POST https://api.deepseek.com/v1/tools/search`，`web_fetch` → `POST https://api.deepseek.com/v1/tools/fetch`。复用模型配置中 DeepSeek 官方接口的 API Key；不注册 Tavily，不读取其环境变量，也没有回退。两项工具按全局开关控制，ask 模式均需审批。沙箱默认使用 `full-access`，可以访问虚拟机真实文件系统；平台配置、密钥及内核安装仍按原生机制保护。`full-access` 与工具审批独立，默认 Permission 仍为 `ask`。沙箱不可用时明确失败，不降级成宿主 shell 或假回答。
+**Core tools** 通过全局设置控制原生工具是否对模型可见。`write_todos` 已从平台移除，主 Agent 与子 Agent 均不向模型暴露该工具。未启用的工具通过内核 `hidden_tools` 排除。联网工具直接使用 DeepSeek [Search / Fetch API](https://api-docs.deepseek.com/guides/search/)：`web_search` → `POST https://api.deepseek.com/v1/tools/search`，`web_fetch` → `POST https://api.deepseek.com/v1/tools/fetch`。复用模型配置中 DeepSeek 官方接口的 API Key；不注册 Tavily，不读取其环境变量，也没有回退。两项工具按全局开关控制，ask 模式均需审批。沙箱默认使用 `restricted`，每个 Thread 独享文件、HOME/TMP 及只读 Skill 快照；切换 `full-access` 需单独输入 `FULL_ACCESS`。工具审批独立，默认 Permission 仍为 `ask`。沙箱不可用时明确失败，不降级成宿主 shell 或假回答。
 
 **Additional tools** 保留已注册的 XLSX Python 处理器，DOCX/PPTX 由独立扩展提供。可编辑启用状态、description 和 JSON Schema；参数名与必填字段必须兼容处理器，调用时验证两层 schema，不能通过 JSON 注入任意处理器。
 
 **Skills** 展示 CLI 已安装技能及已有配置中的技能，可全局启用或停用。每个会话生成独立的标准 `SKILL.md` 快照，以只读 `/agent-skills/` 目录挂载，由原生 Skills 中间件按需加载。Skill 不会作为全文重复注入系统提示词。
 
-**MCP servers** 在工具设置中使用原生 MCP JSON 格式，配置由 `MCPManager` 解析与连接。例如：
+**MCP servers** 可在工具设置中保留原生 MCP JSON 配置。尚未提供 Thread 作用域适配的服务不会启动；原生 `MCPManager` 不会被当作文件隔离边界。例如：
 
 ```json
 {
@@ -66,9 +66,9 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 
 支持 `stdio` 和 `streamable_http`，凭据使用 `token_env` / `env_passthrough` 引用。MCP 的 OAuth 浏览器登录、全局 CLI 快捷键及终端专属显示未移植到网页。
 
-配置变更用于新会话；已有会话保留创建时的提示词、规则、工具、Skill 和 MCP 快照。所有会话共用 `.platform/files/` 文件库；上传与下载分别使用 `/api/agent/uploads`、`/api/agent/files`。全局配置使用 `/api/settings`，兼容任务创建使用 `/api/tasks`。旧工作区 API 已删除。
+配置变更用于新会话；已有会话保留提示词、规则、工具及 Skill 快照。文件上传、下载、Office 服务与 checkpoint 均按 Thread 解析。界面不恢复旧版工作区管理功能，内部通过持久化关联为 Thread 自动分配 Workspace。
 
-首次升级会将旧文件及版本目录复制到统一文件库的 `imported/<原标识>/`，并更新会话、附件、文档及下载引用；同名报告不会相互覆盖。旧任务产物导入 `.platform/artifacts/<任务或会话 ID>/`，旧磁盘目录保留为备份，迁移完成后不再参与新会话。导入可重试，不覆盖已经导入的文件。
+隔离策略、目录布局、独立内核 PR 与 MCP 边界见 [Thread 文件与沙箱隔离](docs/thread-isolation.md)。不兼容旧共享目录、旧 checkpoint 或旧任务 API，不提供迁移；旧布局启动会明确报错。请使用新的 `PLATFORM_DATA_DIR`，重新配置模型和 Agent 设置。旧数据不删除、不导入。
 
 ## 模型配置
 
@@ -106,7 +106,7 @@ Default 思考强度表示不向模型端点发送强度参数；其余选项来
 - `platform_app/runtime.py`：内核的 HTTP 展示适配器；原生 Runner 持久化 checkpoint、审批与执行，适配层不实现 Agent 推理循环。
 - `platform_app/domain.py`：SQLite 全局配置、历史记录及 Office 工具。
 - `platform_app/models.py`：CLI 兼容的模型配置、密钥加密与脱敏。
-- `platform_app/main.py`：FastAPI 入口，保留原版任务 API 与下载接口。
+- `platform_app/main.py`：FastAPI 入口、全局配置与扩展路由。
 
 `.platform/` 保存数据库、加密密钥、会话 checkpoint、事件日志、Skill 快照、文件库文件和 Office 产物。可用 `PLATFORM_DATA_DIR` 指定外部持久目录。请将 `.platform/model-config.key` 与数据库一起备份；它不替代生产密钥服务。服务重启不会自动重试未完成的写操作，原生 checkpoint 支持后续恢复。
 

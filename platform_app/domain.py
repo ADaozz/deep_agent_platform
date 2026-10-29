@@ -35,12 +35,14 @@ def defaults():
         tools=[{'name': name, 'description': f'创建真实的 {name[7:].upper()} 文件并返回文件名。', 'schema': copy.deepcopy(value), 'enabled': True} for name, value in TOOL_SCHEMAS.items()], revision=1)
 
 
-def files_root():
-    return DATA / 'files'
+def files_root(thread_id):
+    from .workspace import resolve
+    return resolve(thread_id).files_root
 
 
 def artifact_root(record_id):
-    return DATA / 'artifacts' / record_id
+    from .workspace import resolve
+    return resolve(record_id).artifacts_root
 
 
 def db():
@@ -70,14 +72,19 @@ def all_records(kind):
 
 
 def init():
-    from .migrations import remove_workspaces
-    remove_workspaces()
-    if not all_records('settings'):
-        put('settings', defaults())
-    for task in all_records('task'):
-        if task['status'] in ('queued', 'running'):
-            task.update(status='failed', error='服务已重启，请创建新任务重试。')
-            put('task', task)
+    from .workspace import PlatformPolicy
+    PlatformPolicy.load()
+    with LOCK:
+        try:
+            layout = get('platform', 'storage-layout')
+        except KeyError:
+            if any(all_records(kind) for kind in ('workspace', 'session', 'task', 'event', 'upload', 'thread_workspace')) or any((DATA / name).exists() for name in ('files','runtime','artifacts')):
+                raise RuntimeError('旧数据布局不受支持：请使用新的 PLATFORM_DATA_DIR；旧数据不会自动迁移或删除。')
+            layout = put('platform', dict(id='storage-layout', version='thread-v1'))
+        if layout.get('version') != 'thread-v1':
+            raise RuntimeError('不支持此数据布局：请使用新的 PLATFORM_DATA_DIR。')
+        if not all_records('settings'):
+            put('settings', defaults())
 
 
 def native_skills():
@@ -144,16 +151,10 @@ def validate_config(value):
 
 
 class ToolAdapter:
-    def __init__(self, config, task_id):
+    def __init__(self, config, thread_id):
         self.config = copy.deepcopy(config)
-        self.config['tools'] = [t for t in self.config.get('tools', []) if t['name'] not in ('create_docx','create_pptx')]
-        self.root = artifact_root(task_id)
+        self.root = files_root(thread_id)
         self.root.mkdir(parents=True, exist_ok=True)
-
-    @property
-    def instructions(self):
-        from .format_plugins import instructions
-        return instructions() + '\n\n' + '\n\n'.join([self.config['system_prompt'], '\n'.join(self.config['rules']), *[f"技能：{s['name']}\n{s['content']}" for s in self.config['skills']]])
 
     def execute(self, name, arguments):
         tool = next((t for t in self.config['tools'] if t['name'] == name and t['enabled']), None)
@@ -172,7 +173,7 @@ class ToolAdapter:
             doc.save(path)
         return {'filename': path.name, 'type': extension}
 
-    def tools(self, include_artifacts=True):
+    def tools(self):
         from langchain_core.tools import StructuredTool
         tools = []
         for tool in self.config['tools']:
@@ -180,7 +181,4 @@ class ToolAdapter:
                 def invoke(_name=tool['name'], **kwargs):
                     return self.execute(_name, kwargs)
                 tools.append(StructuredTool.from_function(func=invoke, name=tool['name'], description=tool['description'], args_schema=tool['schema']))
-        if include_artifacts:
-            from .format_plugins import build_services
-            tools.extend(tool for service in build_services(self.root,self.root.name,lambda event:None).values() for tool in service.tools())
         return tools

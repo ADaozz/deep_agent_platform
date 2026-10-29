@@ -54,62 +54,15 @@ def test_office_files(client, name, args, entry):
 
 def test_validation_and_missing_provider(client, monkeypatch):
     monkeypatch.delenv('PLATFORM_API_KEY', raising=False)
-    assert client.post('/api/tasks',json={'prompt':'make a doc'}).status_code == 503
+    assert client.post('/api/agent/sessions',json={}).status_code == 503
     config = d.get('settings', 'global')
     config['tools'][0]['name'] = 'execute'
     assert client.put('/api/settings',json=config).status_code == 422
     assert client.get('/api/tasks/nonexistent/artifacts/a.docx').status_code == 404
 
 
-def test_task_file_download(client):
-    d.put('task', dict(id='download',status='completed'))
-    adapter = d.ToolAdapter(d.get('settings', 'global'),'download')
-    from platform_app.documents import Documents
-    docs = Documents(adapter.root)
-    docs.execute('init', dict(document_id='report'))
-    docs.execute('apply_one', dict(document_id='report', operation_id='p1', base_revision=0, operation=dict(type='append_paragraph', block_id='body', text='Body')))
-    result = {'filename': 'report.docx'}
-    response = client.get('/api/tasks/download/artifacts/' + result['filename'])
-    assert response.status_code == 200
-    assert response.content[:2] == b'PK'
-    assert client.get('/api/tasks/download').json()['artifacts'] == [result['filename']]
 
 
-def test_real_core_executes_optional_tool(client):
-    from langchain_core.language_models.chat_models import BaseChatModel
-    from langchain_core.messages import AIMessage, ToolMessage
-    from langchain_core.outputs import ChatGeneration, ChatResult
-    from platform_app.main import run_task
-
-    class ScriptedModel(BaseChatModel):
-        @property
-        def _llm_type(self):
-            return 'scripted-integration-test'
-
-        def bind_tools(self, tools, **kwargs):
-            names = [t.get('name') if isinstance(t, dict) else t.name for t in tools]
-            assert 'create_docx' not in names
-            assert 'docx_init' in names
-            assert 'docx_apply_one' in names
-            assert 'execute' in names
-            assert 'read_file' in names
-            assert 'task' in names
-            assert 'write_todos' not in names
-            return self
-
-        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-            if any(isinstance(m, ToolMessage) for m in messages):
-                msg = AIMessage(content='文档已生成。')
-            else:
-                msg = AIMessage(content='', tool_calls=[{'name':'docx_init','args':{'document_id':'test-report'},'id':'office-call','type':'tool_call'}])
-            return ChatResult(generations=[ChatGeneration(message=msg)])
-
-    record = dict(id='core-test',prompt='生成文档',config=d.get('settings', 'global'),status='queued',output='',error=None,revision=1)
-    run_task(record, model=ScriptedModel(), raise_errors=True)
-    saved = d.get('task','core-test')
-    assert saved['status'] == 'completed', saved
-    assert '文档已生成' in saved['output']
-    assert list((d.DATA / 'artifacts' / 'core-test').glob('*.docx'))
 
 
 def model_configuration(api='responses', key='private-test-key'):
@@ -149,24 +102,23 @@ def test_core_model_protocol_and_effort(client, api):
     model.http_client.close()
 
 
-def test_task_model_snapshot_and_invalid_effort(client, monkeypatch):
-    from platform_app import main, models
-    monkeypatch.setattr(main.POOL, 'submit', lambda *args: None)
+def test_session_model_snapshot_and_invalid_effort(client, monkeypatch):
+    from platform_app import models
     assert client.put('/api/models',json={'llm':model_configuration(),'revision':0}).status_code == 200
-    bad = client.post('/api/tasks',json={'prompt':'test','model_id':'provider/demo','reasoning_effort':'xhigh'})
+    bad = client.post('/api/agent/sessions',json={'model_id':'provider/demo','reasoning_effort':'xhigh'})
     assert bad.status_code == 422
-    task = client.post('/api/tasks',json={'prompt':'test','model_id':'provider/demo','reasoning_effort':'high'})
-    assert task.status_code == 202, task.text
+    task = client.post('/api/agent/sessions',json={'model_id':'provider/demo','reasoning_effort':'high'})
+    assert task.status_code == 201, task.text
     task = task.json()
     assert 'model_snapshot' not in task
     assert task['model_id'] == 'provider/demo' and task['reasoning_effort'] == 'high'
     edited = model_configuration('chat_completions')
     client.put('/api/models',json={'llm':edited,'revision':1})
-    stored = d.get('task',task['id'])
+    stored = d.get('session',task['id'])
     frozen = models.unseal(stored['model_snapshot']['encrypted'])
     assert frozen['models']['provider']['api'] == 'responses'
-    assert 'model_snapshot' not in client.get('/api/tasks/'+task['id']).json()
-    assert 'private-test-key' not in client.get('/api/tasks').text
+    assert 'model_snapshot' not in client.get('/api/agent/sessions/'+task['id']).json()
+    assert 'private-test-key' not in client.get('/api/agent/sessions').text
 
 
 def test_env_reference_and_invalid_default(client, monkeypatch):
@@ -175,7 +127,7 @@ def test_env_reference_and_invalid_default(client, monkeypatch):
     response=client.put('/api/models',json={'llm':config,'revision':0})
     assert response.status_code == 200
     assert not response.json()['profiles'][0]['configured']
-    assert client.post('/api/tasks',json={'prompt':'test'}).status_code == 422
+    assert client.post('/api/agent/sessions',json={}).status_code == 422
     config['default']='provider/missing'
     assert client.put('/api/models',json={'llm':config,'revision':1}).status_code == 422
 

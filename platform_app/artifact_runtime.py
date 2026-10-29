@@ -1,6 +1,6 @@
 """Format-neutral artifact transactions, snapshots, event journal and recovery.
 
-The legacy blob column is named docx for on-disk compatibility; it stores bytes
+The snapshot blob column is named docx; it stores bytes
 of any supported artifact. This module never plans or executes Agent work.
 """
 from contextlib import contextmanager
@@ -117,3 +117,19 @@ class ArtifactStore:
 
     def prepare_restore(self,c,state,revision):
         return state
+
+
+def validate_embedded_resources(path):
+    """Do not let a host Office renderer resolve external files or data links."""
+    from urllib.parse import urlsplit
+    from xml.etree import ElementTree
+    import zipfile
+    with zipfile.ZipFile(path) as package:
+        for name in package.namelist():
+            if not name.endswith('.rels'):continue
+            for relation in ElementTree.fromstring(package.read(name)):
+                if relation.get('TargetMode') != 'External':continue
+                target = urlsplit(relation.get('Target', ''))
+                hyperlink = relation.get('Type', '').endswith('/hyperlink')
+                if not hyperlink or target.scheme not in ('http','https') or not target.hostname or target.username is not None or target.password is not None:
+                    raise ValueError('External Office resource is outside the Thread scope; embed the resource before previewing')

@@ -16,7 +16,7 @@ charset-normalizer==3.5.2
 click==8.5.0
 cryptography==50.0.2
 cyclopts==5.3.2
-deep-agent-cli @ git+https://github.com/ADaozz/deep_agent_cli.git@f190baa2e08a160f1cf8e2c1575cf3261e0bd826
+deep-agent-cli @ git+https://github.com/ADaozz/deep_agent_cli.git@7faddcb00220bbe169a781d14efab42cbd5be720
 deepagents==0.7.32
 distro==1.9.0
 dnspython==2.9.0

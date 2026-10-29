@@ -27,7 +27,7 @@ class FormattingModel(BaseChatModel):
     def bind_tools(self,tools,**kwargs): return self
     def _generate(self,messages,**kwargs):
         time.sleep(.08)
-        root=d.files_root(); root.mkdir(parents=True,exist_ok=True)
+        root=d.files_root([r for r in d.all_records('session') if r['status']=='running'][-1]['id']); root.mkdir(parents=True,exist_ok=True)
         path=root/'report.docx'
         if not path.exists():
             make_assets(root)

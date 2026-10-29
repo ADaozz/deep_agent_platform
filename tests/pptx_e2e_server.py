@@ -22,7 +22,7 @@ class Model(BaseChatModel):
     def bind_tools(self,tools,**kwargs):return self
     def _generate(self,messages,**kwargs):
         time.sleep(.13)
-        root=d.files_root();root.mkdir(parents=True,exist_ok=True)
+        root=d.files_root([r for r in d.all_records('session') if r['status']=='running'][-1]['id']);root.mkdir(parents=True,exist_ok=True)
         path=root/'project-report.pptx'
         if not path.exists():
             template=make_template(root);name,args='pptx_init',dict(presentation_id='project-report',template=template.name)

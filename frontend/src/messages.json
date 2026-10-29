@@ -71,10 +71,6 @@
     "zh": "所有对话",
     "en": "All chats"
   },
-  "PREVIOUS TASK": {
-    "zh": "历史任务",
-    "en": "PREVIOUS TASK"
-  },
   "Connect a model to get started": {
     "zh": "连接模型，开始使用",
     "en": "Connect a model to get started"
@@ -156,8 +152,8 @@
     "en": "Auto-approve in sandbox"
   },
   "Auto-approve 会自动执行工具并开放沙箱网络；MCP 仍在宿主执行。": {
-    "zh": "自动批准会执行所有工具并开放沙箱网络；MCP 仍在宿主执行。",
-    "en": "Auto-approve runs tools and enables sandbox networking; MCP still runs on the host."
+    "zh": "自动批准工具调用，包括写入和删除。restricted 下命令仍隔离宿主网络；full-access 下可开放命令网络。未适配 Thread 作用域的 MCP 不会启动。切回 ask 不会停止已运行的操作。",
+    "en": "Auto-approve tool calls, including writes and deletes. Restricted commands remain isolated from host networking; full-access commands may use networking. MCP servers without Thread scoping stay disabled. Switching to ask does not stop running work."
   },
   "Compact context": {
     "zh": "压缩上下文",
@@ -226,10 +222,6 @@
   "关闭错误": {
     "zh": "关闭错误",
     "en": "Dismiss error"
-  },
-  "Previous task": {
-    "zh": "历史任务",
-    "en": "Previous task"
   },
   "A little idea. A new beginning.": {
     "zh": "一个小想法，一次新开始。",
@@ -772,8 +764,8 @@
     "en": "The server restarted and interrupted this turn. Send a new message to resume the chat."
   },
   "Filebase": {
-    "zh": "文件库",
-    "en": "Filebase"
+    "zh": "会话文件",
+    "en": "Thread files"
   },
   "e.g. openai": {
     "zh": "例如：openai",
@@ -872,8 +864,8 @@
     "en": "Ask before file changes, commands, web search and MCP operations."
   },
   "permission.allowDescription": {
-    "zh": "自动批准全部工具调用，开放沙箱网络。",
-    "en": "Auto-approve all tools and enable sandbox networking."
+    "zh": "自动批准工具调用，包括写入和删除。restricted 下命令仍隔离宿主网络；full-access 下可开放命令网络。未适配 Thread 作用域的 MCP 不会启动。切回 ask 不会停止已运行的操作。",
+    "en": "Auto-approve tool calls, including writes and deletes. Restricted commands remain isolated from host networking; full-access commands may use networking. MCP servers without Thread scoping stay disabled. Switching to ask does not stop running work."
   },
   "permission.pending": {
     "zh": "已排队，将在内核安全边界生效。",
@@ -884,16 +876,16 @@
     "en": "Permission mode updated."
   },
   "sandbox.fullAccess": {
-    "zh": "沙箱默认 full-access，可访问虚拟机文件系统；工具是否审批由 Permission 控制。",
-    "en": "Sandbox defaults to full-access with access to the VM filesystem. Permission controls tool approval."
+    "zh": "高权限文件访问模式，可访问宿主允许的其他目录；不保证会话之间的文件隔离。",
+    "en": "High privilege filesystem access can reach other host directories; Thread filesystem isolation is not guaranteed."
   },
   "permission.confirmTitle": {
     "zh": "启用 ALLOW？",
     "en": "Enable ALLOW?"
   },
   "permission.allowWarning": {
-    "zh": "与 CLI 一致：自动批准全部工具，包括写入、删除和宿主 MCP；命令可访问网络。切回 ask 不会停止已经运行的操作。",
-    "en": "As in the CLI, ALLOW auto-approves all tools, including writes, deletes and host MCP, and enables command networking. Switching back to ask does not stop work already running."
+    "zh": "自动批准工具调用，包括写入和删除。restricted 下命令仍隔离宿主网络；full-access 下可开放命令网络。未适配 Thread 作用域的 MCP 不会启动。切回 ask 不会停止已运行的操作。",
+    "en": "Auto-approve tool calls, including writes and deletes. Restricted commands remain isolated from host networking; full-access commands may use networking. MCP servers without Thread scoping stay disabled. Switching to ask does not stop running work."
   },
   "permission.typeAllow": {
     "zh": "输入 ALLOW 确认",
@@ -1468,8 +1460,8 @@
     "en": "Agent settings"
   },
   "Files": {
-    "zh": "文件库",
-    "en": "Files"
+    "zh": "会话文件",
+    "en": "Thread files"
   },
   "Local files": {
     "zh": "本地文件",
@@ -1491,10 +1483,6 @@
     "zh": "此设置没有额外的 Office 工具，仍可使用上方内核工具。",
     "en": "No extra Office tools in this settings. Core tools remain available above."
   },
-  "会话共用的文件库": {
-    "zh": "所有会话共用的文件库",
-    "en": "Shared file library for all chats"
-  },
   "skills.configured": {
     "zh": "已配置的技能",
     "en": "Configured skill"
@@ -1502,5 +1490,41 @@
   "设置已保存；新会话使用新配置": {
     "zh": "设置已保存；新会话使用新配置",
     "en": "Settings saved; new chats use the updated configuration"
+  },
+  "sandbox.restricted": {
+    "zh": "当前会话独享文件、HOME 和 TMP；execute 不共享宿主网络，联网检索使用受控工具。",
+    "en": "Private files, HOME and TMP. Execute cannot share host networking; use the controlled web tools."
+  },
+  "sandbox.independentPermission": {
+    "zh": "工具审批与文件系统隔离独立；allow 不会自动开启 full-access。",
+    "en": "Tool approval is independent of filesystem isolation. Allow does not enable full-access."
+  },
+  "sandbox.confirmWarning": {
+    "zh": "full-access 会放宽文件系统隔离，可以访问其他宿主目录。平台密钥和内部状态仍受保护。只对当前会话生效。",
+    "en": "Full-access relaxes filesystem isolation for this Thread and can reach other host directories. Platform secrets and internal state remain protected."
+  },
+  "sandbox.typeConfirmation": {
+    "zh": "输入 FULL_ACCESS 确认",
+    "en": "Type FULL_ACCESS to confirm"
+  },
+  "sandbox.enableFull": {
+    "zh": "启用 full-access",
+    "en": "Enable full-access"
+  },
+  "sandbox.pending": {
+    "zh": "文件系统模式变更将在下一个安全边界生效",
+    "en": "Filesystem mode change will apply at the next safe boundary"
+  },
+  "当前会话的文件库": {
+    "zh": "当前会话独享的文件库",
+    "en": "Private file library for the current Thread"
+  },
+  "sandbox.mcpScope": {
+    "zh": "MCP 配置可保留。通用宿主 MCP 服务尚无 Thread 作用域适配，因此当前不会启动；不会把宿主访问能力当作沙箱内工具。",
+    "en": "MCP configuration is retained. Generic host MCP servers are not started until a Thread-scoped adapter is available; host access is not treated as sandboxed."
+  },
+  "sandbox.title": {
+    "zh": "文件系统隔离",
+    "en": "Filesystem isolation"
   }
 }

@@ -3,6 +3,7 @@ import importlib.util
 import hashlib
 import os
 from pathlib import Path
+from platform_app.artifact_runtime import validate_embedded_resources
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -41,7 +42,7 @@ class Documents:
 
     def bind_state(self,record):
         self.bound_paths = {identity: item['path'] for identity, item in record.get('documents', {}).items()}
-        self.cursors=dict(record.get('artifact_cursors',{}).get('docx',record.get('document_cursors',{})))
+        self.cursors=dict(record.get('artifact_cursors',{}).get('docx',{}))
         for path in self.paths():
             relative=path.relative_to(self.root).as_posix()
             if relative not in self.cursors and not any(doc.get('path')==relative for doc in record.get('documents',{}).values()):
@@ -81,6 +82,7 @@ class Documents:
                     state = store.status(committed=True)
                     if state.get('preview_revision', -1) >= state['revision']:
                         break
+                    validate_embedded_resources(path)
                     store.preview(state['revision'])
                     self.sync()
                 except Exception as exc:
@@ -142,6 +144,7 @@ class Documents:
                 try:
                     relative = path.relative_to(self.root).as_posix()
                     identity = path.stem if len(Path(relative).parts) == 1 and engine.ID.fullmatch(path.stem) else 'external-' + hashlib.sha256(relative.encode()).hexdigest()[:20]
+                    validate_embedded_resources(path)
                     result = DocumentStore(path).track_external(identity)
                     if result:
                         self.schedule_preview(path)
@@ -170,6 +173,7 @@ class Documents:
         self.root.mkdir(parents=True, exist_ok=True)
         path = self.document_path(document_id)
         store = DocumentStore(path)
+        if path.is_file(): validate_embedded_resources(path)
         try:
             if action == 'init':
                 template = arguments.get('template')
@@ -177,6 +181,7 @@ class Documents:
                     template = (self.root / template).resolve()
                     if not template.is_relative_to(self.root.resolve()) or not template.is_file():
                         raise ValueError('Template must be a library file')
+                    validate_embedded_resources(template)
                 return store.init(document_id, template, arguments.get('mode', 'normal'))
             if action == 'apply_one':
                 return store.apply_one({k: arguments[k] for k in ('document_id', 'operation_id', 'base_revision', 'operation')}, self.root)

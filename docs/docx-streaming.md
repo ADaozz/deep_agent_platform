@@ -23,7 +23,7 @@
 
 ### 数据与恢复
 
-正式产物位于统一文件库 `<document_id>.docx`。旁边的 `.docx-state/<filename>/history.sqlite` 保存每个 revision 的完整 DOCX、请求、结果和事件；`render-000000NN/` 保存不可变 PDF、PNG 和检查结果。不要只保留正式文件而删除恢复目录。该内部目录不会出现在文件列表或下载接口中。
+正式产物位于当前 Thread 的私有文件目录 `<document_id>.docx`。旁边的 `.docx-state/<filename>/history.sqlite` 保存每个 revision 的完整 DOCX、请求、结果和事件；`render-000000NN/` 保存不可变 PDF、PNG 和检查结果。不要只保留正式文件而删除恢复目录。该内部目录不会出现在文件列表或下载接口中。
 
 跨进程锁串行化单文档写入。先验证候选包，再提交 SQLite；随后通过 fsync + 原子替换发布正式文件。`pending_publish` 用于恢复数据库提交后、正式文件替换前的崩溃。失败请求不创建 revision；相同 operation ID 和请求返回原提交结果，ID 重用但请求不同会拒绝。恢复历史版本是一笔新提交，revision 永不回退。
 
@@ -81,3 +81,5 @@ CHROMIUM_PATH=/usr/bin/chromium npm --prefix frontend run test:e2e:docx
 独立安装与卸载方式见 [可选 Office 功能](optional-office-features.md)。引擎、平台适配器、HTTP 接口与预览组件都位于 DOCX 功能目录内，主 Agent 仅通过通用注册器使用它。
 
 拆分为独立功能后的双端浏览器并行验收再次测得：DOCX 提交到 SSE P95 139.28 ms，页面解码与替换 P95 326.60 ms，含后台排版等待的完整分页更新 P95 9219.12 ms。并行负载下的实际分页时延仍未达到 1 秒目标。
+
+Thread 隔离与旧接口删除后的回归仍生成 12 页、112 个版本，无浏览器脚本错误。本轮端到端测量：提交到 SSE P95 234.34 ms，页面解码 P95 859.80 ms，包含排版等待的完整分页更新 P95 8199.95 ms；本轮 SSE 200 ms 和分页预览 1 秒目标均未达到。性能目标需继续优化，不能按功能测试通过认定达标。

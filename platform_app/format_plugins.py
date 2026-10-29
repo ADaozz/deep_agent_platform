@@ -113,7 +113,7 @@ class FeatureConfig(BaseModel):
 
 def change(feature_id,installed,active):
     if feature_id not in [m['id'] for m in catalog()]:raise HTTPException(404,'功能模块文件不存在')
-    if any(r['status'] in ('running','queued','waiting_confirmation','waiting_human','paused') for kind in ('session','task') for r in d.all_records(kind)):
+    if any(r['status'] in ('running','queued','waiting_confirmation','waiting_human','paused') for r in d.all_records('session')):
         raise HTTPException(409,'请先完成或取消当前会话，再卸载或切换扩展功能')
     d.put('feature',dict(id=feature_id,installed=installed,enabled=active))
     # Drop idle format services; model/tool changes rebuild at the next invocation.

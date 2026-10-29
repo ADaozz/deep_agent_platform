@@ -1,12 +1,5 @@
 """Expose provider-reported cache usage without changing the agent runtime."""
-from functools import reduce
-import sqlite3
-
 from langchain_core.messages import AIMessage
-from langgraph.channels.delta import DeltaChannel
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph.message import add_messages
 
 
 def count(value):
@@ -50,25 +43,3 @@ def runner_usage(runner):
         return cache_usage(usage, state.values.get('messages', []), runner.current_model().id)
     except Exception:
         return {**usage, 'cache_read_input_tokens': None, 'cache_hit_rate': None}
-
-
-def saved_usage(record, path):
-    """Read existing checkpoints, including LangGraph delta message storage."""
-    usage = record.get('usage') or {}
-    unknown = {**usage, 'cache_read_input_tokens': None, 'cache_hit_rate': None}
-    if not path.is_file() or count(usage.get('input_tokens')) is None:
-        return unknown
-    config = {'configurable': {'thread_id': record['id']}}
-    try:
-        with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as connection:
-            saver = SqliteSaver(connection, serde=JsonPlusSerializer(allowed_msgpack_modules=None, pickle_fallback=False))
-            checkpoint = saver.get(config) or {}
-            messages = checkpoint.get('channel_values', {}).get('messages')
-            if messages is None:
-                history = saver.get_delta_channel_history(config=config, channels=['messages'])['messages']
-                channel = DeltaChannel(lambda state, writes: reduce(add_messages, writes, state), list).from_checkpoint(history.get('seed', []))
-                channel.replay_writes(history['writes'])
-                messages = channel.get()
-            return cache_usage(usage, messages, record['model_id'])
-    except Exception:
-        return unknown
