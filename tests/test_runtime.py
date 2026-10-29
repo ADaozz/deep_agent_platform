@@ -154,17 +154,23 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     assert client.get('/api/agent/workspaces/writing/files/%2E%2E/%2E%2E/platform.sqlite').status_code == 404
 
 
-def test_completed_session_journal_omits_token_deltas(client):
+def test_completed_session_journal_retains_streams_and_persisted_timestamps(client):
+    from datetime import datetime
     session_id = new_session(client)
     assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'cached answer'}).status_code == 202
-    record = d.get('session', session_id)
-    seq = record['event_seq'] + 1
-    d.put('event', {'id': f'{session_id}:{seq:010d}', 'session_id': session_id, 'type': 'thinking_delta', 'content': 'partial', 'seq': seq})
-    record['event_seq'] = seq
-    d.put('session', record)
+    runtime = rt.runtime(session_id)
+    runtime.event({'type':'thinking_delta','content':'Reasoning snapshot'})
+    runtime.event({'type':'tool_output_delta','tool_call_id':'a','content':'first line\n'})
+    runtime.event({'type':'tool_output_delta','tool_call_id':'a','content':'last line\n'})
+    runtime.event({'type':'assistant_delta','content':'Partial reply'})
     events = client.get(f'/api/agent/sessions/{session_id}/journal').json()['events']
     assert any(event['type'] == 'assistant_completed' for event in events)
-    assert not any(event['type'] in ('thinking_delta', 'assistant_delta', 'tool_output_delta') for event in events)
+    assert any(event['type'] == 'thinking_delta' and event['content']=='Reasoning snapshot' for event in events)
+    assert [event['content'] for event in events if event['type']=='tool_output_delta'] == ['first line\n','last line\n']
+    assert any(event['type']=='assistant_delta' and event['content']=='Partial reply' for event in events)
+    for event in events:
+        assert datetime.fromisoformat(event['occurred_at']).tzinfo is not None
+    assert client.get(f'/api/agent/sessions/{session_id}/journal').json()['events']==events
 
 
 def test_configuration_snapshot_and_runtime_model_switch(client):

@@ -160,6 +160,7 @@ class Runtime:
         with self.lock:
             record = find(self.id)
             event = json.loads(json.dumps(event, default=str))
+            event['occurred_at'] = now()
             event['seq'] = record.get('event_seq', 0) + 1
             record['event_seq'] = event['seq']
             if event['type'] == 'runtime_config_applied':
@@ -592,11 +593,7 @@ def session_journal(session_id: str):
             'SELECT data FROM records WHERE kind=? AND id>? AND id<? ORDER BY id',
             ('event', f'{prefix}{0:010d}', prefix + '~')).fetchall()
     events = [public_event(json.loads(row[0])) for row in rows]
-    if record['status'] == 'completed':
-        # Completed calls already carry their final text and thinking; token deltas
-        # only bloat a history payload and throttle its replay through SSE.
-        dropped = {'thinking_delta', 'assistant_delta', 'tool_output_delta', 'usage', 'model_metrics'}
-        events = [event for event in events if event['type'] not in dropped]
+    # Keep every reasoning/tool-output chunk available for full history replay.
     return {'events': events}
 
 

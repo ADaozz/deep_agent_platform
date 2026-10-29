@@ -1,113 +1,176 @@
-// Keep the native journal intact; project each user turn into separate reasoning,
-// ordered operations and final answers. No raw event objects reach the template.
-export function conversationTimeline(events, status = 'idle') {
-  const turns = []
+// The journal stays immutable. Each model summary and tool-call ID owns one
+// timeline row; stream events update that row without regrouping repeated tools.
+export const terminalStatuses = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
+const liveStatuses = new Set(['running', 'queued'])
+export function eventTime(event) {
+  const value = event.occurred_at ?? event.timestamp ?? event.created_at
+  if (typeof value === 'number' && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value
+  if (typeof value === 'string') { const ms = Date.parse(value); if (Number.isFinite(ms)) return ms }
+  return null
+}
+export function rawText(value) {
+  if (value == null) return ''
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+}
+export function shortResult(value) {
+  const text = rawText(value)
+  let brief = text
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object') brief = rawText(parsed.message ?? parsed.error ?? parsed.summary ?? parsed.content ?? parsed.status ?? text)
+  } catch { /* Plain stdout remains plain text. */ }
+  return Array.from(brief.replace(/\s+/g, ' ').trim()).slice(0, 120).join('')
+}
+function timeSpan(start, end) { return start != null && end != null ? Math.max(0, end - start) : null }
+
+export function conversationTimeline(events, sessionStatus = 'idle') {
+  const turns = [], seen = new Set()
   let turn, model
-  const ensureTurn = key => {
-    if (!turn) { turn = { key, models: [], actions: [], tools: new Map(), notes: [], result: '' }; turns.push(turn) }
+  const ensureTurn = (event, index) => {
+    if (!turn) {
+      turn = { key: event.seq ?? index, models: [], steps: [], tools: new Map(), notes: [], result: '', startedAt: eventTime(event), endedAt: null, status: null }
+      turns.push(turn)
+    }
     return turn
   }
-  const ensureModel = key => {
-    ensureTurn(key)
-    if (!model) { model = { key, content: '', thought: '', hasTools: false }; turn.models.push(model) }
+  const ensureModel = (event, index) => {
+    ensureTurn(event, index)
+    if (!model) {
+      model = { key: event.message_id || event.seq || index, content: '', thought: '', hasTools: false, completed: false, startedAt: eventTime(event) }
+      turn.models.push(model)
+    }
     return model
   }
-  for (const event of events) {
+  const thinking = (current, event, index) => {
+    if (!current.reasoning) {
+      current.reasoning = { key: `reasoning-${current.key}`, kind: 'reasoning', name: 'reasoning', order: index, status: current.completed ? 'completed' : 'running', content: '', startedAt: current.startedAt ?? eventTime(event), endedAt: current.endedAt ?? null }
+      turn.steps.push(current.reasoning)
+    }
+    current.reasoning.content = current.thought
+    return current.reasoning
+  }
+  const promoteSummary = current => {
+    if (!current?.content || current.summary) return
+    current.summary = { key: `summary-${current.key}`, kind: 'summary', name: 'summary', order: current.contentOrder, content: current.content, status: current.completed ? 'completed' : 'running', startedAt: current.contentAt, endedAt: current.endedAt ?? null }
+    turn.steps.push(current.summary)
+  }
+  const toolStep = (event, index) => {
+    ensureTurn(event, index)
+    const identity = event.tool_call_id || `unidentified-${event.seq ?? index}`
+    let step = turn.tools.get(identity)
+    if (!step) {
+      step = { key: `tool-${turn.key}-${identity}`, kind: 'tool', name: event.name || 'tool', order: index, status: 'pending', arguments: null, streamedOutput: '', finalOutput: '', streams: [], startedAt: eventTime(event), endedAt: null, durationMs: null }
+      turn.tools.set(identity, step); turn.steps.push(step)
+    }
+    if (event.name && event.name !== 'tool') step.name = event.name
+    return step
+  }
+  const finish = (step, status, event) => {
+    step.status = status; step.endedAt = eventTime(event) ?? step.endedAt
+    const duration = event.duration_ms ?? event.result?.duration_ms
+    step.durationMs = typeof duration === 'number' && duration >= 0 ? duration : timeSpan(step.startedAt, step.endedAt)
+  }
+  for (let index = 0; index < events.length; index++) {
+    const event = events[index]
+    if (event.seq != null) { if (seen.has(event.seq)) continue; seen.add(event.seq) }
     if (event.type === 'operation' && event.operation === 'message') {
       turn = null; model = null
-      ensureTurn(event.seq)
-      turn.user = { kind: 'user', key: `user-${event.seq}`, content: event.text, attachments: event.attachments || [] }
+      const current = ensureTurn(event, index)
+      current.user = { kind: 'user', key: `user-${current.key}`, content: event.text, attachments: event.attachments || [] }
+      current.status = 'running'
     } else if (event.type === 'operation' && ['approve', 'answer', 'resume'].includes(event.operation)) {
-      ensureTurn(event.seq).status = 'running'
+      ensureTurn(event, index).status = 'running'
+      for (const step of turn.steps) if (step.status === 'pending') step.status = 'running'
     } else if (event.type === 'status') {
-      ensureTurn(event.seq).status = event.status
+      ensureTurn(event, index).status = event.status
+      if (terminalStatuses.has(event.status)) turn.endedAt = eventTime(event)
     } else if (event.type === 'assistant_started') {
-      ensureTurn(event.seq)
-      model = { key: event.seq, content: '', thought: '', hasTools: false }
+      ensureTurn(event, index)
+      model = { key: event.message_id || event.seq || index, content: '', thought: '', hasTools: false, completed: false, startedAt: eventTime(event) }
       turn.models.push(model)
     } else if (event.type === 'thinking_delta') {
-      // Native deltas contain the cumulative text for this model invocation.
-      ensureModel(event.seq).thought = event.content || ''
+      const current = ensureModel(event, index)
+      // Native reasoning deltas are snapshots; tool stdout events are chunks.
+      current.thought = event.content_mode === 'append' ? current.thought + rawText(event.content) : rawText(event.content)
+      thinking(current, event, index)
     } else if (event.type === 'assistant_delta' || event.type === 'assistant_completed') {
-      const current = ensureModel(event.seq)
-      current.content = event.content || ''
-      if (event.type === 'assistant_completed' && event.result?.thinking) current.thought = event.result.thinking
-    } else if (event.type === 'tool_started' || event.type === 'tool_completed') {
-      ensureTurn(event.seq)
-      if (event.type === 'tool_started' && model) model.hasTools = true
-      const identity = event.tool_call_id || `${event.name}-${event.seq}`
-      let step = turn.tools.get(identity)
-      if (!step) {
-        step = { key: event.seq, name: event.name, status: 'running' }
-        turn.tools.set(identity, step)
-        turn.actions.push(step)
+      const current = ensureModel(event, index)
+      if (current.contentOrder == null) { current.contentOrder = index; current.contentAt = eventTime(event) }
+      if (event.content) current.content = rawText(event.content)
+      if (event.type === 'assistant_completed') {
+        current.completed = true; current.endedAt = eventTime(event)
+        if (event.result?.thinking) { current.thought = rawText(event.result.thinking); thinking(current, event, index) }
+        if (current.reasoning) finish(current.reasoning, 'completed', event)
       }
-      if (event.name && event.name !== 'tool') step.name = event.name
-      if (event.type === 'tool_completed') {
-        step.status = event.is_error ? 'failed' : 'completed'
+      if (current.hasTools) promoteSummary(current)
+      if (current.summary) { current.summary.content = current.content; if (current.completed) finish(current.summary, 'completed', event) }
+    } else if (['tool_pending', 'tool_started', 'tool_output_delta', 'tool_completed', 'tool_failed', 'tool_cancelled'].includes(event.type)) {
+      if (model) { model.hasTools = true; promoteSummary(model) }
+      const step = toolStep(event, index)
+      if (event.arguments && Object.keys(event.arguments).length) step.arguments = event.arguments
+      if (event.type === 'tool_started' && !terminalStatuses.has(step.status)) step.status = 'running'
+      else if (event.type === 'tool_output_delta') {
+        if (!terminalStatuses.has(step.status)) step.status = 'running'
+        const content = rawText(event.content)
+        step.streamedOutput += content
+        step.streams.push({ stream: event.stream || 'stdout', content })
+      } else if (['tool_completed', 'tool_failed', 'tool_cancelled'].includes(event.type)) {
+        const finalOutput = event.content != null ? rawText(event.content) : rawText(event.result)
+        if (terminalStatuses.has(step.status)) { if (!step.finalOutput) step.finalOutput = finalOutput; continue }
+        step.finalOutput = finalOutput
+        const cancelled = event.type === 'tool_cancelled' || event.status === 'cancelled' || event.result?.status === 'cancelled'
+        finish(step, cancelled ? 'cancelled' : event.type === 'tool_failed' || event.is_error ? 'failed' : 'completed', event)
       }
     } else if (event.type === 'result') {
-      ensureTurn(event.seq).status = event.status
+      ensureTurn(event, index).status = event.status
+      if (terminalStatuses.has(event.status)) turn.endedAt = eventTime(event)
+      else if (['waiting_confirmation', 'waiting_human', 'paused', 'runtime_config_boundary'].includes(event.status)) {
+        for (const step of turn.steps) if (!terminalStatuses.has(step.status)) step.status = 'pending'
+      }
       if (event.output) turn.result = event.output
-    } else if (event.type === 'error') {
-      ensureTurn(event.seq).status = 'failed'
-    } else if (event.type === 'task_progress') {
-      // A progress message, if emitted by the kernel, stays separate from logs.
-      ensureTurn(event.seq).progress = typeof event.content === 'string' ? event.content : ''
+    } else if (event.type === 'error' || event.type === 'run_cancelled') {
+      ensureTurn(event, index).status = event.type === 'run_cancelled' ? 'cancelled' : 'failed'
+      turn.endedAt = eventTime(event)
+    } else if (event.type === 'task_progress' && event.content) {
+      ensureTurn(event, index).steps.push({ key: `progress-${event.seq ?? index}`, kind: 'progress', name: 'progress', order: index, content: rawText(event.content), status: 'completed', startedAt: eventTime(event), endedAt: eventTime(event) })
     } else if (event.type === 'output_files') {
-      // Workspace files created or changed during this turn, safe for display.
-      const turn = ensureTurn(event.seq)
-      turn.outputFiles = Array.isArray(turn.outputFiles) ? turn.outputFiles : []
+      const current = ensureTurn(event, index); current.outputFiles ||= []
       for (const file of event.files || []) {
         if (!file?.path) continue
-        const existing = turn.outputFiles.find(item => item.path === file.path)
+        const existing = current.outputFiles.find(item => item.path === file.path)
         if (existing) existing.size = file.size
-        else turn.outputFiles.push({ path: file.path, size: file.size })
+        else current.outputFiles.push({ path: file.path, size: file.size })
       }
     } else if (event.type === 'steer' || event.type === 'follow_up') {
-      ensureTurn(event.seq).notes.push({ kind: 'note', key: event.seq, type: event.type, content: event.content })
+      ensureTurn(event, index).notes.push({ kind: 'note', key: event.seq ?? index, type: event.type, content: event.content })
     }
   }
   return turns.flatMap((item, index) => {
-    const blocks = []
-    if (item.user) blocks.push(item.user)
+    const blocks = []; if (item.user) blocks.push(item.user)
     const last = index === turns.length - 1
-    const finished = ['completed', 'failed', 'cancelled', 'interrupted'].includes(status)
-    // A finished session is authoritative for its last turn: an incomplete
-    // history payload must not make old work look like it is still running.
-    const currentStatus = last && finished ? status : item.status || (last ? status : 'completed')
-    const thoughts = item.models.flatMap(chunk => [chunk.thought, chunk.hasTools ? chunk.content : '']).filter(Boolean).join('\n\n')
-    const active = ['queued', 'running'].includes(currentStatus)
-    // Group by the exact tool within this turn; the original journal and call
-    // identities remain separate, so retries and out-of-order finishes count once.
-    const groups = new Map()
-    for (const step of item.actions) {
-      let group = groups.get(step.name)
-      if (!group) {
-        group = { key: step.key, name: step.name, count: 0, successCount: 0, failureCount: 0, runningCount: 0, status: currentStatus }
-        groups.set(step.name, group)
+    const currentStatus = last && terminalStatuses.has(sessionStatus) ? sessionStatus : item.status || (last ? sessionStatus : 'interrupted')
+    const ended = terminalStatuses.has(currentStatus)
+    const steps = item.steps.sort((a, b) => a.order - b.order).map(step => {
+      const projected = { ...step }
+      if (ended && !terminalStatuses.has(projected.status)) {
+        projected.status = currentStatus === 'completed' ? 'interrupted' : currentStatus === 'cancelled' ? 'cancelled' : currentStatus
+        projected.endedAt = item.endedAt ?? projected.endedAt
       }
-      group.count++
-      if (step.status === 'completed') group.successCount++
-      if (step.status === 'failed') group.failureCount++
-      if (step.status === 'running' && active) group.runningCount++
-    }
-    for (const group of groups.values()) {
-      if (group.runningCount) group.status = 'running'
-      else if (group.failureCount) group.status = 'failed'
-      else if (group.successCount === group.count) group.status = 'completed'
-    }
-    if (thoughts || item.actions.length || active || item.progress) blocks.push({
-      kind: 'process', key: `process-${item.key}`, thoughts,
-      actions: [...groups.values()], status: currentStatus, active,
-      actionCount: item.actions.length,
+      projected.durationMs ??= timeSpan(projected.startedAt, projected.endedAt)
+      projected.resultSummary = shortResult(projected.finalOutput || projected.streamedOutput || projected.content)
+      return projected
+    })
+    if (steps.length || liveStatuses.has(currentStatus)) blocks.push({
+      kind: 'process', key: `process-${item.key}`, steps, status: currentStatus,
+      active: liveStatuses.has(currentStatus), finished: ended && steps.every(step => terminalStatuses.has(step.status)),
+      stepCount: steps.length, actionCount: steps.filter(step => step.kind === 'tool').length,
+      startedAt: item.startedAt, endedAt: item.endedAt, durationMs: timeSpan(item.startedAt, item.endedAt),
     })
     const answers = item.models.filter(chunk => !chunk.hasTools && chunk.content)
     for (const chunk of answers) blocks.push({ kind: 'assistant', key: `answer-${chunk.key}`, content: chunk.content })
     if (item.result && !answers.some(chunk => chunk.content === item.result)) blocks.push({ kind: 'assistant', key: `result-${item.key}`, content: item.result })
     if (item.outputFiles?.length) blocks.push({ kind: 'files', key: `files-${item.key}`, files: item.outputFiles })
     blocks.push(...item.notes)
-    // The first visible agent block of the turn carries the shared "Agent" label.
     const lead = blocks.find(block => block.kind === 'process' || block.kind === 'assistant')
     if (lead) lead.lead = true
     return blocks

@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test:e2e:docx": "node tests/docx.e2e.mjs",
-    "test:e2e:pptx": "node tests/pptx.e2e.mjs"
+    "test:e2e:pptx": "node tests/pptx.e2e.mjs",
+    "test:e2e:process": "node tests/process.e2e.mjs"
   },
   "dependencies": {
     "dompurify": "^3.2.0",

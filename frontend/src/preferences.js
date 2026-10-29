@@ -8,9 +8,6 @@ function persist(key, value) {
   try { localStorage.setItem(key, value) } catch { /* Preferences still work without storage. */ }
 }
 
-export const thinkingExpanded = ref(saved('thinking-expanded') !== 'false')
-watch(thinkingExpanded, value => persist('thinking-expanded', String(value)))
-
 const storedLocale = saved('locale')
 export const locale = ref(['zh', 'en'].includes(storedLocale) ? storedLocale : navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en')
 export const theme = ref(['light', 'dark'].includes(saved('theme')) ? saved('theme') : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')

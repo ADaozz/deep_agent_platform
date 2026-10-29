@@ -1208,12 +1208,12 @@
     "en": "Expand or collapse thinking; your preference is remembered"
   },
   "process.progress": {
-    "zh": "已完成 {done} / {total} 项操作",
-    "en": "{done} / {total} operations completed"
+    "zh": "执行进度",
+    "en": "Progress"
   },
   "process.details": {
-    "zh": "查看详情",
-    "en": "View details"
+    "zh": "{name}的完整记录",
+    "en": "Full history for {name}"
   },
   "process.truncated": {
     "zh": "结果较长，仅显示前部分内容。",
@@ -1490,5 +1490,113 @@
   "pptx_check_slide": {
     "zh": "检查当前幻灯片",
     "en": "Check current slide"
+  },
+  "process.summary": {
+    "zh": "执行摘要",
+    "en": "Execution summary"
+  },
+  "process.input": {
+    "zh": "输入",
+    "en": "Input"
+  },
+  "process.output": {
+    "zh": "流式输出",
+    "en": "Streamed output"
+  },
+  "process.result": {
+    "zh": "执行结果",
+    "en": "Result"
+  },
+  "process.waitingOutput": {
+    "zh": "正在执行，等待输出…",
+    "en": "Running, waiting for output…"
+  },
+  "process.waitingSummary": {
+    "zh": "正在整理摘要…",
+    "en": "Preparing summary…"
+  },
+  "process.waitingStep": {
+    "zh": "正在等待下一步进展…",
+    "en": "Waiting for the next step…"
+  },
+  "process.durationUnknown": {
+    "zh": "耗时未知",
+    "en": "Duration unavailable"
+  },
+  "process.seconds": {
+    "zh": "{seconds} 秒",
+    "en": "{seconds}s"
+  },
+  "process.minutesSeconds": {
+    "zh": "{minutes} 分 {seconds} 秒",
+    "en": "{minutes}m {seconds}s"
+  },
+  "process.steps": {
+    "zh": "{count} 个步骤",
+    "en": "{count} steps"
+  },
+  "process.status.pending": {
+    "zh": "等待中",
+    "en": "Pending"
+  },
+  "process.status.running": {
+    "zh": "执行中",
+    "en": "Running"
+  },
+  "process.status.completed": {
+    "zh": "成功",
+    "en": "Success"
+  },
+  "process.status.failed": {
+    "zh": "失败",
+    "en": "Failed"
+  },
+  "process.status.cancelled": {
+    "zh": "已取消",
+    "en": "Cancelled"
+  },
+  "process.status.interrupted": {
+    "zh": "已中断",
+    "en": "Interrupted"
+  },
+  "process.task.queued": {
+    "zh": "排队中",
+    "en": "Queued"
+  },
+  "process.task.running": {
+    "zh": "执行中",
+    "en": "Running"
+  },
+  "process.task.completed": {
+    "zh": "任务完成",
+    "en": "Task completed"
+  },
+  "process.task.failed": {
+    "zh": "任务失败",
+    "en": "Task failed"
+  },
+  "process.task.cancelled": {
+    "zh": "任务取消",
+    "en": "Task cancelled"
+  },
+  "process.task.interrupted": {
+    "zh": "任务中断",
+    "en": "Task interrupted"
+  },
+  "process.task.waiting_confirmation": {
+    "zh": "等待审批",
+    "en": "Awaiting approval"
+  },
+  "process.task.waiting_human": {
+    "zh": "等待回复",
+    "en": "Awaiting input"
+  },
+  "process.task.paused": {
+    "zh": "任务暂停",
+    "en": "Task paused"
+  },
+  "process.task.runtime_config_boundary": {
+    "zh": "等待继续",
+    "en": "Awaiting resume"
   }
 }

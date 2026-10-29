@@ -1,155 +1,128 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { conversationTimeline } from '../frontend/src/conversation.js'
+import { stepBody } from '../frontend/src/processView.js'
+const processOf = (events, status='running') => conversationTimeline(events,status).find(block=>block.kind==='process')
+const at=(second)=>`2026-10-29T14:00:${String(second).padStart(2,'0')}.000Z`
 
-test('aggregates cumulative reasoning across model calls and keeps ordered actions separate from final answer', () => {
-  const events = [
-    { seq: 1, type: 'operation', operation: 'message', text: 'Inspect the document.' },
-    { seq: 2, type: 'assistant_started' },
-    { seq: 3, type: 'thinking_delta', content: 'I will inspect' },
-    { seq: 4, type: 'thinking_delta', content: 'I will inspect the document.' },
-    { seq: 5, type: 'assistant_completed', content: 'Reading the document now.' },
-    { seq: 6, type: 'tool_started', name: 'read_file', tool_call_id: 'internal-id', arguments: { file_path: '/private/internal/document' } },
-    { seq: 7, type: 'tool_output_delta', tool_call_id: 'internal-id', content: 'RAW_PARTIAL_LOG' },
-    { seq: 8, type: 'tool_completed', tool_call_id: 'internal-id', name: 'read_file', content: '{"content":"Document text", "metadata":{"secret":"PRIVATE_METADATA"},"tool_call_id":"internal-id"}', artifact: { internal: 'PRIVATE_ARTIFACT' } },
-    { seq: 9, type: 'assistant_started' },
-    { seq: 10, type: 'thinking_delta', content: 'I have the information needed.' },
-    { seq: 11, type: 'assistant_completed', content: 'The document is ready.' },
-    { seq: 12, type: 'result', status: 'completed', output: 'The document is ready.' },
-  ]
-  const original = JSON.stringify(events)
-  const blocks = conversationTimeline(events, 'completed')
-  assert.deepEqual(blocks.map(b => b.kind), ['user', 'process', 'assistant'])
-  const process = blocks[1]
-  assert.equal(process.actionCount, 1)
-  assert.equal(process.active, false)
-  assert.equal(process.thoughts, 'I will inspect the document.\n\nReading the document now.\n\nI have the information needed.')
-  assert.equal(process.actions[0].status, 'completed')
-  assert.equal(process.actions[0].successCount, 1)
-  assert.equal(process.actions[0].failureCount, 0)
-  assert.equal('detail' in process.actions[0], false)
-  const output = JSON.stringify(blocks)
-  for (const hidden of ['internal-id', '/private/internal/document', 'RAW_PARTIAL_LOG', 'PRIVATE_METADATA', 'PRIVATE_ARTIFACT', 'Document text']) assert.equal(output.includes(hidden), false)
-  assert.equal(JSON.stringify(events), original, 'the native journal remains untouched')
+test('reasoning, interim summary and distinct calls stay in their occurrence order',()=>{
+ const events=[
+  {seq:1,type:'operation',operation:'message',text:'Inspect files',occurred_at:at(0)},
+  {seq:2,type:'assistant_started',occurred_at:at(1)},
+  {seq:3,type:'thinking_delta',content:'Inspect',occurred_at:at(2)},
+  {seq:4,type:'thinking_delta',content:'Inspect the files.',occurred_at:at(3)},
+  {seq:5,type:'assistant_completed',content:'Reading now.',result:{thinking:'Inspect the files.'},occurred_at:at(4)},
+  {seq:6,type:'tool_started',name:'read_file',tool_call_id:'a',arguments:{file_path:'a.txt'},occurred_at:at(5)},
+  {seq:7,type:'tool_started',name:'read_file',tool_call_id:'b',occurred_at:at(6)},
+  {seq:8,type:'tool_completed',name:'tool',tool_call_id:'b',content:'B finished',occurred_at:at(7)},
+  {seq:9,type:'tool_completed',name:'tool',tool_call_id:'a',content:'A finished',occurred_at:at(9)},
+  {seq:10,type:'assistant_started',occurred_at:at(10)},
+  {seq:11,type:'thinking_delta',content:'Checking results.',occurred_at:at(11)},
+ ]
+ const original=JSON.stringify(events),process=processOf(events)
+ assert.deepEqual(process.steps.map(step=>step.kind),['reasoning','summary','tool','tool','reasoning'])
+ assert.equal(process.steps[0].content,'Inspect the files.')
+ assert.deepEqual(process.steps.filter(s=>s.kind==='tool').map(s=>[s.name,s.finalOutput,s.durationMs]),[['read_file','A finished',4000],['read_file','B finished',1000]])
+ assert.equal(process.steps.at(-1).status,'running')
+ assert.equal(process.finished,false)
+ assert.equal(JSON.stringify(events),original)
 })
 
-test('approval resumes in the same process and later user turns stay separate', () => {
-  const events = [
-    { seq: 1, type: 'operation', operation: 'message', text: 'Create a document.' },
-    { seq: 2, type: 'assistant_started' },
-    { seq: 3, type: 'tool_started', tool_call_id: 'write', name: 'write_file' },
-    { seq: 4, type: 'result', status: 'waiting_confirmation' },
-  ]
-  let blocks = conversationTimeline(events, 'waiting_confirmation')
-  assert.equal(blocks[1].actions[0].status, 'waiting_confirmation')
-  events.push({ seq: 5, type: 'operation', operation: 'approve' })
-  blocks = conversationTimeline(events, 'running')
-  assert.equal(blocks[1].active, true)
-  assert.equal(blocks[1].actions[0].status, 'running')
-  events.push(
-    { seq: 6, type: 'tool_completed', tool_call_id: 'write', name: 'tool' },
-    { seq: 7, type: 'result', status: 'completed', output: 'Done.' },
-    { seq: 8, type: 'operation', operation: 'message', text: 'What next?' },
-    { seq: 9, type: 'assistant_completed', content: 'Review the document.' },
-  )
-  blocks = conversationTimeline(events, 'completed')
-  assert.deepEqual(blocks.map(b => b.kind), ['user', 'process', 'assistant', 'user', 'assistant'])
-  assert.equal(blocks[1].actions[0].name, 'write_file')
-  assert.equal(blocks[2].content, 'Done.')
+test('stream chunks append without losing equal chunks, duplicate seqs are ignored',()=>{
+ const events=[
+  {seq:1,type:'tool_started',name:'execute',tool_call_id:'a',arguments:{command:'run'}},
+  {seq:2,type:'tool_output_delta',tool_call_id:'a',content:'same\n',stream:'stdout'},
+  {seq:3,type:'tool_output_delta',tool_call_id:'a',content:'same\n',stream:'stdout'},
+  {seq:3,type:'tool_output_delta',tool_call_id:'a',content:'same\n',stream:'stdout'},
+  {seq:4,type:'tool_output_delta',tool_call_id:'a',content:'warning\n',stream:'stderr'},
+  {seq:5,type:'tool_completed',tool_call_id:'a',name:'tool',content:'Finished successfully'},
+ ]
+ const process=processOf(events),step=process.steps[0]
+ assert.equal(process.steps.length,1)
+ assert.equal(step.streamedOutput,'same\nsame\nwarning\n')
+ assert.equal(step.finalOutput,'Finished successfully')
+ const body=stepBody(step,key=>key)
+ assert(body.includes('[stdout]\nsame\nsame\n'))
+ assert(body.includes('[stderr]\nwarning\n'))
+ assert(body.includes('"command": "run"'))
+ assert(body.includes('Finished successfully'))
 })
 
-test('parallel actions retain start order, individual errors and completion progress', () => {
-  const blocks = conversationTimeline([
-    { seq: 1, type: 'status', status: 'running' },
-    { seq: 2, type: 'tool_started', name: 'execute', tool_call_id: 'a' },
-    { seq: 3, type: 'tool_started', name: 'web_fetch', tool_call_id: 'b' },
-    { seq: 4, type: 'tool_completed', name: 'tool', tool_call_id: 'b', is_error: true, content: 'Could not fetch the page.' },
-    { seq: 5, type: 'tool_completed', name: 'tool', tool_call_id: 'a', content: 'Command done.' },
-    { seq: 6, type: 'tool_started', name: 'read_file', tool_call_id: 'c' },
-    { seq: 7, type: 'task_progress', content: 'Checking source material.' },
-  ], 'running')
-  const process = blocks[0]
-  assert.deepEqual(process.actions.map(s => s.name), ['execute', 'web_fetch', 'read_file'])
-  assert.deepEqual(process.actions.map(s => s.status), ['completed', 'failed', 'running'])
-  assert.equal(process.actions[0].successCount, 1)
-  assert.equal(process.actions[1].failureCount, 1)
-  assert.equal(process.actionCount, 3)
+test('all tool rows completing never finishes a task while the Agent is still running',()=>{
+ const events=[{seq:1,type:'tool_started',name:'execute',tool_call_id:'a'}, {seq:2,type:'tool_completed',tool_call_id:'a',content:'Done'}]
+ let process=processOf(events)
+ assert.equal(process.steps[0].status,'completed')
+ assert.equal(process.active,true);assert.equal(process.finished,false)
+ events.push({seq:3,type:'assistant_started'},{seq:4,type:'thinking_delta',content:'Preparing the final response.'})
+ process=processOf(events)
+ assert.equal(process.steps.at(-1).status,'running');assert.equal(process.finished,false)
+ events.push({seq:5,type:'assistant_completed',content:'All done'},{seq:6,type:'result',status:'completed'})
+ process=processOf(events,'completed');assert.equal(process.finished,true)
+ assert(process.steps.every(step=>step.status==='completed'))
 })
 
-test('interrupted tools stop showing running and never invent a final answer', () => {
-  const blocks = conversationTimeline([
-    { seq: 1, type: 'status', status: 'running' },
-    { seq: 2, type: 'tool_started', name: 'execute', tool_call_id: 'command' },
-  ], 'interrupted')
-  assert.equal(blocks[0].active, false)
-  assert.equal(blocks[0].actions[0].status, 'interrupted')
-  assert.equal(blocks.length, 1)
+test('parallel calls retain independent status, outputs and stable keys',()=>{
+ const events=[{seq:1,type:'tool_started',tool_call_id:'a',name:'execute'},{seq:2,type:'tool_started',tool_call_id:'b',name:'execute'}]
+ const initial=processOf(events)
+ events.push({seq:3,type:'tool_output_delta',tool_call_id:'a',content:'A'},{seq:4,type:'tool_completed',tool_call_id:'b',is_error:true,content:'B failed'})
+ const next=processOf(events)
+ assert.deepEqual(next.steps.map(s=>s.key),initial.steps.map(s=>s.key))
+ assert.deepEqual(next.steps.map(s=>s.status),['running','failed'])
+ assert.equal(next.steps[0].streamedOutput,'A');assert.equal(next.steps[1].streamedOutput,'')
+ assert.equal(next.steps.length,2)
 })
 
-test('same tools merge per turn with success and failure counts, without commands or output', () => {
-  const events = [
-    { seq: 1, type: 'operation', operation: 'message', text: 'Check files' },
-    { seq: 2, type: 'tool_started', name: 'execute', tool_call_id: 'a', arguments: { command: 'PRIVATE_COMMAND' } },
-    { seq: 3, type: 'tool_started', name: 'read_file', tool_call_id: 'b' },
-    { seq: 4, type: 'tool_started', name: 'execute', tool_call_id: 'c' },
-    { seq: 5, type: 'tool_completed', name: 'tool', tool_call_id: 'c', is_error: true, content: 'PRIVATE_FAILURE' },
-    { seq: 6, type: 'tool_completed', name: 'tool', tool_call_id: 'a', content: 'PRIVATE_OUTPUT' },
-    { seq: 7, type: 'tool_completed', name: 'tool', tool_call_id: 'a', content: 'DUPLICATE_COMPLETION' },
-    { seq: 8, type: 'tool_completed', name: 'tool', tool_call_id: 'b' },
-    { seq: 9, type: 'result', status: 'completed' },
-    { seq: 10, type: 'operation', operation: 'message', text: 'Check again' },
-    { seq: 11, type: 'tool_started', name: 'execute', tool_call_id: 'd' },
-  ]
-  const blocks = conversationTimeline(events, 'running')
-  const processes = blocks.filter(b => b.kind === 'process')
-  assert.equal(processes.length, 2)
-  assert.deepEqual(processes[0].actions.map(s => s.name), ['execute', 'read_file'])
-  const commands = processes[0].actions[0]
-  assert.equal(commands.successCount, 1)
-  assert.equal(commands.failureCount, 1)
-  assert.equal(commands.count, 2)
-  assert.equal(processes[0].actionCount, 3)
-  assert.equal(processes[1].actions[0].successCount, 0)
-  assert.equal(processes[1].actions[0].runningCount, 1)
-  const output = JSON.stringify(blocks)
-  for (const hidden of ['PRIVATE_COMMAND', 'PRIVATE_FAILURE', 'PRIVATE_OUTPUT', 'DUPLICATE_COMPLETION']) assert.equal(output.includes(hidden), false)
+test('approval, pause and resume keep the same row and do not finish the task',()=>{
+ const events=[{seq:1,type:'operation',operation:'message',text:'Write a file'},{seq:2,type:'tool_started',tool_call_id:'a',name:'write_file'},{seq:3,type:'result',status:'waiting_confirmation'}]
+ const pending=processOf(events,'waiting_confirmation');assert.equal(pending.finished,false);assert.equal(pending.steps[0].status,'pending')
+ events.push({seq:4,type:'operation',operation:'approve'})
+ const resumed=processOf(events);assert.equal(resumed.steps[0].key,pending.steps[0].key);assert.equal(resumed.steps[0].status,'running')
+ events.push({seq:5,type:'tool_completed',tool_call_id:'a',name:'tool',content:'Saved'},{seq:6,type:'result',status:'completed'})
+ assert.equal(processOf(events,'completed').finished,true)
 })
 
-test('the first process or answer block of each turn leads the agent label', () => {
-  const blocks = conversationTimeline([
-    { seq: 1, type: 'operation', operation: 'message', text: 'Hello' },
-    { seq: 2, type: 'thinking_delta', content: 'Thinking.' },
-    { seq: 3, type: 'assistant_completed', content: 'Hi.' },
-    { seq: 4, type: 'operation', operation: 'message', text: 'Again' },
-    { seq: 5, type: 'assistant_completed', content: 'Sure.' },
-  ], 'completed')
-  assert.deepEqual(blocks.map(b => b.kind), ['user', 'process', 'assistant', 'user', 'assistant'])
-  assert.deepEqual(blocks.map(b => Boolean(b.lead)), [false, true, false, false, true])
+test('failure and cancellation close outstanding steps without inventing success',()=>{
+ for(const status of ['failed','cancelled','interrupted']){
+  const process=processOf([{seq:1,type:'tool_started',tool_call_id:'a',name:'execute'},{seq:2,type:'tool_output_delta',tool_call_id:'a',content:'Partial output'},{seq:3,type:'result',status}],status)
+  assert.equal(process.steps[0].status,status);assert.equal(process.steps[0].streamedOutput,'Partial output');assert.equal(process.finished,true)
+ }
+ const partial=processOf([{seq:1,type:'tool_started',tool_call_id:'a',name:'execute'}],'completed')
+ assert.equal(partial.steps[0].status,'interrupted');assert.equal(partial.finished,true)
 })
 
-test('workspace output files attach to the turn after the answer', () => {
-  const blocks = conversationTimeline([
-    { seq: 1, type: 'operation', operation: 'message', text: 'Build a document.' },
-    { seq: 2, type: 'assistant_started' },
-    { seq: 3, type: 'assistant_completed', content: 'Created the file.' },
-    { seq: 4, type: 'output_files', files: [{ path: 'reports/summary.docx', size: 1024 }] },
-    { seq: 5, type: 'result', status: 'completed', output: 'Created the file.' },
-  ], 'completed')
-  assert.deepEqual(blocks.map(b => b.kind), ['user', 'assistant', 'files'])
-  assert.deepEqual(blocks[2].files, [{ path: 'reports/summary.docx', size: 1024 }])
+test('late duplicate completions cannot change failure to success or reopen rows',()=>{
+ const events=[{seq:1,type:'tool_started',name:'execute',tool_call_id:'a'},{seq:2,type:'tool_completed',tool_call_id:'a',is_error:true,content:'Original failure'},{seq:3,type:'tool_completed',tool_call_id:'a',content:'Duplicate success'},{seq:4,type:'tool_output_delta',tool_call_id:'a',content:'Late log'}]
+ const step=processOf(events).steps[0]
+ assert.equal(step.status,'failed');assert.equal(step.finalOutput,'Original failure');assert.equal(step.streamedOutput,'Late log')
 })
 
-test('a finished session never renders its last turn as running', () => {
-  const partial = [
-    { seq: 1, type: 'operation', operation: 'message', text: 'Hello' },
-    { seq: 2, type: 'status', status: 'running' },
-    { seq: 3, type: 'assistant_started' },
-    { seq: 4, type: 'thinking_delta', content: 'Partial history.' },
-  ]
-  const done = conversationTimeline(partial, 'completed')
-  assert.equal(done[1].status, 'completed')
-  assert.equal(done[1].active, false)
-  const live = conversationTimeline(partial, 'running')
-  assert.equal(live[1].status, 'running')
-  assert.equal(live[1].active, true)
+test('full histories remain intact beyond five lines; raw artifact envelopes are not rendered',()=>{
+ const output=Array.from({length:1000},(_,i)=>`Line ${i}`).join('\n')
+ const process=processOf([{seq:1,type:'tool_started',tool_call_id:'a',name:'execute',arguments:{command:'long job'}},{seq:2,type:'tool_output_delta',tool_call_id:'a',content:output},{seq:3,type:'tool_completed',tool_call_id:'a',content:output,artifact:{internal:'NOT_A_TOOL_LOG'}}])
+ assert.equal(process.steps[0].streamedOutput,output)
+ const body=stepBody(process.steps[0],key=>key)
+ assert(body.includes('Line 0\n'));assert(body.endsWith('Line 999'));assert(!body.includes('NOT_A_TOOL_LOG'))
+ assert.equal((body.match(/Line 999/g)||[]).length,1)
+})
+
+test('separate turns keep their summaries, final answers, file blocks and lead labels',()=>{
+ const blocks=conversationTimeline([
+  {seq:1,type:'operation',operation:'message',text:'Build'},
+  {seq:2,type:'thinking_delta',content:'Planning'},
+  {seq:3,type:'assistant_completed',content:'Created'},
+  {seq:4,type:'output_files',files:[{path:'report.docx',size:42}]},
+  {seq:5,type:'result',status:'completed',output:'Created'},
+  {seq:6,type:'operation',operation:'message',text:'Next'},
+  {seq:7,type:'assistant_completed',content:'Ready'},
+  {seq:8,type:'result',status:'completed',output:'Ready'},
+ ],'completed')
+ assert.deepEqual(blocks.map(b=>b.kind),['user','process','assistant','files','user','assistant'])
+ assert.equal(blocks[1].finished,true);assert.equal(blocks[1].lead,true);assert.equal(blocks.at(-1).lead,true)
+ assert.deepEqual(blocks[3].files,[{path:'report.docx',size:42}])
+})
+
+test('task and step duration use persisted event timestamps, no fabricated old timings',()=>{
+ const process=processOf([{seq:1,type:'operation',operation:'message',occurred_at:at(0)},{seq:2,type:'tool_started',name:'execute',tool_call_id:'a',occurred_at:at(2)},{seq:3,type:'tool_completed',tool_call_id:'a',occurred_at:at(5)},{seq:4,type:'result',status:'completed',occurred_at:at(8)}],'completed')
+ assert.equal(process.durationMs,8000);assert.equal(process.steps[0].durationMs,3000)
+ assert.equal(processOf([{seq:1,type:'tool_completed',tool_call_id:'old',name:'read_file'}],'completed').steps[0].durationMs,null)
 })

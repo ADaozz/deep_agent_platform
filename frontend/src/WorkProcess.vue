@@ -1,50 +1,28 @@
 <script setup>
-import { ref, watch } from 'vue'
+import {computed,ref,watch,onUnmounted} from 'vue'
 import Icon from './Icon.vue'
-import { t, thinkingExpanded } from './preferences'
-
-const props = defineProps({ process: Object, actionLabel: Function, statusLabels: Object })
-const isComplete = () => props.process.status === 'completed'
-const showThoughts = ref(!isComplete() && thinkingExpanded.value)
-const showWork = ref(!isComplete())
-watch(() => props.process.status, status => {
-  if (status !== 'completed') return
-  showThoughts.value = false
-  showWork.value = false
-})
-function rememberThoughts(event) {
-  const open = event.target.open
-  // Ignore the toggle event caused by the automatic collapse above.
-  if (open === showThoughts.value) return
-  showThoughts.value = open
-  thinkingExpanded.value = open
-}
-function stepIcon(step) {
-  if (step.name === 'execute') return 'Terminal'
-  return step.status === 'completed' ? 'CircleCheck' : step.status === 'failed' ? 'CircleAlert' : step.status === 'running' ? 'LoaderCircle' : step.status === 'waiting_human' ? 'MessageCircleQuestion' : step.status === 'waiting_confirmation' ? 'ShieldCheck' : 'Circle'
-}
+import ProcessStep from './ProcessStep.vue'
+import {t} from './preferences'
+import {elapsed,formatDuration} from './processView'
+const props=defineProps({process:Object,actionLabel:Function,statusLabels:Object})
+const collapsed=ref(props.process.finished),collapseEpoch=ref(0),now=ref(Date.now())
+let timer
+watch(()=>props.process.finished,(finished,previous)=>{if(finished&&!previous){collapsed.value=true;collapseEpoch.value++}else if(!finished&&previous)collapsed.value=false})
+watch(()=>props.process.active,active=>{clearInterval(timer);now.value=Date.now();if(active)timer=setInterval(()=>now.value=Date.now(),250)},{immediate:true})
+onUnmounted(()=>clearInterval(timer))
+function toggleTask(){if(collapsed.value&&props.process.finished)collapseEpoch.value++;collapsed.value=!collapsed.value}
+const duration=computed(()=>formatDuration(elapsed(props.process.startedAt,props.process.endedAt,props.process.durationMs,now.value,!props.process.finished),t))
+const stateLabel=computed(()=>t('process.task.'+props.process.status)!=='process.task.'+props.process.status?t('process.task.'+props.process.status):props.statusLabels[props.process.status]||t('process.title'))
+const icon=computed(()=>props.process.active?'LoaderCircle':props.process.status==='completed'?'CircleCheck':props.process.status==='failed'?'CircleAlert':props.process.status==='cancelled'||props.process.status==='interrupted'?'X':'Clock')
 </script>
-
 <template>
-  <section class="work-process" :aria-label="t('process.title')">
-    <div v-if="!process.active && process.status !== 'completed'" class="process-heading">
-      <strong>{{ statusLabels[process.status] || t('process.title') }}</strong>
-    </div>
-    <details v-if="process.thoughts" class="process-thoughts" :open="showThoughts" @toggle="rememberThoughts">
-      <summary :title="t('process.rememberThoughts')"><Icon name="Brain" :size="15" /><span>{{ t('process.thinking') }}</span><Icon name="ChevronDown" class="process-chevron" :size="13" /></summary>
-      <div class="process-thought-text">{{ process.thoughts }}</div>
-    </details>
-    <details v-if="process.actionCount" class="process-work" :open="showWork" @toggle="showWork = $event.target.open">
-      <summary><Icon name="FileText" :size="15" /><span>{{ t('process.title') }}</span><span class="process-count">{{ t('activity.operations', { count: process.actionCount }) }}</span><Icon name="ChevronDown" class="process-chevron" :size="13" /></summary>
-
-      <ol class="process-timeline">
-        <li v-for="step in process.actions" :key="step.key" class="process-node" :class="{ 'process-node-error': step.status === 'failed' }">
-          <span class="process-node-icon"><Icon :name="stepIcon(step)" :size="15" :class="{ spin: step.status === 'running' && step.name !== 'execute' }" /></span>
-          <div class="process-node-body">
-            <div class="process-node-heading"><span>{{ actionLabel(step.name) }}</span><span class="process-node-state"><span v-if="step.successCount" class="process-success">{{ step.successCount }} success</span><span v-if="step.successCount && step.failureCount">, </span><span v-if="step.failureCount" class="process-failure">{{ step.failureCount }} failure</span></span></div>
-          </div>
-        </li>
-      </ol>
-    </details>
-  </section>
+ <section class="work-process" :class="{'is-finished':process.finished}" :data-task-finished="process.finished" :aria-label="t('process.title')">
+  <button type="button" class="process-task-summary" :aria-expanded="!collapsed" @click="toggleTask">
+   <Icon :name="icon" :size="15" :class="{spin:process.active}"/><span class="process-task-state">{{ stateLabel }}</span><span class="process-count">{{ t('process.steps',{count:process.stepCount}) }}</span><time>{{ duration }}</time><Icon name="ChevronDown" :size="13" class="process-chevron" :class="{expanded:!collapsed}"/>
+  </button>
+  <div class="process-task-fold" :class="{expanded:!collapsed}" :inert="collapsed" :aria-hidden="collapsed"><div class="process-task-fold-inner">
+   <ol class="process-timeline"><ProcessStep v-for="step in process.steps" :key="step.key" :step="step" :now="now" :action-label="actionLabel" :collapse-epoch="collapseEpoch"/></ol>
+   <p v-if="!process.steps.length&&process.active" class="process-empty">{{ t('process.waitingStep') }}</p>
+  </div></div>
+ </section>
 </template>
