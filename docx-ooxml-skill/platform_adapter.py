@@ -26,13 +26,13 @@ def safe_path(root, document_id):
 
 
 class Documents:
-    def __init__(self, root, workspace_id, emit=None, vision=False, live_preview=False):
-        self.root = Path(root)
-        self.workspace_id = workspace_id
+    def __init__(self, root, emit=None, vision=False, live_preview=False):
+        self.root = Path(root).resolve()
         self.emit = emit or (lambda event: None)
         self.vision = vision
         self.lock = threading.RLock()
         self.cursors = {}
+        self.bound_paths = {}
         self.timings = []
         self.live_preview = live_preview
         self.preview_jobs = {}
@@ -40,6 +40,7 @@ class Documents:
         self.closed = False
 
     def bind_state(self,record):
+        self.bound_paths = {identity: item['path'] for identity, item in record.get('documents', {}).items()}
         self.cursors=dict(record.get('artifact_cursors',{}).get('docx',record.get('document_cursors',{})))
         for path in self.paths():
             relative=path.relative_to(self.root).as_posix()
@@ -48,11 +49,17 @@ class Documents:
                     events=DocumentStore(path).events()
                     self.cursors[relative]=events[-1]['store_seq'] if events else 0
 
+    def document_path(self, identity):
+        path = self.root / self.bound_paths[identity] if identity in self.bound_paths else safe_path(self.root, identity)
+        if path.is_symlink() or not path.resolve().is_relative_to(self.root.resolve()):
+            raise ValueError('Invalid document path')
+        return path
+
     def feedback(self,text,context):
         identity=context.get('document_id') or context.get('id')
         revision=context.get('revision')
         if type(revision)is not int:raise ValueError('Invalid artifact revision')
-        state=DocumentStore(safe_path(self.root,identity)).status(committed=True)
+        state=DocumentStore(self.document_path(identity)).status(committed=True)
         if revision>state['revision']:raise ValueError('Invalid artifact revision')
         return text+f"\n[Document feedback: document_id={identity}, viewed_revision={revision}, current_revision={state['revision']}. Re-read status, repair affected blocks and checkpoint before continuing.]"
 
@@ -118,7 +125,12 @@ class Documents:
                 store = DocumentStore(path)
                 for event in store.events(self.cursors.get(relative, 0)):
                     seq = event['store_seq']
-                    event.update(workspace_id=self.workspace_id, path=relative)
+                    event.update(path=relative)
+                    identity = event.get('document_id')
+                    if identity in self.bound_paths and self.bound_paths[identity] != relative:
+                        self.cursors[relative] = seq
+                        continue
+                    if identity: self.bound_paths[identity] = relative
                     self.emit(event)
                     self.cursors[relative] = seq
 
@@ -142,15 +154,21 @@ class Documents:
                         context = dict(document_id=committed['document_id'], revision=committed['revision'], external_conflict=True)
                     except (ValueError, OSError):
                         pass
-                    self.emit(dict(type='document_error', path=path.relative_to(self.root).as_posix(), workspace_id=self.workspace_id,
+                    self.emit(dict(type='document_error', path=path.relative_to(self.root).as_posix(),
                         status='invalid_external_write', error=type(exc).__name__, **context))
             self.sync()
 
     def execute(self, action, arguments):
+        result = self._execute(action, arguments)
+        if isinstance(result, dict) and 'path' in result:
+            result = {**result, 'path': self.document_path(arguments['document_id']).relative_to(self.root).as_posix()}
+        return result
+
+    def _execute(self, action, arguments):
         start = time.perf_counter()
         document_id = arguments['document_id']
         self.root.mkdir(parents=True, exist_ok=True)
-        path = safe_path(self.root, document_id)
+        path = self.document_path(document_id)
         store = DocumentStore(path)
         try:
             if action == 'init':
@@ -158,7 +176,7 @@ class Documents:
                 if template:
                     template = (self.root / template).resolve()
                     if not template.is_relative_to(self.root.resolve()) or not template.is_file():
-                        raise ValueError('Template must be a workspace file')
+                        raise ValueError('Template must be a library file')
                 return store.init(document_id, template, arguments.get('mode', 'normal'))
             if action == 'apply_one':
                 return store.apply_one({k: arguments[k] for k in ('document_id', 'operation_id', 'base_revision', 'operation')}, self.root)
@@ -189,7 +207,7 @@ class Documents:
         string = dict(type='string')
         number = dict(type='integer', minimum=0)
         definitions = {
-            'init': (schema(dict(template=string, mode=dict(type='string', enum=['normal','strict']))), 'Initialize a blank DOCX immediately; optional template path relative to workspace. Default normal mode.'),
+            'init': (schema(dict(template=string, mode=dict(type='string', enum=['normal','strict']))), 'Initialize a blank DOCX immediately; optional template path relative to the file library. Default normal mode.'),
             'apply_one': (schema(dict(operation_id=string, base_revision=number, operation=dict(type='object')), ['operation_id','base_revision','operation']), 'Commit exactly one bounded atomic DOCX operation. Supported type: append_paragraph(text,style), append_table(rows), insert_image(path,width_cm,alt), insert_block(xml; one paragraph), replace_text(old,new), delete_block, set_paragraph_style(style), set_paragraph_format, set_table_format(keep_together), set_page. Every operation requires stable block_id; insertion may specify after_block_id. Idempotent operation_id; optimistic base_revision. Cannot add content past a checkpoint gate.'),
             'status': (schema({}), 'Inspect latest revision, block IDs, page checks, gate and history.'),
             'checkpoint': (schema(dict(final=dict(type='boolean'))), 'Render with LibreOffice and check page layout. final=true marks the last page complete. Failures block new content; visual review remains pending.'),
@@ -208,8 +226,8 @@ class Documents:
         return result
 
 
-def create_service(root, workspace_id, emit, actor, vision=False):
-    return Documents(root, workspace_id, emit, vision=vision, live_preview=True)
+def create_service(root, emit, actor, vision=False):
+    return Documents(root, emit, vision=vision, live_preview=True)
 
 
 def create_router(host):

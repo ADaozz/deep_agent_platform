@@ -16,24 +16,27 @@ def client(tmp_path, monkeypatch):
     return TestClient(main.app)
 
 
-def test_workspace_edit_isolation_and_conflict(client):
-    before = client.get('/api/workspaces').json()
-    office = copy.deepcopy(before[0])
-    office['system_prompt'] = 'Only this office'
-    office['tools'][0]['description'] = 'Custom docstring'
-    assert client.put('/api/workspaces/office', json=office).status_code == 200
-    assert client.put('/api/workspaces/office', json=office).status_code == 409
-    after = client.get('/api/workspaces').json()
-    assert after[1:] == before[1:]
-    assert after[0]['tools'][0]['description'] == 'Custom docstring'
+def test_global_settings_conflict_and_removed_workspace_routes(client):
+    config = client.get('/api/settings').json()
+    config['system_prompt'] = 'Global instructions'
+    config['tools'][0]['description'] = 'Custom docstring'
+    assert client.put('/api/settings', json=config).status_code == 200
+    assert client.put('/api/settings', json=config).status_code == 409
+    saved = client.get('/api/settings').json()
+    assert saved['system_prompt'] == 'Global instructions'
+    assert saved['tools'][0]['description'] == 'Custom docstring'
+    assert d.all_records('workspace') == []
+    assert client.get('/api/workspaces').status_code == 404
+    assert client.post('/api/workspaces', json={'name': 'Removed'}).status_code == 404
+    assert client.put('/api/workspaces/office', json=config).status_code == 404
 
 
 def test_snapshot_and_tool_scoping(client):
-    source = d.get('workspace', 'office')
-    adapter = d.WorkspaceAdapter(source, 'test')
+    source = d.get('settings', 'global')
+    adapter = d.ToolAdapter(source, 'test')
     source['tools'][0]['enabled'] = False
     assert adapter.config['tools'][0]['enabled']
-    other = d.WorkspaceAdapter(d.get('workspace', 'research'), 'test')
+    other = d.ToolAdapter(d.get('settings', 'global'), 'test')
     with pytest.raises(ValueError):
         other.execute('create_docx', {'title':'x','paragraphs':[]})
 
@@ -42,7 +45,7 @@ def test_snapshot_and_tool_scoping(client):
     ('create_xlsx', {'title':'预算','rows':[['费用',100],['=1+1',200]]}, 'xl/worksheets/sheet1.xml'),
 ])
 def test_office_files(client, name, args, entry):
-    adapter = d.WorkspaceAdapter(d.get('workspace','office'), 'files')
+    adapter = d.ToolAdapter(d.get('settings', 'global'), 'files')
     result = adapter.execute(name, args)
     with zipfile.ZipFile(adapter.root / result['filename']) as archive:
         assert entry in archive.namelist()
@@ -51,18 +54,18 @@ def test_office_files(client, name, args, entry):
 
 def test_validation_and_missing_provider(client, monkeypatch):
     monkeypatch.delenv('PLATFORM_API_KEY', raising=False)
-    assert client.post('/api/workspaces/office/tasks',json={'prompt':'make a doc'}).status_code == 503
-    config = d.get('workspace','office')
+    assert client.post('/api/tasks',json={'prompt':'make a doc'}).status_code == 503
+    config = d.get('settings', 'global')
     config['tools'][0]['name'] = 'execute'
-    assert client.put('/api/workspaces/office',json=config).status_code == 422
+    assert client.put('/api/settings',json=config).status_code == 422
     assert client.get('/api/tasks/nonexistent/artifacts/a.docx').status_code == 404
 
 
 def test_task_file_download(client):
-    d.put('task', dict(id='download',workspace_id='office',status='completed'))
-    adapter = d.WorkspaceAdapter(d.get('workspace','office'),'download')
+    d.put('task', dict(id='download',status='completed'))
+    adapter = d.ToolAdapter(d.get('settings', 'global'),'download')
     from platform_app.documents import Documents
-    docs = Documents(adapter.root, 'office')
+    docs = Documents(adapter.root)
     docs.execute('init', dict(document_id='report'))
     docs.execute('apply_one', dict(document_id='report', operation_id='p1', base_revision=0, operation=dict(type='append_paragraph', block_id='body', text='Body')))
     result = {'filename': 'report.docx'}
@@ -72,7 +75,7 @@ def test_task_file_download(client):
     assert client.get('/api/tasks/download').json()['artifacts'] == [result['filename']]
 
 
-def test_real_core_executes_workspace_tool(client):
+def test_real_core_executes_optional_tool(client):
     from langchain_core.language_models.chat_models import BaseChatModel
     from langchain_core.messages import AIMessage, ToolMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
@@ -101,12 +104,12 @@ def test_real_core_executes_workspace_tool(client):
                 msg = AIMessage(content='', tool_calls=[{'name':'docx_init','args':{'document_id':'test-report'},'id':'office-call','type':'tool_call'}])
             return ChatResult(generations=[ChatGeneration(message=msg)])
 
-    record = dict(id='core-test',workspace_id='office',prompt='生成文档',config=d.get('workspace','office'),status='queued',output='',error=None,revision=1)
+    record = dict(id='core-test',prompt='生成文档',config=d.get('settings', 'global'),status='queued',output='',error=None,revision=1)
     run_task(record, model=ScriptedModel(), raise_errors=True)
     saved = d.get('task','core-test')
     assert saved['status'] == 'completed', saved
     assert '文档已生成' in saved['output']
-    assert list((d.DATA / 'artifacts' / 'office' / 'core-test').glob('*.docx'))
+    assert list((d.DATA / 'artifacts' / 'core-test').glob('*.docx'))
 
 
 def model_configuration(api='responses', key='private-test-key'):
@@ -150,9 +153,9 @@ def test_task_model_snapshot_and_invalid_effort(client, monkeypatch):
     from platform_app import main, models
     monkeypatch.setattr(main.POOL, 'submit', lambda *args: None)
     assert client.put('/api/models',json={'llm':model_configuration(),'revision':0}).status_code == 200
-    bad = client.post('/api/workspaces/office/tasks',json={'prompt':'test','model_id':'provider/demo','reasoning_effort':'xhigh'})
+    bad = client.post('/api/tasks',json={'prompt':'test','model_id':'provider/demo','reasoning_effort':'xhigh'})
     assert bad.status_code == 422
-    task = client.post('/api/workspaces/office/tasks',json={'prompt':'test','model_id':'provider/demo','reasoning_effort':'high'})
+    task = client.post('/api/tasks',json={'prompt':'test','model_id':'provider/demo','reasoning_effort':'high'})
     assert task.status_code == 202, task.text
     task = task.json()
     assert 'model_snapshot' not in task
@@ -172,7 +175,7 @@ def test_env_reference_and_invalid_default(client, monkeypatch):
     response=client.put('/api/models',json={'llm':config,'revision':0})
     assert response.status_code == 200
     assert not response.json()['profiles'][0]['configured']
-    assert client.post('/api/workspaces/office/tasks',json={'prompt':'test'}).status_code == 422
+    assert client.post('/api/tasks',json={'prompt':'test'}).status_code == 422
     config['default']='provider/missing'
     assert client.put('/api/models',json={'llm':config,'revision':1}).status_code == 422
 
@@ -187,10 +190,10 @@ def test_cli_reasoning_default_and_explicit_native_default(client, monkeypatch):
     assert value['profiles'][0]['default_reasoning_effort'] == 'high'
     assert models.selection()['reasoning_effort'] == 'high'
     assert models.selection(effort=None)['reasoning_effort'] is None
-    session = client.post('/api/agent/sessions', json={'workspace_id': 'writing'}).json()
+    session = client.post('/api/agent/sessions', json={}).json()
     assert session['model_id'] == 'provider/demo'
     assert session['reasoning_effort'] == 'high'
-    explicit = client.post('/api/agent/sessions', json={'workspace_id': 'writing', 'reasoning_effort': None}).json()
+    explicit = client.post('/api/agent/sessions', json={'reasoning_effort': None}).json()
     assert explicit['reasoning_effort'] is None
 
 

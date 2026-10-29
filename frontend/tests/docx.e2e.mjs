@@ -3,6 +3,7 @@ import { chromium } from 'playwright'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 const base = process.env.DOCX_E2E_BASE_URL || 'http://127.0.0.1:8081'
+const timeoutScale = Number(process.env.OFFICE_E2E_TIMEOUT_SCALE || 1)
 const output = process.env.DOCX_E2E_OUTPUT || new URL('../test-results/', import.meta.url).pathname
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] })
@@ -21,14 +22,14 @@ await page.addInitScript(() => new PerformanceObserver(list => {
 }).observe({ type: 'measure', buffered: true }))
 function percentile(values, p) { const ordered = values.toSorted((a,b)=>a-b); return ordered.length ? Math.round(ordered[Math.ceil(ordered.length*p)-1]*100)/100 : null }
 async function poll(fn, timeout = 180000) {
-  const end = Date.now() + timeout
+  const end = Date.now() + timeout * timeoutScale
   while (Date.now() < end) { const value = await fn(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 250)) }
   throw new Error('Timed out waiting for formatted DOCX acceptance condition')
 }
 try {
   await page.goto(base)
   await page.evaluate(() => localStorage.setItem('locale', 'zh'))
-  const response = await page.request.post(base + '/api/agent/sessions', { data: { workspace_id: 'writing', model_id: 'test/model' } })
+  const response = await page.request.post(base + '/api/agent/sessions', { data: { model_id: 'test/model' } })
   assert.equal(response.status(), 201)
   const session = await response.json(); const sessionUrl = base + '/api/agent/sessions/' + session.id
   await page.goto(base + '/?session=' + session.id)

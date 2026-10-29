@@ -23,18 +23,6 @@
     "zh": "历史记录",
     "en": "History"
   },
-  "工作区文件": {
-    "zh": "工作区文件",
-    "en": "Workspace files"
-  },
-  "WORKSPACES": {
-    "zh": "工作区",
-    "en": "WORKSPACES"
-  },
-  "新建工作区": {
-    "zh": "新建工作区",
-    "en": "New workspace"
-  },
   "RECENT CHATS": {
     "zh": "最近对话",
     "en": "RECENT CHATS"
@@ -58,18 +46,6 @@
   "Agents": {
     "zh": "智能体",
     "en": "Agents"
-  },
-  "工作区配置": {
-    "zh": "工作区配置",
-    "en": "Workspace settings"
-  },
-  "Loading workspace…": {
-    "zh": "正在加载工作区…",
-    "en": "Loading workspace…"
-  },
-  "YOUR WORKSPACE": {
-    "zh": "你的工作区",
-    "en": "YOUR WORKSPACE"
   },
   "Chats": {
     "zh": "对话",
@@ -103,10 +79,6 @@
     "zh": "连接模型，开始使用",
     "en": "Connect a model to get started"
   },
-  "配置模型，即可在工作区使用 Deep Agent 的完整能力": {
-    "zh": "配置模型，即可在工作区使用 Deep Agent 的完整能力",
-    "en": "Set up a model to use Deep Agent in your workspace"
-  },
   "Set up model": {
     "zh": "配置模型",
     "en": "Set up model"
@@ -114,10 +86,6 @@
   "关闭提示": {
     "zh": "关闭提示",
     "en": "Dismiss notice"
-  },
-  "Your workspace is ready": {
-    "zh": "工作区已就绪",
-    "en": "Your workspace is ready"
   },
   "You": {
     "zh": "你",
@@ -167,22 +135,6 @@
     "zh": "Agent 已暂停",
     "en": "Agent paused"
   },
-  "Choose workspace": {
-    "zh": "选择工作区",
-    "en": "Choose workspace"
-  },
-  "Search workspaces…": {
-    "zh": "搜索工作区…",
-    "en": "Search workspaces…"
-  },
-  "New workspace": {
-    "zh": "新建工作区",
-    "en": "New workspace"
-  },
-  "Workspace settings": {
-    "zh": "工作区设置",
-    "en": "Workspace settings"
-  },
   "运行环境": {
     "zh": "运行环境",
     "en": "Runtime"
@@ -190,18 +142,6 @@
   "Runtime": {
     "zh": "运行环境",
     "en": "Runtime"
-  },
-  "Local workspace": {
-    "zh": "本地工作区",
-    "en": "Local workspace"
-  },
-  "文件和命令由内核在工作区沙箱内执行。具有副作用的操作需要审批。": {
-    "zh": "文件和命令由内核在工作区沙箱内执行。具有副作用的操作需要审批。",
-    "en": "The core runs files and commands in the workspace sandbox. Actions that make changes require approval."
-  },
-  "Browse workspace files": {
-    "zh": "浏览工作区文件",
-    "en": "Browse workspace files"
   },
   "Tool permission ·": {
     "zh": "工具权限 ·",
@@ -223,10 +163,6 @@
     "zh": "压缩上下文",
     "en": "Compact context"
   },
-  "配置工作区": {
-    "zh": "配置工作区",
-    "en": "Configure workspace"
-  },
   "任务输入": {
     "zh": "任务输入",
     "en": "Task input"
@@ -247,17 +183,9 @@
     "zh": "最多 4 张",
     "en": "Up to 4"
   },
-  "Workspace tools": {
-    "zh": "工作区工具",
-    "en": "Workspace tools"
-  },
   "Skills": {
-    "zh": "技能",
-    "en": "Skills"
-  },
-  "Workspace files": {
-    "zh": "工作区文件",
-    "en": "Workspace files"
+    "zh": "设置技能",
+    "en": "Agent skills"
   },
   "Select model": {
     "zh": "选择模型",
@@ -291,10 +219,6 @@
     "zh": "加入队列",
     "en": "Queue"
   },
-  "查看工作区文件": {
-    "zh": "查看工作区文件",
-    "en": "View workspace files"
-  },
   "tokens": {
     "zh": "Token",
     "en": "tokens"
@@ -322,10 +246,6 @@
   "关闭设置": {
     "zh": "关闭设置",
     "en": "Close settings"
-  },
-  "工作区名称": {
-    "zh": "工作区名称",
-    "en": "Workspace name"
   },
   "描述": {
     "zh": "描述",
@@ -359,10 +279,6 @@
     "zh": "编辑已注册工具的描述与 JSON Schema。参数名称和必填项需保留。",
     "en": "Edit registered tool descriptions and JSON Schema. Keep parameter names and required fields."
   },
-  "此工作区没有额外的 Office 工具，仍可使用上方内核工具。": {
-    "zh": "此工作区没有额外的 Office 工具，仍可使用上方内核工具。",
-    "en": "No extra Office tools in this workspace. Core tools remain available above."
-  },
   "启用此工具": {
     "zh": "启用此工具",
     "en": "Enable this tool"
@@ -382,10 +298,6 @@
   "MCP JSON 配置": {
     "zh": "MCP JSON 配置",
     "en": "MCP JSON configuration"
-  },
-  "Workspace skills": {
-    "zh": "工作区技能",
-    "en": "Workspace skills"
   },
   "Skill 将生成标准 SKILL.md，并作为只读目录提供给内核按需加载。": {
     "zh": "Skill 将生成标准 SKILL.md，并作为只读目录提供给内核按需加载。",
@@ -507,21 +419,9 @@
     "zh": "为你的工具、技能和想法创建专属空间。",
     "en": "A dedicated space for your tools, skills and ideas."
   },
-  "Workspace name": {
-    "zh": "工作区名称",
-    "en": "Workspace name"
-  },
   "e.g. Development": {
-    "zh": "例如：开发工作区",
+    "zh": "例如：开发设置",
     "en": "e.g. Development"
-  },
-  "Create workspace": {
-    "zh": "创建工作区",
-    "en": "Create workspace"
-  },
-  "· 内核工作区文件": {
-    "zh": "· 内核工作区文件",
-    "en": "· Core workspace files"
   },
   "No files yet.": {
     "zh": "暂无文件。",
@@ -578,10 +478,6 @@
   "Enter to send · Shift+Enter for a new line": {
     "zh": "Enter 发送 · Shift+Enter 换行",
     "en": "Enter to send · Shift+Enter for a new line"
-  },
-  "工作区设置": {
-    "zh": "工作区设置",
-    "en": "Workspace settings"
   },
   "Model settings": {
     "zh": "模型设置",
@@ -727,14 +623,6 @@
     "zh": "最多添加 4 张图片，每张不超过 10MB",
     "en": "Attach up to 4 images, each no larger than 10MB."
   },
-  "工作区配置已保存；新会话使用新配置": {
-    "zh": "工作区配置已保存；新会话使用新配置",
-    "en": "Workspace settings saved. New chats will use the updated configuration."
-  },
-  "工作区已创建": {
-    "zh": "工作区已创建",
-    "en": "Workspace created."
-  },
   "请填写来源、模型 ID、端点和 API Key": {
     "zh": "请填写来源、模型 ID、端点和 API Key",
     "en": "Enter the provider, model ID, base URL and API key."
@@ -780,8 +668,8 @@
     "en": "Delete skill {name}"
   },
   "document.title": {
-    "zh": "Deep Agent · 工作区",
-    "en": "Deep Agent · Workspace"
+    "zh": "Deep Agent · 设置",
+    "en": "Deep Agent · Agent"
   },
   "请在网页的模型配置中新增模型来源和模型": {
     "zh": "请在网页的模型配置中新增模型来源和模型",
@@ -790,10 +678,6 @@
   "模型、思考强度或密钥配置无效": {
     "zh": "模型、思考强度或密钥配置无效",
     "en": "Invalid model, reasoning effort or API key configuration."
-  },
-  "工作空间不存在": {
-    "zh": "工作空间不存在",
-    "en": "Workspace not found."
   },
   "会话不存在": {
     "zh": "会话不存在",
@@ -907,10 +791,6 @@
     "zh": "该模型不支持所选思考强度",
     "en": "The model does not support this reasoning effort."
   },
-  "工作空间名称不能为空": {
-    "zh": "工作空间名称不能为空",
-    "en": "Workspace name cannot be empty."
-  },
   "system_prompt 必须是文本": {
     "zh": "system_prompt 必须是文本",
     "en": "System prompt must be text."
@@ -946,10 +826,6 @@
   "schema 必须保留处理器参数与 required；可修改描述和约束": {
     "zh": "schema 必须保留处理器参数与 required；可修改描述和约束",
     "en": "Keep handler parameters and required fields in the schema. Descriptions and constraints may be edited."
-  },
-  "当前工作空间未启用该工具": {
-    "zh": "当前工作空间未启用该工具",
-    "en": "This tool is disabled in the current workspace."
   },
   "服务已重启，请创建新任务重试。": {
     "zh": "服务已重启，请创建新任务重试。",
@@ -1035,30 +911,6 @@
     "zh": "请先处理当前交互再切换权限模式",
     "en": "Finish the current interaction before changing permission mode."
   },
-  "workspace.manage": {
-    "zh": "管理工作区",
-    "en": "Manage workspaces"
-  },
-  "workspace.configure": {
-    "zh": "配置 {name}",
-    "en": "Configure {name}"
-  },
-  "workspace.configureTarget": {
-    "zh": "配置工作区",
-    "en": "Configure workspace"
-  },
-  "workspace.bindAll": {
-    "zh": "自动绑定全部工具与 Skill",
-    "en": "Automatically bind all tools and skills"
-  },
-  "workspace.bindAllHint": {
-    "zh": "Everything 自动汇总全部工具、其他工作区的 Skill 和 CLI Skill。请在来源工作区编辑，或关闭通用设置中的自动绑定后自定义。",
-    "en": "Everything includes all tools, workspace skills and CLI skills. Edit resources in their source workspace, or turn off automatic binding in General to customize."
-  },
-  "workspace.cliSkills": {
-    "zh": "CLI 已安装的 Skill",
-    "en": "Installed CLI skills"
-  },
   "upload.drop": {
     "zh": "松开即可上传文件",
     "en": "Drop files to upload"
@@ -1089,7 +941,7 @@
   },
   "上传文件不存在": {
     "zh": "上传文件不存在",
-    "en": "Uploaded file not found in this workspace."
+    "en": "Uploaded file not found in this settings."
   },
   "上传文件不能重复": {
     "zh": "上传文件不能重复",
@@ -1220,8 +1072,8 @@
     "en": "Long result; showing the first part."
   },
   "skills.configureHint": {
-    "zh": "配置已安装 Skill 在当前工作区的启用状态。脚本、参考资料和操作指引随 Skill 一同加载。",
-    "en": "Choose which installed skills to enable for this workspace. Scripts, references and instructions load with each skill."
+    "zh": "配置已安装 Skill 在当前设置的启用状态。脚本、参考资料和操作指引随 Skill 一同加载。",
+    "en": "Choose which installed skills to enable for this settings. Scripts, references and instructions load with each skill."
   },
   "skills.empty": {
     "zh": "尚未发现已安装的 Skill。",
@@ -1234,10 +1086,6 @@
   "skills.installed": {
     "zh": "已安装 · deep_agent_cli",
     "en": "Installed · deep_agent_cli"
-  },
-  "skills.workspaceBound": {
-    "zh": "工作区已绑定",
-    "en": "Bound to workspace"
   },
   "artifacts.title": {
     "zh": "输出文件",
@@ -1598,5 +1446,61 @@
   "process.task.runtime_config_boundary": {
     "zh": "等待继续",
     "en": "Awaiting resume"
+  },
+  "Loading…": {
+    "zh": "加载中…",
+    "en": "Loading…"
+  },
+  "YOUR CHATS": {
+    "zh": "全部会话",
+    "en": "YOUR CHATS"
+  },
+  "配置模型，即可使用 Deep Agent 的完整能力": {
+    "zh": "配置模型，即可在设置使用 Deep Agent 的完整能力",
+    "en": "Set up a model to use Deep Agent in your settings"
+  },
+  "Ready to start": {
+    "zh": "已就绪，可以开始了",
+    "en": "Ready to start"
+  },
+  "Agent settings": {
+    "zh": "Agent 设置",
+    "en": "Agent settings"
+  },
+  "Files": {
+    "zh": "文件库",
+    "en": "Files"
+  },
+  "Local files": {
+    "zh": "本地文件",
+    "en": "Local files"
+  },
+  "Browse files": {
+    "zh": "浏览文件",
+    "en": "Browse files"
+  },
+  "查看文件": {
+    "zh": "查看设置文件",
+    "en": "View settings files"
+  },
+  "Additional tools": {
+    "zh": "设置工具",
+    "en": "Agent tools"
+  },
+  "没有额外的 Office 工具，仍可使用上方内核工具。": {
+    "zh": "此设置没有额外的 Office 工具，仍可使用上方内核工具。",
+    "en": "No extra Office tools in this settings. Core tools remain available above."
+  },
+  "会话共用的文件库": {
+    "zh": "所有会话共用的文件库",
+    "en": "Shared file library for all chats"
+  },
+  "skills.configured": {
+    "zh": "已配置的技能",
+    "en": "Configured skill"
+  },
+  "设置已保存；新会话使用新配置": {
+    "zh": "设置已保存；新会话使用新配置",
+    "en": "Settings saved; new chats use the updated configuration"
   }
 }

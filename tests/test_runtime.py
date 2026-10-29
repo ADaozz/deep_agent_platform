@@ -23,7 +23,7 @@ class CoreModel(BaseChatModel):
         assert 'execute' in names
         assert 'write_file' in names
         assert 'write_todos' not in names
-        assert 'read_file' not in names  # workspace toggle reaches native model tools
+        assert 'read_file' not in names  # global setting reaches native model tools
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -86,11 +86,11 @@ def client(tmp_path, monkeypatch):
     rt.RUNTIMES.clear()
     config = {'default': 'test/model', 'models': {'test': {'base_url': 'https://example.com/v1', 'api_key': 'secret-adapter-test', 'api': 'chat_completions', 'reasoning_efforts': ['low', 'high'], 'models': {'model': {}}}}}
     m.save(config, 0)
-    ws = d.get('workspace', 'writing')
+    ws = d.get('settings', 'global')
     ws['core_tools'] = {'read_file': False}
     ws['skills'] = [{'name': 'Test skill', 'description': 'Test reusable workflow', 'content': 'Use precise output.', 'enabled': True}]
-    d.put('workspace', ws)
-    target = str(tmp_path / 'workspaces' / 'writing' / 'files' / 'hello.txt')
+    d.put('settings', ws)
+    target = str(tmp_path / 'files' / 'hello.txt')
     def build_model(profile, **kwargs):
         model = CoreModel(target=target)
         object.__setattr__(model, '_deep_agent_model_id', profile.id)
@@ -108,7 +108,7 @@ def client(tmp_path, monkeypatch):
 
 
 def new_session(client):
-    response = client.post('/api/agent/sessions', json={'workspace_id': 'writing', 'model_id': 'test/model'})
+    response = client.post('/api/agent/sessions', json={'model_id': 'test/model'})
     assert response.status_code == 201, response.text
     assert 'secret-adapter-test' not in response.text
     assert 'config' not in response.json()
@@ -126,7 +126,7 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     session_id = new_session(client)
     response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'write a file'})
     assert response.status_code == 202, response.text
-    target = tmp_path / 'workspaces' / 'writing' / 'files' / 'hello.txt'
+    target = tmp_path / 'files' / 'hello.txt'
     assert not target.exists()  # real HITL prevents the actual write
     assert approve(client, session_id).status_code == 202
     saved = client.get('/api/agent/sessions/' + session_id).json()
@@ -135,7 +135,7 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     outputs = [e for e in d.all_records('event') if e['type'] == 'output_files']
     assert any(file['path'] == 'hello.txt' and file['size'] == len('from the real kernel') for event in outputs for file in event['files'])
     runner = rt.RUNTIMES[session_id].runner
-    skills = runner.prepared.backend.download_files(['/workspace-skills/skill-1/SKILL.md'])
+    skills = runner.prepared.backend.download_files(['/agent-skills/skill-1/SKILL.md'])
     assert b'Use precise output.' in skills[0].content
     response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'run a command'})
     assert response.status_code == 202
@@ -150,8 +150,8 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     saved = client.get('/api/agent/sessions/' + session_id).json()
     assert saved['status'] == 'completed', saved
     assert 'restored' in saved['output']
-    assert client.get('/api/agent/workspaces/writing/files/hello.txt').text == 'from the real kernel'
-    assert client.get('/api/agent/workspaces/writing/files/%2E%2E/%2E%2E/platform.sqlite').status_code == 404
+    assert client.get('/api/agent/files/hello.txt').text == 'from the real kernel'
+    assert client.get('/api/agent/files/%2E%2E/%2E%2E/platform.sqlite').status_code == 404
 
 
 def test_completed_session_journal_retains_streams_and_persisted_timestamps(client):
@@ -175,19 +175,19 @@ def test_completed_session_journal_retains_streams_and_persisted_timestamps(clie
 
 def test_configuration_snapshot_and_runtime_model_switch(client):
     session_id = new_session(client)
-    ws = d.get('workspace', 'writing')
+    ws = d.get('settings', 'global')
     ws['system_prompt'] = 'New prompt'
-    assert client.put('/api/workspaces/writing', json=ws).status_code == 200
+    assert client.put('/api/settings', json=ws).status_code == 200
     assert d.get('session', session_id)['config']['system_prompt'] != 'New prompt'
-    response = client.put(f'/api/agent/sessions/{session_id}/model', json={'workspace_id': 'writing', 'model_id': 'test/model', 'reasoning_effort': 'high'})
+    response = client.put(f'/api/agent/sessions/{session_id}/model', json={'model_id': 'test/model', 'reasoning_effort': 'high'})
     assert response.status_code == 200
     assert response.json()['reasoning_effort'] == 'high'
-    assert client.put(f'/api/agent/sessions/{session_id}/model', json={'workspace_id': 'writing', 'model_id': 'test/model', 'reasoning_effort': 'invalid'}).status_code == 422
+    assert client.put(f'/api/agent/sessions/{session_id}/model', json={'model_id': 'test/model', 'reasoning_effort': 'invalid'}).status_code == 422
     assert client.post(f'/api/agent/sessions/{session_id}/actions/approve', json={'decisions': []}).status_code == 409
     response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'hello'})
     assert response.status_code == 202
     assert client.get('/api/agent/sessions/' + session_id).json()['status'] == 'completed'
-    response = client.put(f'/api/agent/sessions/{session_id}/model', json={'workspace_id': 'writing', 'model_id': 'test/model', 'reasoning_effort': 'low'})
+    response = client.put(f'/api/agent/sessions/{session_id}/model', json={'model_id': 'test/model', 'reasoning_effort': 'low'})
     assert response.status_code == 200, response.text
     assert rt.RUNTIMES[session_id].runner.reasoning_effort() == 'low'
     response = client.put(f'/api/agent/sessions/{session_id}/permission', json={'mode': 'allow', 'confirmation': 'ALLOW'})
@@ -198,7 +198,7 @@ def test_configuration_snapshot_and_runtime_model_switch(client):
 
 
 def test_permission_before_first_message_and_full_access_default(client, tmp_path):
-    assert client.post('/api/agent/sessions', json={'workspace_id': 'writing', 'permission_mode': 'allow'}).status_code == 422
+    assert client.post('/api/agent/sessions', json={'permission_mode': 'allow'}).status_code == 422
     session_id = new_session(client)
     base = f'/api/agent/sessions/{session_id}'
     record = client.get(base).json()
@@ -209,11 +209,11 @@ def test_permission_before_first_message_and_full_access_default(client, tmp_pat
     assert client.post(base + '/messages', json={'text': 'write a file'}).status_code == 202
     record = client.get(base).json()
     assert record['status'] == 'completed', record
-    assert (tmp_path / 'workspaces/writing/files/hello.txt').exists()
+    assert (tmp_path / 'files/hello.txt').exists()
     runner = rt.RUNTIMES[session_id].runner
     assert runner.permission_mode().value == 'allow'
     assert runner.sandbox_mode() == 'full-access'
-    # A file outside the workspace is visible through the actual full-access backend.
+    # A file outside the file library is visible through the actual full-access backend.
     external = tmp_path / 'host-visible.txt'
     external.write_text('full-access-ok')
     result = runner.prepared.backend.download_files([str(external)])
@@ -245,10 +245,10 @@ def test_permission_waiting_interaction_and_pending_boundary(client, monkeypatch
 
 
 def test_core_tool_validation(client):
-    config = d.get('workspace', 'writing')
+    config = d.get('settings', 'global')
     config['core_tools'] = {'unknown_tool': True}
-    assert client.put('/api/workspaces/writing', json=config).status_code == 422
-    assert client.post('/api/agent/sessions', json={'workspace_id': 'missing'}).status_code == 404
+    assert client.put('/api/settings', json=config).status_code == 422
+    assert client.post('/api/agent/sessions', json={'workspace_id': 'missing'}).status_code == 422
     assert client.post('/api/agent/sessions/missing/messages', json={'text': 'hello'}).status_code == 404
 
 
@@ -271,21 +271,21 @@ def test_native_human_input_and_event_resume(client):
 
 
 def test_mcp_config_uses_native_validator(client):
-    config = d.get('workspace', 'writing')
+    config = d.get('settings', 'global')
     config['mcp'] = {'enabled': False, 'servers': {'docs': {'transport': 'streamable_http', 'url': 'https://example.com/mcp', 'auth': {'type': 'bearer', 'token_env': 'TEST_MCP_TOKEN'}}}}
-    assert client.put('/api/workspaces/writing', json=config).status_code == 200
-    config = d.get('workspace', 'writing')
+    assert client.put('/api/settings', json=config).status_code == 200
+    config = d.get('settings', 'global')
     config['mcp']['servers']['docs']['api_key'] = 'must-use-env-references'
-    assert client.put('/api/workspaces/writing', json=config).status_code == 422
+    assert client.put('/api/settings', json=config).status_code == 422
 
 
-def test_file_upload_is_workspace_scoped_and_reaches_real_core(client):
-    response = client.post('/api/agent/workspaces/writing/uploads', files={'file': ('notes.txt', b'uploaded-content-read-by-native-tool', 'text/plain')})
+def test_shared_file_upload_reaches_real_core(client):
+    response = client.post('/api/agent/uploads', files={'file': ('notes.txt', b'uploaded-content-read-by-native-tool', 'text/plain')})
     assert response.status_code == 201, response.text
     file = response.json()
-    assert client.get('/api/agent/workspaces/writing/files/' + file['path']).content == b'uploaded-content-read-by-native-tool'
+    assert client.get('/api/agent/files/' + file['path']).content == b'uploaded-content-read-by-native-tool'
     assert client.post('/api/agent/workspaces/missing/uploads', files={'file': ('x.txt', b'x')}).status_code == 404
-    assert client.post('/api/agent/workspaces/writing/uploads', files={'file': ('empty.txt', b'')}).status_code == 422
+    assert client.post('/api/agent/uploads', files={'file': ('empty.txt', b'')}).status_code == 422
     session_id = new_session(client)
     url = f'/api/agent/sessions/{session_id}/messages'
     assert client.post(url, json={'text': 'inspect uploaded file', 'upload_ids': [file['id']]}).status_code == 202
@@ -295,60 +295,60 @@ def test_file_upload_is_workspace_scoped_and_reaches_real_core(client):
     assert client.get('/api/agent/sessions/' + session_id).json()['status'] == 'completed'
     assert any(e['type'] == 'tool_completed' and 'uploaded-content-read-by-native-tool' in e.get('content', '') for e in d.all_records('event'))
     assert client.post(url, json={'text': 'x', 'upload_ids': [file['id'], file['id']]}).status_code == 422
-    other = client.post('/api/agent/sessions', json={'workspace_id': 'office', 'model_id': 'test/model'}).json()
-    assert client.post(f'/api/agent/sessions/{other["id"]}/messages', json={'text': 'x', 'upload_ids': [file['id']]}).status_code == 404
+    other = client.post('/api/agent/sessions', json={'model_id': 'test/model'}).json()
+    assert client.post(f'/api/agent/sessions/{other["id"]}/messages', json={'text': 'hello', 'upload_ids': [file['id']]}).status_code == 202
 
 
-def test_workspace_file_download_and_guards(client, tmp_path):
-    root = d.DATA / 'workspaces' / 'writing' / 'files'
+def test_file_library_download_and_guards(client, tmp_path):
+    root = d.files_root()
     root.mkdir(parents=True, exist_ok=True)
     (root / 'nested').mkdir()
     payload = b'# Hello'
     (root / 'nested' / 'notes.md').write_bytes(payload)
-    response = client.get('/api/agent/workspaces/writing/files/nested/notes.md')
+    response = client.get('/api/agent/files/nested/notes.md')
     assert response.status_code == 200
     assert response.content == payload
     assert response.headers['content-disposition'].startswith('attachment;')
-    assert client.get('/api/agent/workspaces/writing/files').json() == [
+    assert client.get('/api/agent/files').json() == [
         {'path': 'nested/notes.md', 'size': len(payload)}]
     outside = tmp_path / 'outside.md'
     outside.write_text('private')
     (root / 'link.md').symlink_to(outside)
-    assert client.get('/api/agent/workspaces/writing/files/link.md').status_code == 404
-    assert client.get('/api/agent/workspaces/writing/files/%2E%2E/platform.sqlite').status_code == 404
+    assert client.get('/api/agent/files/link.md').status_code == 404
+    assert client.get('/api/agent/files/%2E%2E/platform.sqlite').status_code == 404
     assert client.get('/api/agent/workspaces/missing/files/notes.md').status_code == 404
 
 
 def test_file_preview_and_edit_endpoints_removed(client):
-    root = d.DATA / 'workspaces' / 'writing' / 'files'
+    root = d.files_root()
     root.mkdir(parents=True, exist_ok=True)
     notes = root / 'notes.md'
     notes.write_text('Original')
-    assert client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md'}).status_code == 404
-    assert client.get('/api/agent/workspaces/writing/file-view', params={'path': 'notes.md'}).status_code == 404
-    assert client.put('/api/agent/workspaces/writing/file', json={'path': 'notes.md', 'content': 'Changed'}).status_code == 404
-    assert client.put('/api/agent/workspaces/writing/document', params={'path': 'notes.md'},
+    assert client.get('/api/agent/file', params={'path': 'notes.md'}).status_code == 404
+    assert client.get('/api/agent/file-view', params={'path': 'notes.md'}).status_code == 404
+    assert client.put('/api/agent/file', json={'path': 'notes.md', 'content': 'Changed'}).status_code == 404
+    assert client.put('/api/agent/document', params={'path': 'notes.md'},
         files={'file': ('notes.md', b'Changed')}, data={'revision': 'old'}).status_code == 404
     assert notes.read_text() == 'Original'
 
 
 @pytest.mark.parametrize('kind,base', [('session', '/api/agent/sessions'), ('task', '/api/tasks')])
 def test_artifact_download_preserves_source(client, kind, base):
-    d.put(kind, {'id': 'artifact-download', 'workspace_id': 'writing'})
-    root = d.DATA / 'artifacts' / 'writing' / 'artifact-download'
+    d.put(kind, {'id': 'artifact-download', })
+    root = d.DATA / 'artifacts' / 'artifact-download'
     root.mkdir(parents=True)
     (root / 'notes.md').write_text('Artifact original')
     response = client.get(f'{base}/artifact-download/artifacts/notes.md')
     assert response.status_code == 200
     assert response.content == b'Artifact original'
     assert response.headers['content-disposition'].startswith('attachment;')
-    assert not (d.DATA / 'workspaces' / 'writing' / 'files' / 'notes.md').exists()
+    assert not (d.files_root() / 'notes.md').exists()
 
 
 def test_upload_size_limit_and_sanitized_filename(client, monkeypatch):
     monkeypatch.setattr(rt, 'MAX_UPLOAD_BYTES', 10)
-    assert client.post('/api/agent/workspaces/writing/uploads', files={'file': ('big.txt', b'x' * 11)}).status_code == 413
-    response = client.post('/api/agent/workspaces/writing/uploads', files={'file': ('../../notes.txt', b'hello')})
+    assert client.post('/api/agent/uploads', files={'file': ('big.txt', b'x' * 11)}).status_code == 413
+    response = client.post('/api/agent/uploads', files={'file': ('../../notes.txt', b'hello')})
     assert response.status_code == 201
     assert response.json()['name'] == 'notes.txt'
     assert response.json()['path'].startswith('uploads/')
@@ -377,7 +377,7 @@ def test_real_core_cache_usage_and_historical_checkpoint_backfill(client):
 @pytest.mark.parametrize('entrypoint', ['session', 'legacy'])
 def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch, entrypoint):
     if entrypoint == 'session':
-        target = d.DATA / 'workspaces' / 'writing' / 'files' / 'delegated.txt'
+        target = d.files_root() / 'delegated.txt'
         def build_model(profile, **kwargs):
             model = DelegationModel(target=str(target))
             object.__setattr__(model, '_deep_agent_model_id', profile.id)
@@ -392,8 +392,8 @@ def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch, ent
         assert any(e['type'] == 'subagents_changed' and e['result'].get('count') == 1 for e in d.all_records('event'))
     else:
         from platform_app.main import run_task
-        target = d.DATA / 'artifacts' / 'writing' / 'legacy-delegation' / 'delegated.txt'
-        record = dict(id='legacy-delegation', workspace_id='writing', prompt='Delegate an independent file task.', config=d.get('workspace', 'writing'), status='queued', output='', error=None, revision=1)
+        target = d.DATA / 'artifacts' / 'legacy-delegation' / 'delegated.txt'
+        record = dict(id='legacy-delegation',  prompt='Delegate an independent file task.', config=d.get('settings', 'global'), status='queued', output='', error=None, revision=1)
         run_task(record, model=DelegationModel(target=str(target)), raise_errors=True)
         record = d.get('task', record['id'])
         assert record['status'] == 'completed', record
@@ -401,36 +401,28 @@ def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch, ent
     assert record['output'] == 'Main agent received subagent result.'
 
 
-def test_everything_aggregates_resources_and_freezes_session_snapshot(client, monkeypatch, tmp_path):
+def test_global_config_freezes_session_snapshot(client, monkeypatch, tmp_path):
     import agent.config
     cli = tmp_path / 'cli-skills' / 'example'
     cli.mkdir(parents=True)
     (cli / 'SKILL.md').write_text('---\nname: cli-example\ndescription: CLI skill example\n---\nInstructions')
     monkeypatch.setattr(agent.config, 'default_skills_dir', lambda: cli.parent)
     monkeypatch.setattr('agent.sandbox.default_skills_dir', lambda: cli.parent)
-    everything = next(w for w in client.get('/api/workspaces').json() if w['id'] == 'everything')
-    assert everything['bind_all']
-    assert all(everything['core_tools'].values())
-    assert {t['name'] for t in everything['tools']} == set(d.TOOL_SCHEMAS)
-    assert any(s['name'] == '办公文档' for s in everything['skills'])
-    assert any(s['name'] == 'cli-example' for s in everything['native_skills'])
-    session = client.post('/api/agent/sessions', json={'workspace_id': 'everything', 'model_id': 'test/model'}).json()
+    config = client.get('/api/settings').json()
+    assert {t['name'] for t in config['tools']} == set(d.TOOL_SCHEMAS)
+    assert any(s['name'] == 'cli-example' and s['enabled'] for s in config['native_skills'])
+    session = client.post('/api/agent/sessions', json={'model_id': 'test/model'}).json()
     snapshot = d.get('session', session['id'])['config']
-    office = d.get('workspace', 'office')
-    office['skills'].append({'name': 'New skill', 'content': 'A new workflow'})
-    assert client.put('/api/workspaces/office', json=office).status_code == 200
-    updated = next(w for w in client.get('/api/workspaces').json() if w['id'] == 'everything')
-    assert any(s['name'] == 'New skill' for s in updated['skills'])
+    config['skills'].append({'name': 'New skill', 'content': 'A new workflow'})
+    assert client.put('/api/settings', json=config).status_code == 200
+    assert any(s['name'] == 'New skill' for s in client.get('/api/settings').json()['skills'])
     assert all(s['name'] != 'New skill' for s in snapshot['skills'])
-    # Saving metadata does not copy derived skills into Everything's own record.
-    assert client.put('/api/workspaces/everything', json=updated).status_code == 200
-    assert d.get('workspace', 'everything')['skills'] == []
-    monkeypatch.setattr(CoreModel, 'bind_tools', lambda self, *args, **kwargs: self)
+    assert 'workspace_id' not in session
     assert client.post(f'/api/agent/sessions/{session["id"]}/messages', json={'text': 'hello'}).status_code == 202
     assert client.get('/api/agent/sessions/' + session['id']).json()['status'] == 'completed'
     runner = rt.RUNTIMES[session['id']].runner
-    assert '/workspace-skills/installed/' in runner.prepared.skill_sources
-    assert runner.prepared.backend.download_files(['/workspace-skills/installed/example/SKILL.md'])[0].content.endswith(b'Instructions')
+    assert '/agent-skills/installed/' in runner.prepared.skill_sources
+    assert runner.prepared.backend.download_files(['/agent-skills/installed/example/SKILL.md'])[0].content.endswith(b'Instructions')
 
 
 def test_deepseek_tools_replace_tavily_and_follow_permissions(client, monkeypatch):
@@ -450,9 +442,9 @@ def test_deepseek_tools_replace_tavily_and_follow_permissions(client, monkeypatc
     runner.request_permission_change('ask')
     runner.apply_pending_config_if_idle()
     assert 'web_fetch' in runner.prepared.interrupt_on
-    ws = d.get('workspace', 'writing')
+    ws = d.get('settings', 'global')
     ws['core_tools'].update(web_search=False, web_fetch=False)
-    d.put('workspace', ws)
+    d.put('settings', ws)
     session = new_session(client)
     client.post(f'/api/agent/sessions/{session}/messages', json={'text': 'hello'})
     hidden = rt.RUNTIMES[session].runner.prepared.model_tool_names
@@ -470,38 +462,36 @@ def test_installed_skill_bindings_reach_native_discovery_and_freeze_resources(cl
         (path / 'scripts' / 'helper.py').write_text('print("original helper")')
     monkeypatch.setattr(agent.config, 'default_skills_dir', lambda: root)
     monkeypatch.setattr('agent.sandbox.default_skills_dir', lambda: root)
-    workspaces = client.get('/api/workspaces').json()
-    writing = next(w for w in workspaces if w['id'] == 'writing')
+    writing = client.get('/api/settings').json()
     assert {s['id'] for s in writing['native_skills']} == {'docx-author', 'other-skill'}
-    assert all(not s['enabled'] for s in writing['native_skills'])
+    assert all(s['enabled'] for s in writing['native_skills'])
     writing['skill_bindings'] = {'docx-author': True, 'other-skill': False}
-    saved = client.put('/api/workspaces/writing', json=writing)
+    saved = client.put('/api/settings', json=writing)
     assert saved.status_code == 200, saved.text
     assert [s['id'] for s in saved.json()['native_skills'] if s['enabled']] == ['docx-author']
     session = new_session(client)
     assert client.post(f'/api/agent/sessions/{session}/messages', json={'text': 'hello'}).status_code == 202
     runner = rt.RUNTIMES[session].runner
-    files = runner.prepared.backend.download_files(['/workspace-skills/installed/docx-author/scripts/helper.py'])
+    files = runner.prepared.backend.download_files(['/agent-skills/installed/docx-author/scripts/helper.py'])
     assert b'original helper' in files[0].content
     snapshot = tmp_path / 'skill-snapshots' / session / 'installed'
     assert not (snapshot / 'other-skill').exists()
-    assert runner.prepared.backend.write('/workspace-skills/installed/docx-author/scripts/helper.py', 'changed').error
-    # A new workspace selection does not modify an existing session's snapshot.
+    assert runner.prepared.backend.write('/agent-skills/installed/docx-author/scripts/helper.py', 'changed').error
+    # A global configuration change does not modify an existing session's snapshot.
     writing = saved.json()
     writing['skill_bindings']['docx-author'] = False
-    assert client.put('/api/workspaces/writing', json=writing).status_code == 200
+    assert client.put('/api/settings', json=writing).status_code == 200
     (root / 'docx-author' / 'scripts' / 'helper.py').write_text('print("new helper")')
-    assert b'original helper' in runner.prepared.backend.download_files(['/workspace-skills/installed/docx-author/scripts/helper.py'])[0].content
+    assert b'original helper' in runner.prepared.backend.download_files(['/agent-skills/installed/docx-author/scripts/helper.py'])[0].content
     assert d.get('session', session)['config']['skill_bindings']['docx-author']
-    everything = next(w for w in client.get('/api/workspaces').json() if w['id'] == 'everything')
-    assert all(s['enabled'] for s in everything['native_skills'])
+    assert not any(s['enabled'] for s in client.get('/api/settings').json()['native_skills'])
 
 
 def test_skill_binding_validation(client):
-    workspace = next(w for w in client.get('/api/workspaces').json() if w['id'] == 'writing')
+    config = client.get('/api/settings').json()
     for invalid in ({'../escape': True}, {'not-installed': True}, {'fake': 'yes'}):
-        workspace['skill_bindings'] = invalid
-        assert client.put('/api/workspaces/writing', json=workspace).status_code == 422
+        config['skill_bindings'] = invalid
+        assert client.put('/api/settings', json=config).status_code == 422
 
 
 def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monkeypatch):
@@ -518,7 +508,7 @@ def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monk
             return self
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             completed = [m for m in messages if isinstance(m, ToolMessage)]
-            root = d.DATA / 'workspaces' / 'writing' / 'files'
+            root = d.files_root()
             if not completed:
                 name, args = 'docx_init', {'document_id': 'report'}
             else:
@@ -563,9 +553,9 @@ def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monk
     assert client.get(f'/api/agent/sessions/{session_id}/documents').json()[0]['revision'] == 10
     rebuilt = rt.runtime(session_id); rebuilt.build(); rebuilt.artifact_services['docx'].sync()
     assert len([e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]) == 11
-    # Internal version database is never downloadable/listed as a workspace file.
-    assert all('.docx-state' not in item['path'] for item in client.get('/api/agent/workspaces/writing/files').json())
-    assert client.get('/api/agent/workspaces/writing/files/.docx-state/report.docx/history.sqlite').status_code == 404
+    # Internal version database is never downloadable/listed in the file library.
+    assert all('.docx-state' not in item['path'] for item in client.get('/api/agent/files').json())
+    assert client.get('/api/agent/files/.docx-state/report.docx/history.sqlite').status_code == 404
 
 
 def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
@@ -573,8 +563,8 @@ def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
     from dataclasses import dataclass
     session_id = new_session(client)
     runtime = rt.runtime(session_id)
-    root = d.DATA / 'workspaces' / 'writing' / 'files'; root.mkdir(parents=True, exist_ok=True)
-    runtime.artifact_services['docx'] = Documents(root, 'writing', lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    root = d.files_root(); root.mkdir(parents=True, exist_ok=True)
+    runtime.artifact_services['docx'] = Documents(root, lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
     runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
         operation=dict(type='append_paragraph', block_id='p1', text='Original')))
@@ -599,8 +589,8 @@ def test_docx_steering_persists_viewed_revision_and_uses_current_version(client)
     from platform_app.documents import Documents
     from unittest.mock import Mock
     session_id = new_session(client); runtime = rt.runtime(session_id)
-    root = d.DATA / 'workspaces' / 'writing' / 'files'
-    runtime.artifact_services['docx'] = Documents(root, 'writing', lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    root = d.files_root()
+    runtime.artifact_services['docx'] = Documents(root, lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
     runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
         operation=dict(type='append_paragraph', block_id='p1', text='Original')))
@@ -620,9 +610,9 @@ def test_nested_native_docx_is_tracked_and_downloadable(client):
     from platform_app.documents import Documents
     from docx import Document
     session_id=new_session(client); runtime=rt.runtime(session_id)
-    root=d.DATA/'workspaces'/'writing'/'files'; (root/'reports').mkdir(parents=True)
+    root=d.files_root(); (root/'reports').mkdir(parents=True)
     document=Document(); document.add_paragraph('Native nested report'); document.save(root/'reports'/'report.docx')
-    runtime.artifact_services['docx']=Documents(root,'writing',lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].detect_external()
     result=client.get(f'/api/agent/sessions/{session_id}/documents').json()
     assert result[0]['path']=='reports/report.docx' and result[0]['revision']==0
@@ -641,8 +631,8 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
         doc.save(output/'preview.pdf'); page.get_pixmap().save(output/'page-001.png'); doc.close()
     monkeypatch.setattr(engine.o,'run_render',render)
     session_id=new_session(client); runtime=rt.runtime(session_id)
-    root=d.DATA/'workspaces'/'writing'/'files'
-    runtime.artifact_services['docx']=Documents(root,'writing',lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))),live_preview=True)
+    root=d.files_root()
+    runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))),live_preview=True)
     docs=runtime.artifact_services['docx']
     docs.execute('init',dict(document_id='report'))
     assert started.wait(5)
@@ -663,8 +653,8 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
 def test_invalid_native_write_keeps_last_committed_document_visible(client):
     from platform_app.documents import Documents
     session_id=new_session(client); runtime=rt.runtime(session_id)
-    root=d.DATA/'workspaces'/'writing'/'files'
-    runtime.artifact_services['docx']=Documents(root,'writing',lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    root=d.files_root()
+    runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
     runtime.artifact_services['docx'].execute('init',dict(document_id='report'))
     original=(root/'report.docx').read_bytes()
     (root/'report.docx').write_bytes(b'partial invalid native ZIP')
@@ -688,11 +678,11 @@ def test_agent_runs_with_both_format_features_uninstalled(client):
 
 
 def test_native_conversation_storage_is_not_an_output_or_download(client):
-    root=d.DATA/'workspaces'/'writing'/'files';internal=root/'.deepagents'/'conversation_history'
+    root=d.files_root();internal=root/'.deepagents'/'conversation_history'
     internal.mkdir(parents=True);(internal/'session_private.md').write_text('internal trace')
     (root/'report.txt').write_text('public output')
-    assert rt.changed_workspace_files(root,{})==[{'path':'report.txt','size':13}]
-    assert client.get('/api/agent/workspaces/writing/files/.deepagents/conversation_history/session_private.md').status_code==404
-    assert client.get('/api/agent/workspaces/writing/files').json()==[{'path':'report.txt','size':13}]
+    assert rt.changed_files(root,{})==[{'path':'report.txt','size':13}]
+    assert client.get('/api/agent/files/.deepagents/conversation_history/session_private.md').status_code==404
+    assert client.get('/api/agent/files').json()==[{'path':'report.txt','size':13}]
     event=rt.public_event(dict(type='output_files',files=[dict(path='.deepagents/conversation_history/session_private.md'),dict(path='report.txt')]))
     assert event['files']==[dict(path='report.txt')]

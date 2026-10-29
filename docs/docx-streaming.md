@@ -23,7 +23,7 @@
 
 ### 数据与恢复
 
-正式产物位于工作区 `<document_id>.docx`。旁边的 `.docx-state/<filename>/history.sqlite` 保存每个 revision 的完整 DOCX、请求、结果和事件；`render-000000NN/` 保存不可变 PDF、PNG 和检查结果。不要只保留正式文件而删除恢复目录。该内部目录不会出现在文件列表或下载接口中。
+正式产物位于统一文件库 `<document_id>.docx`。旁边的 `.docx-state/<filename>/history.sqlite` 保存每个 revision 的完整 DOCX、请求、结果和事件；`render-000000NN/` 保存不可变 PDF、PNG 和检查结果。不要只保留正式文件而删除恢复目录。该内部目录不会出现在文件列表或下载接口中。
 
 跨进程锁串行化单文档写入。先验证候选包，再提交 SQLite；随后通过 fsync + 原子替换发布正式文件。`pending_publish` 用于恢复数据库提交后、正式文件替换前的崩溃。失败请求不创建 revision；相同 operation ID 和请求返回原提交结果，ID 重用但请求不同会拒绝。恢复历史版本是一笔新提交，revision 永不回退。
 

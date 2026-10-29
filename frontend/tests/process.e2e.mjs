@@ -10,7 +10,33 @@ page.on('pageerror',e=>errors.push(e.message))
 async function wait(fn,timeout=10000){const end=Date.now()+timeout;while(Date.now()<end){if(await fn())return;await page.waitForTimeout(50)}throw Error('Execution timeline assertion timed out')}
 try{
  await page.goto(base);await page.evaluate(()=>{localStorage.setItem('locale','zh');localStorage.setItem('thinking-expanded','false')})
- const session=await(await page.request.post(base+'/api/agent/sessions',{data:{workspace_id:'writing',model_id:'test/model'}})).json()
+ await page.reload()
+ await page.getByRole('button',{name:'Agent 设置',exact:true}).click()
+ const dialog=page.getByRole('dialog')
+ await dialog.waitFor()
+ assert.equal(await dialog.locator('select').count(),0,'global settings still has a workspace selector')
+ assert.equal(await page.locator('.workspace-sidebar-row,.workspace-select,.workspace-manager-select').count(),0)
+ await dialog.locator('textarea').first().fill('所有会话使用统一的 Agent 配置。')
+ await dialog.getByRole('button',{name:'保存更改',exact:true}).click()
+ await dialog.waitFor({state:'hidden'})
+ assert.equal((await(await page.request.get(base+'/api/settings')).json()).system_prompt,'所有会话使用统一的 Agent 配置。')
+ assert.equal((await page.request.get(base+'/api/workspaces')).status(),404)
+ await page.locator('input[type=file]').setInputFiles({name:'shared-notes.txt',mimeType:'text/plain',buffer:Buffer.from('Shared file library')})
+ await page.locator('.attachment-chip').waitFor()
+ const files=await(await page.request.get(base+'/api/agent/files')).json()
+ const uploaded=files.find(file=>file.path.endsWith('/shared-notes.txt'))
+ assert(uploaded)
+ assert.equal(await(await page.request.get(base+'/api/agent/files/'+uploaded.path)).text(),'Shared file library')
+ await page.screenshot({path:output+'/global-chat-home.png'})
+ // Inspect the actual new-chat request while stubbing only external execution.
+ let sent
+ await page.route('**/api/agent/sessions/*/messages',async route=>{const body=route.request().postDataJSON();const id=route.request().url().split('/').at(-2);const record=await(await page.request.get(base+'/api/agent/sessions/'+id)).json();await route.fulfill({status:202,contentType:'application/json',body:JSON.stringify(record)});sent=body})
+ await page.getByRole('button',{name:'发送任务',exact:true}).click()
+ await wait(async()=>!!sent)
+ assert.equal(sent.upload_ids.length,1,'creating a chat dropped the pending attachment')
+ await wait(async()=>await page.locator('.attachment-chip').count()===0)
+ await page.unroute('**/api/agent/sessions/*/messages')
+ const session=await(await page.request.post(base+'/api/agent/sessions',{data:{model_id:'test/model'}})).json()
  await page.goto(base+'/?session='+session.id)
  const emit=async events=>{const response=await page.request.post(`${base}/__test/sessions/${session.id}/events`,{data:events});assert.equal(response.status(),200);await page.waitForTimeout(220)}
  await emit([{type:'operation',operation:'message',text:'并行检查两份材料，并持续展示执行进度。'},{type:'status',status:'running'},{type:'assistant_started'},{type:'thinking_delta',content:'核对文件格式\n检查目录结构'}])
@@ -70,6 +96,6 @@ try{
  assert((await restoredA.locator('.process-step-content').textContent()).includes('A-LATEST'))
  await page.screenshot({path:output+'/process-restored-history.png'})
  assert.deepEqual(errors,[])
- const result={session_id:session.id,tests:['five_visual_lines','short_content_height','independent_parallel_scroll','stream_identity','per_step_collapse','no_early_task_collapse','whole_task_collapse','history_reopen','cancelled_and_failed','persisted_replay'],errors}
+ const result={session_id:session.id,tests:['global_settings','workspace_ui_removed','shared_files','new_chat_keeps_upload','five_visual_lines','short_content_height','independent_parallel_scroll','stream_identity','per_step_collapse','no_early_task_collapse','whole_task_collapse','history_reopen','cancelled_and_failed','persisted_replay'],errors}
  await writeFile(output+'/process-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result))
 }finally{await browser.close()}

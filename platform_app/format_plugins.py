@@ -48,7 +48,7 @@ def load_plugin(feature_id):
     return CACHE[key]
 
 
-def build_services(root,workspace_id,actor,emit,vision=False):
+def build_services(root,actor,emit,vision=False):
     result={}
     for meta in enabled():
         try:
@@ -57,7 +57,7 @@ def build_services(root,workspace_id,actor,emit,vision=False):
                 identity=event.get(_meta['identity_key'])
                 if identity:event={**event,'artifact_extension':dict(feature=_meta['id'],id=identity,state_key=_meta['state_key'])}
                 emit(event)
-            result[meta['id']]=module.create_service(root,workspace_id,publish,actor,vision)
+            result[meta['id']]=module.create_service(root,publish,actor,vision)
         except (ImportError,LookupError):
             continue
     return result

@@ -15,8 +15,8 @@ CORE_TOOLS = ('ls', 'read_file', 'write_file', 'edit_file', 'delete', 'glob', 'g
 REMOVED_TOOLS = ('write_todos',)
 
 
-def hidden_tools(workspace):
-    return tuple(dict.fromkeys((*REMOVED_TOOLS, *(name for name, enabled in workspace.get('core_tools', {}).items() if not enabled))))
+def hidden_tools(config):
+    return tuple(dict.fromkeys((*REMOVED_TOOLS, *(name for name, enabled in config.get('core_tools', {}).items() if not enabled))))
 
 
 def schema(properties, required):
@@ -30,12 +30,17 @@ TOOL_SCHEMAS = {
 
 
 def defaults():
-    return [
-        {'id': 'office', 'name': 'Office', 'icon': '◈', 'description': '把想法变成出色的文档', 'color': 'orange', 'system_prompt': '你是 Office 工作空间的文档助理。使用当前空间工具创建真实的 Office 文件，回复中说明结果，不虚构下载地址。', 'rules': ['仅使用当前工作空间提供的能力。', '文档语言默认跟随用户。'], 'skills': [{'name': '办公文档', 'content': '演示文稿先确定叙事结构；文档使用清晰标题；表格保留结构化数据。'}], 'tools': [{'name': name, 'description': f'创建真实的 {name[7:].upper()} 文件并返回文件名。', 'schema': s, 'enabled': True} for name, s in TOOL_SCHEMAS.items()], 'revision': 1},
-        {'id': 'research', 'name': 'Research', 'icon': '⌘', 'description': '理清问题，构建新的洞察', 'color': 'blue', 'system_prompt': '你是研究助理。根据用户提供的材料和已启用工具分析问题，核实信息并准确说明来源；不虚构引用或检索结果。', 'rules': ['明确区分事实、假设与建议。'], 'skills': [], 'tools': [], 'revision': 1},
-        {'id': 'writing', 'name': 'Writing', 'icon': '✳', 'description': '让每一个想法找到表达', 'color': 'green', 'system_prompt': '你是写作助理，帮助用户构思、撰写和改进内容。', 'rules': ['保持用户的语气与意图。'], 'skills': [], 'tools': [], 'revision': 1},
-        {'id': 'everything', 'name': 'Everything', 'icon': '✳', 'description': '全部工具与技能，一个工作区', 'color': 'blue', 'system_prompt': '你是一个通用智能助理，根据任务选择可用工具和技能，完成工作并验证结果。', 'rules': [], 'skills': [], 'tools': [], 'core_tools': {}, 'bind_all': True, 'revision': 1},
-    ]
+    return dict(id='global', system_prompt='你是一个通用智能助理，根据任务选择可用工具和技能，完成工作并验证结果。',
+        rules=[], skills=[], core_tools={}, skill_bindings={}, mcp={'enabled': False, 'servers': {}},
+        tools=[{'name': name, 'description': f'创建真实的 {name[7:].upper()} 文件并返回文件名。', 'schema': copy.deepcopy(value), 'enabled': True} for name, value in TOOL_SCHEMAS.items()], revision=1)
+
+
+def files_root():
+    return DATA / 'files'
+
+
+def artifact_root(record_id):
+    return DATA / 'artifacts' / record_id
 
 
 def db():
@@ -65,26 +70,10 @@ def all_records(kind):
 
 
 def init():
-    if not all_records('workspace'):
-        for value in defaults():
-            put('workspace', value)
-    if not any(w['id'] == 'everything' for w in all_records('workspace')):
-        put('workspace', defaults()[-1])
-    for workspace in all_records('workspace'):
-        if any(name in workspace.get('core_tools', {}) for name in REMOVED_TOOLS):
-            workspace['core_tools'] = {name: enabled for name, enabled in workspace['core_tools'].items() if name not in REMOVED_TOOLS}
-            workspace['revision'] += 1
-            put('workspace', workspace)
-    for workspace in all_records('workspace'):
-        if any(t['name'] in ('create_docx','create_pptx') for t in workspace.get('tools', [])):
-            workspace['tools'] = [t for t in workspace['tools'] if t['name'] not in ('create_docx','create_pptx')]
-            workspace['revision'] += 1
-            put('workspace', workspace)
-    research = get('workspace', 'research') if any(w['id'] == 'research' for w in all_records('workspace')) else None
-    if research and research['revision'] == 1 and research['system_prompt'] == '你是研究助理。根据用户提供的材料分析问题。当前没有网络检索工具，不虚构引用或声称已经联网。':
-        research['system_prompt'] = defaults()[1]['system_prompt']
-        research['revision'] += 1
-        put('workspace', research)
+    from .migrations import remove_workspaces
+    remove_workspaces()
+    if not all_records('settings'):
+        put('settings', defaults())
     for task in all_records('task'):
         if task['status'] in ('queued', 'running'):
             task.update(status='failed', error='服务已重启，请创建新任务重试。')
@@ -107,35 +96,10 @@ def native_skills():
     return result
 
 
-def effective_workspace(workspace_id):
-    """Resolve Everything at session creation, keeping existing session snapshots stable."""
-    value = get('workspace', workspace_id)
-    auto = workspace_id == 'everything' and value.get('bind_all', True)
+def effective_config():
+    value = get('settings', 'global')
     bindings = value.get('skill_bindings', {})
-    value['skill_bindings'] = bindings
-    value['native_skills'] = [{**skill, 'enabled': auto or bindings.get(skill['id'], False)} for skill in native_skills()]
-    if workspace_id != 'everything' or not value.get('bind_all', True):
-        return value
-    value['bind_all'] = True
-    value['core_tools'] = {name: True for name in CORE_TOOLS}
-    value['tools'] = [{'name': name, 'description': f'创建真实的 {name[7:].upper()} 文件并返回文件名。', 'schema': copy.deepcopy(s), 'enabled': True} for name, s in TOOL_SCHEMAS.items()]
-    sources = [w for w in all_records('workspace') if w['id'] != 'everything']
-    sources.append(get('workspace', 'everything'))
-    skills, seen = [], set()
-    mcp = {'enabled': False, 'servers': {}}
-    for index, source in enumerate(sources):
-        for skill in source.get('skills', []):
-            identity = (skill['name'], skill['content'])
-            if identity not in seen:
-                skills.append({**copy.deepcopy(skill), 'enabled': True, 'source_workspace': source['name']})
-                seen.add(identity)
-        catalog = source.get('mcp', {})
-        if catalog.get('enabled'):
-            for name, server in catalog.get('servers', {}).items():
-                if server.get('enabled', True):
-                    mcp['servers'][f'ws{index}-{name}'[:32]] = copy.deepcopy(server)
-                    mcp['enabled'] = True
-    value.update(skills=skills, mcp=mcp)
+    value['native_skills'] = [{**skill, 'enabled': bindings.get(skill['id'], True)} for skill in native_skills()]
     return value
 
 
@@ -145,10 +109,6 @@ def validate_config(value):
         raise ValueError('Skill 绑定必须使用已安装技能的标识和布尔启用状态')
     if any(k not in {s['id'] for s in native_skills()} for k in bindings):
         raise ValueError('Skill 未安装，请刷新技能列表后重试')
-    if type(value.get('bind_all', False)) is not bool:
-        raise ValueError('bind_all 必须是布尔值')
-    if not isinstance(value.get('name'), str) or not value['name'].strip():
-        raise ValueError('工作空间名称不能为空')
     if not isinstance(value.get('system_prompt'), str):
         raise ValueError('system_prompt 必须是文本')
     if not isinstance(value.get('rules'), list) or not all(isinstance(x, str) for x in value['rules']):
@@ -183,11 +143,11 @@ def validate_config(value):
             raise ValueError('schema 必须保留处理器参数与 required；可修改描述和约束')
 
 
-class WorkspaceAdapter:
-    def __init__(self, workspace, task_id):
-        self.config = copy.deepcopy(workspace)
+class ToolAdapter:
+    def __init__(self, config, task_id):
+        self.config = copy.deepcopy(config)
         self.config['tools'] = [t for t in self.config.get('tools', []) if t['name'] not in ('create_docx','create_pptx')]
-        self.root = DATA / 'artifacts' / workspace['id'] / task_id
+        self.root = artifact_root(task_id)
         self.root.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -198,7 +158,7 @@ class WorkspaceAdapter:
     def execute(self, name, arguments):
         tool = next((t for t in self.config['tools'] if t['name'] == name and t['enabled']), None)
         if tool is None:
-            raise ValueError('当前工作空间未启用该工具')
+            raise ValueError('尚未启用该工具')
         Draft202012Validator(tool['schema']).validate(arguments)
         Draft202012Validator(TOOL_SCHEMAS[name]).validate(arguments)
         extension = name[7:]
@@ -222,5 +182,5 @@ class WorkspaceAdapter:
                 tools.append(StructuredTool.from_function(func=invoke, name=tool['name'], description=tool['description'], args_schema=tool['schema']))
         if include_artifacts:
             from .format_plugins import build_services
-            tools.extend(tool for service in build_services(self.root,self.config['id'],self.root.name,lambda event:None).values() for tool in service.tools())
+            tools.extend(tool for service in build_services(self.root,self.root.name,lambda event:None).values() for tool in service.tools())
         return tools

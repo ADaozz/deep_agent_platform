@@ -36,8 +36,6 @@ for feature in format_plugins.enabled():
         if hasattr(plugin,'create_router'):app.include_router(plugin.create_router(artifact_host))
     except (ImportError,LookupError):pass
 
-STATIC = Path(__file__).parent / 'static'
-app.mount('/static', StaticFiles(directory=STATIC), name='static')
 WEB = Path(__file__).parent / 'web'
 if WEB.exists():
     app.mount('/assets', StaticFiles(directory=WEB / 'assets'), name='web-assets')
@@ -58,7 +56,9 @@ def find(kind, key):
 
 @app.get('/')
 def index():
-    return FileResponse((WEB if (WEB / 'index.html').exists() else STATIC) / 'index.html')
+    if not (WEB / 'index.html').is_file():
+        raise HTTPException(503, '前端资源未就绪')
+    return FileResponse(WEB / 'index.html')
 
 
 @app.get('/api/status')
@@ -86,9 +86,9 @@ def update_models(value: ModelConfig):
         raise HTTPException(422, '模型配置无效：请检查来源、默认模型、API 协议和参数；格式与 deep_agent_cli 的 llm 配置一致。')
 
 
-@app.get('/api/workspaces')
-def workspaces():
-    return [d.effective_workspace(w['id']) for w in d.all_records('workspace')]
+@app.get('/api/settings')
+def settings():
+    return d.effective_config()
 
 
 @app.get('/api/tool-catalog')
@@ -96,44 +96,32 @@ def tool_catalog():
     return [{'name': name, 'description': f'创建真实的 {name[7:].upper()} 文件并返回文件名。', 'schema': schema, 'enabled': True} for name, schema in d.TOOL_SCHEMAS.items()]
 
 
-@app.put('/api/workspaces/{workspace_id}')
-def update_workspace(workspace_id: str, value: dict):
+@app.put('/api/settings')
+def update_settings(value: dict):
     with d.LOCK:
-        previous = find('workspace', workspace_id)
+        previous = d.get('settings', 'global')
         if value.get('revision') != previous['revision']:
             raise HTTPException(409, '配置已更新，请刷新后重试')
-        edits = {k: v for k, v in value.items() if k in ('name', 'description', 'system_prompt', 'rules', 'skills', 'tools', 'core_tools', 'mcp', 'bind_all', 'skill_bindings')}
-        if workspace_id == 'everything' and edits.get('bind_all', previous.get('bind_all', True)):
-            for field in ('skills', 'tools', 'core_tools', 'mcp', 'skill_bindings'):
-                edits.pop(field, None)
+        edits = {k: v for k, v in value.items() if k in ('system_prompt', 'rules', 'skills', 'tools', 'core_tools', 'mcp', 'skill_bindings')}
         value = {**previous, **edits}
         try:
             d.validate_config(value)
         except Exception as exc:
             raise HTTPException(422, str(exc))
         value['revision'] += 1
-        d.put('workspace', value)
-        return d.effective_workspace(workspace_id)
-
-
-class NewWorkspace(BaseModel):
-    name: str = Field(min_length=1, max_length=50)
-
-
-@app.post('/api/workspaces', status_code=201)
-def create_workspace(value: NewWorkspace):
-    return d.put('workspace', dict(id=uuid4().hex, name=value.name, description='你的专属工作空间', icon='◇', color='blue', system_prompt='你是一个可靠的智能助理。', rules=[], skills=[], tools=[], revision=1))
+        d.put('settings', value)
+        return d.effective_config()
 
 
 @app.get('/api/tasks')
-def tasks(workspace_id: str | None = None):
-    return [{k: v for k, v in t.items() if k not in ('config', 'model_snapshot')} for t in reversed(d.all_records('task')) if workspace_id is None or t['workspace_id'] == workspace_id]
+def tasks():
+    return [{k: v for k, v in t.items() if k not in ('config', 'model_snapshot')} for t in reversed(d.all_records('task'))]
 
 
 @app.get('/api/tasks/{task_id}')
 def task(task_id: str):
     value = find('task', task_id)
-    root = d.DATA / 'artifacts' / value['workspace_id'] / value['id']
+    root = d.artifact_root(value['id'])
     value['artifacts'] = [p.name for p in root.iterdir() if p.is_file()] if root.exists() else []
     return {k: v for k, v in value.items() if k not in ('config', 'model_snapshot')}
 
@@ -144,9 +132,9 @@ class Prompt(BaseModel):
     reasoning_effort: str | None = None
 
 
-@app.post('/api/workspaces/{workspace_id}/tasks', status_code=202)
-def create_task(workspace_id: str, value: Prompt):
-    workspace = find('workspace', workspace_id)
+@app.post('/api/tasks', status_code=202)
+def create_task(value: Prompt):
+    config = d.effective_config()
     try:
         selected = m.selection(value.model_id, value.reasoning_effort if 'reasoning_effort' in value.model_fields_set else m.UNSET)
     except LookupError as exc:
@@ -156,7 +144,7 @@ def create_task(workspace_id: str, value: Prompt):
     pending = sum(t['status'] in ('running', 'queued') for t in d.all_records('task'))
     if pending >= 8:
         raise HTTPException(429, '当前任务已满，请稍后再试')
-    record = dict(id=uuid4().hex, workspace_id=workspace_id, prompt=value.prompt, config=workspace, status='queued', output='', error=None, created_at=datetime.now(timezone.utc).isoformat(), revision=workspace['revision'])
+    record = dict(id=uuid4().hex, prompt=value.prompt, config=config, status='queued', output='', error=None, created_at=datetime.now(timezone.utc).isoformat(), revision=config['revision'])
     record.update(model_snapshot=selected, model_id=selected['id'], reasoning_effort=selected['reasoning_effort'])
     d.put('task', record)
     POOL.submit(run_task, record)
@@ -173,7 +161,7 @@ def run_task(record, model=None, raise_errors=False):
         from dataclasses import replace
         record['status'] = 'running'
         d.put('task', record)
-        adapter = d.WorkspaceAdapter(record['config'], record['id'])
+        adapter = d.ToolAdapter(record['config'], record['id'])
         hidden = d.hidden_tools(record['config'])
         settings = Settings(trust_env=True, subagents=SubAgentConfig(enabled='task' not in hidden),
             sandbox=SandboxConfig(workspace=adapter.root, mode='full-access', protected_config_dir=d.DATA / 'configuration',
@@ -206,7 +194,7 @@ def run_task(record, model=None, raise_errors=False):
 @app.get('/api/tasks/{task_id}/artifacts/{filename}')
 def artifact(task_id: str, filename: str):
     value = find('task', task_id)
-    root = d.DATA / 'artifacts' / value['workspace_id'] / value['id']
+    root = d.artifact_root(value['id'])
     path = root / filename
     if path.parent != root or not path.is_file() or path.is_symlink():
         raise HTTPException(404, '文件不存在')

@@ -25,26 +25,38 @@ def safe_path(root,presentation_id):
 
 class Presentations:
     approval_tools=('pptx_init',)
-    def __init__(self,root,workspace_id,emit,actor,vision=False):
-        self.root=Path(root); self.workspace_id=workspace_id; self.emit=emit; self.actor=actor; self.vision=vision; self.cursors={}; self.lock=threading.RLock()
+    def __init__(self,root,emit,actor,vision=False):
+        self.root=Path(root).resolve(); self.emit=emit; self.actor=actor; self.vision=vision; self.cursors={}; self.bound_paths={}; self.lock=threading.RLock()
     def bind_state(self,record):
+        self.bound_paths={identity:item['path'] for identity,item in record.get('presentations',{}).items()}
         self.cursors=dict(record.get('artifact_cursors',{}).get('pptx',{}))
-        for path in self.root.glob('*.pptx'):
-            if path.name not in self.cursors and path.stem not in record.get('presentations',{}):
+        for path in self.paths():
+            if path.relative_to(self.root).as_posix() not in self.cursors and path.relative_to(self.root).as_posix() not in self.bound_paths.values():
                 if (path.parent/'.pptx-state'/path.name/'history.sqlite').exists():
                     events=PresentationStore(path).events()
-                    self.cursors[path.name]=events[-1]['store_seq'] if events else 0
+                    self.cursors[path.relative_to(self.root).as_posix()]=events[-1]['store_seq'] if events else 0
+    def paths(self):
+        return [p for p in self.root.rglob('*.pptx') if not p.is_symlink() and '.pptx-state' not in p.relative_to(self.root).parts and p.resolve().is_relative_to(self.root.resolve())]
+    def presentation_path(self,identity):
+        path=self.root/self.bound_paths[identity] if identity in self.bound_paths else safe_path(self.root,identity)
+        if path.is_symlink() or not path.resolve().is_relative_to(self.root.resolve()):raise ValueError('Invalid presentation path')
+        return path
     def close(self):pass
     def sync(self):
         with self.lock:
-            for path in self.root.glob('*.pptx'):
+            for path in self.paths():
                 if path.is_symlink() or not (path.parent/'.pptx-state'/path.name/'history.sqlite').exists():continue
-                for event in PresentationStore(path).events(self.cursors.get(path.name,0)):
-                    event['workspace_id']=self.workspace_id
-                    self.emit(event); self.cursors[path.name]=event['store_seq']
+                for event in PresentationStore(path).events(self.cursors.get(path.relative_to(self.root).as_posix(),0)):
+                    event['path']=path.relative_to(self.root).as_posix()
+                    identity=event.get('presentation_id')
+                    if identity in self.bound_paths and self.bound_paths[identity]!=event['path']:
+                        self.cursors[event['path']]=event['store_seq']
+                        continue
+                    if identity:self.bound_paths[identity]=event['path']
+                    self.emit(event); self.cursors[path.relative_to(self.root).as_posix()]=event['store_seq']
     def detect_external(self):
         # Detect unversioned native writes without replacing the last valid snapshot.
-        for path in self.root.glob('*.pptx'):
+        for path in self.paths():
             if path.is_symlink():continue
             store=PresentationStore(path)
             if not (store.directory/'history.sqlite').exists():continue
@@ -54,11 +66,16 @@ class Presentations:
         self.sync()
     def feedback(self,text,context):
         identity=context.get('presentation_id') or context.get('id'); sid=context.get('slide_id'); revision=context.get('revision')
-        state=PresentationStore(safe_path(self.root,identity)).status()
+        state=PresentationStore(self.presentation_path(identity)).status()
         if type(revision)is not int or revision>state['revision'] or sid not in [s['slide_id'] for s in state['manifest']['slides']]:raise ValueError('Invalid presentation/slide feedback version')
         return text+f'\n[Presentation feedback: presentation_id={identity}, slide_id={sid}, viewed_revision={revision}, current_revision={state["revision"]}. Prioritize this slide, invalidate affected checks, recheck before continuing.]'
     def execute(self,action,args):
-        self.root.mkdir(parents=True,exist_ok=True); identity=args['presentation_id']; store=PresentationStore(safe_path(self.root,identity))
+        result=self._execute(action,args)
+        if isinstance(result,dict) and 'path' in result:
+            result={**result,'path':self.presentation_path(args['presentation_id']).relative_to(self.root).as_posix()}
+        return result
+    def _execute(self,action,args):
+        self.root.mkdir(parents=True,exist_ok=True); identity=args['presentation_id']; store=PresentationStore(self.presentation_path(identity))
         grant_key=self.actor+':'+identity
         if action!='init':
             try:grant=d.get('artifact_grant',grant_key)
@@ -69,7 +86,7 @@ class Presentations:
                 template=args.get('template')
                 if template:
                     template=(self.root/template).resolve()
-                    if not template.is_relative_to(self.root.resolve()) or not template.is_file():raise ValueError('Template must be a workspace file')
+                    if not template.is_relative_to(self.root.resolve()) or not template.is_file():raise ValueError('Template must be a library file')
                 result=store.init(identity,template,args.get('mode','normal'),args.get('theme','corporate_blue'))
                 d.put('artifact_grant',dict(id=grant_key,path=str(store.path),actor=self.actor,presentation_id=identity,scope=['init','apply_one','status','check_slide','review','restore','finalize']))
                 return result
@@ -108,7 +125,7 @@ class Presentations:
         return result
 
 
-def create_service(root,workspace_id,emit,actor,vision=False):return Presentations(root,workspace_id,emit,actor,vision)
+def create_service(root,emit,actor,vision=False):return Presentations(root,emit,actor,vision)
 
 
 def create_router(host):
@@ -116,13 +133,13 @@ def create_router(host):
     def store_for(session_id,presentation_id):
         service=host.service(session_id,'pptx'); record=host.session(session_id)
         if presentation_id not in record.get('presentations',{}):raise HTTPException(404,'Presentation does not belong to this session')
-        try:return service,PresentationStore(safe_path(service.root,presentation_id))
+        try:return service,PresentationStore(service.presentation_path(presentation_id))
         except ValueError:raise HTTPException(422,'Invalid presentation ID')
     @router.get('/{session_id}/presentations')
     def presentations(session_id:str):
         service=host.service(session_id,'pptx'); service.sync(); record=host.session(session_id); result=[]
         for identity in record.get('presentations',{}):
-            try:result.append(PresentationStore(safe_path(service.root,identity)).status())
+            try:result.append({**PresentationStore(service.presentation_path(identity)).status(),'path':record['presentations'][identity]['path']})
             except (ValueError,OSError):continue
         return result
     @router.get('/{session_id}/presentations/{presentation_id}/revisions/{revision}')
@@ -156,5 +173,5 @@ def create_router(host):
         service,store=store_for(session_id,presentation_id)
         try:result=store.review(value.slide_id,value.revision,value.passed,value.notes,'human')
         except ValueError as exc:raise HTTPException(409,str(exc))
-        service.sync(); return result
+        service.sync(); return {**result,'path':store.path.relative_to(service.root).as_posix()}
     return router

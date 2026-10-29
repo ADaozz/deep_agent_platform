@@ -30,8 +30,8 @@ ACTIVE = ('queued', 'running')
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
-def upload_records(workspace_id, ids):
-    root = d.DATA / 'workspaces' / workspace_id / 'files'
+def upload_records(ids):
+    root = d.files_root()
     result = []
     for upload_id in ids:
         try:
@@ -39,25 +39,21 @@ def upload_records(workspace_id, ids):
         except KeyError:
             raise HTTPException(404, '上传文件不存在')
         path = root / item['path']
-        if item['workspace_id'] != workspace_id or not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+        if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
             raise HTTPException(404, '上传文件不存在')
         result.append(item)
     return result
 
 
-@router.post('/workspaces/{workspace_id}/uploads', status_code=201)
-async def upload_file(workspace_id: str, file: UploadFile = File(...)):
-    try:
-        d.get('workspace', workspace_id)
-    except KeyError:
-        raise HTTPException(404, '工作空间不存在')
+@router.post('/uploads', status_code=201)
+async def upload_file(file: UploadFile = File(...)):
     name = Path((file.filename or 'file').replace('\\', '/')).name
     name = ''.join(c for c in name if c.isprintable()).strip().encode('utf-8')[:180].decode('utf-8', errors='ignore') or 'file'
     if name in ('.', '..'):
         raise HTTPException(422, '文件名无效')
     upload_id = uuid4().hex
     relative = Path('uploads') / upload_id / name
-    root = d.DATA / 'workspaces' / workspace_id / 'files'
+    root = d.files_root()
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.parent.resolve().is_relative_to(root.resolve()):
@@ -72,7 +68,7 @@ async def upload_file(workspace_id: str, file: UploadFile = File(...)):
                 target.write(chunk)
         if not size:
             raise HTTPException(422, '不能上传空文件')
-        record = dict(id=upload_id, workspace_id=workspace_id, name=name, size=size,
+        record = dict(id=upload_id, name=name, size=size,
             type=mimetypes.guess_type(name)[0] or 'application/octet-stream', path=relative.as_posix(), created_at=now())
         return d.put('upload', record)
     except BaseException:
@@ -105,7 +101,7 @@ def journal(session_id, after):
     return [public_event(json.loads(row[0])) for row in rows]
 
 
-def workspace_snapshot(root):
+def file_snapshot(root):
     snapshot = {}
     if root.exists():
         for path in root.rglob('*'):
@@ -119,8 +115,8 @@ def workspace_snapshot(root):
     return snapshot
 
 
-def changed_workspace_files(root, before):
-    after = workspace_snapshot(root)
+def changed_files(root, before):
+    after = file_snapshot(root)
     changed = ({'path': name, 'size': size} for name, (mtime, size) in after.items() if before.get(name) != (mtime, size))
     return sorted(changed, key=lambda item: item['path'])[:100]
 
@@ -134,7 +130,7 @@ def find(session_id):
 
 def public(record):
     value = {k: v for k, v in record.items() if k not in ('model_snapshot', 'config')}
-    root = d.DATA / 'artifacts' / record['workspace_id'] / record['id']
+    root = d.artifact_root(record['id'])
     value['artifacts'] = [p.name for p in root.iterdir() if p.is_file() and not p.is_symlink()] if root.exists() else []
     return value
 
@@ -193,9 +189,9 @@ class Runtime:
             if self.artifact_services:
                 return self.artifact_services
             record=find(self.id)
-            workspace=d.DATA/'workspaces'/record['workspace_id']/'files'
-            workspace.mkdir(parents=True,exist_ok=True)
-            self.artifact_services=format_plugins.build_services(workspace,record['workspace_id'],self.id,self.event)
+            root=d.files_root()
+            root.mkdir(parents=True,exist_ok=True)
+            self.artifact_services=format_plugins.build_services(root,self.id,self.event)
             for feature,service in self.artifact_services.items():
                 service.bind_state(record)
             return self.artifact_services
@@ -219,9 +215,9 @@ class Runtime:
 
         record = find(self.id)
         config = record['config']
-        workspace = d.DATA / 'workspaces' / record['workspace_id'] / 'files'
-        workspace.mkdir(parents=True, exist_ok=True)
-        # Immutable skill snapshot outside the writable workspace, mounted read-only.
+        files = d.files_root()
+        files.mkdir(parents=True, exist_ok=True)
+        # Immutable skill snapshot outside the writable file library, mounted read-only.
         root = d.DATA / 'runtime' / self.id
         root.mkdir(parents=True, exist_ok=True)
         skills = d.DATA / 'skill-snapshots' / self.id
@@ -249,7 +245,7 @@ class Runtime:
                 continue
             source = (default_skills_dir() / identity).resolve()
             if not source.is_relative_to(default_skills_dir().resolve()) or not (source / 'SKILL.md').is_file():
-                raise ValueError('已绑定的 Skill 不存在，请重新配置工作区')
+                raise ValueError('已启用的 Skill 不存在，请重新配置技能')
             temporary = installed / f'.{identity}-copy'
             if temporary.exists():
                 shutil.rmtree(temporary)
@@ -261,25 +257,25 @@ class Runtime:
         hidden = d.hidden_tools(config)
         settings = replace(settings, trust_env=True, llm_default=record['model_id'],
             subagents=SubAgentConfig(enabled='task' not in hidden), hidden_tools=hidden,
-            sandbox=SandboxConfig(workspace=workspace, mode='full-access', protected_config_dir=d.DATA / 'configuration',
+            sandbox=SandboxConfig(workspace=files, mode='full-access', protected_config_dir=d.DATA / 'configuration',
                 protected_files=(d.DATA / 'platform.sqlite', d.DATA / 'model-config.key', d.DATA / 'runtime'),
-                extra_read_only_mounts=(BindMount(source=skills, destination='/workspace-skills'),
+                extra_read_only_mounts=(BindMount(source=skills, destination='/agent-skills'),
                     BindMount(source=skills, destination=skills.as_posix()))),
             config_dir=d.DATA / 'configuration', agent_instructions=config['system_prompt'])
         model = build_chat_model(settings.active_profile, reasoning_effort=record['reasoning_effort'], trust_env=True, timeout=settings.request_timeout)
-        store = SessionStore.for_workspace(workspace, override=root / 'session.sqlite')
+        store = SessionStore.for_workspace(files, override=root / 'session.sqlite')
         (root / 'mcp.json').write_text(json.dumps(config.get('mcp', {'enabled': False, 'servers': {}})), encoding='utf-8')
         manager = MCPManager(root / 'mcp.json', trust_env=True)
         manager.load()
-        adapter = d.WorkspaceAdapter(config, self.id)
+        adapter = d.ToolAdapter(config, self.id)
         self.ensure_artifact_services()
         for service in self.artifact_services.values():service.vision='image' in settings.active_profile.input
         try:
             prepared = prepare_agent(settings=settings, model=model, checkpointer=store.checkpointer,
-                instructions=format_plugins.instructions() + '\n\n' + '\n\n'.join([config['system_prompt'], '\n'.join(config['rules'])]), skills=['/workspace-skills/', '/workspace-skills/installed/'],
+                instructions=format_plugins.instructions() + '\n\n' + '\n\n'.join([config['system_prompt'], '\n'.join(config['rules'])]), skills=['/agent-skills/', '/agent-skills/installed/'],
                 extra_tools=[*adapter.tools(include_artifacts=False), *[tool for service in self.artifact_services.values() for tool in service.tools()]], interrupt_on={**{t['name']: True for t in config['tools'] if t['enabled'] and t['name'] in d.TOOL_SCHEMAS}, **{name: True for service in self.artifact_services.values() for name in getattr(service,'approval_tools',())}} or None, mcp=manager)
             runner = AgentRunner(prepared=prepared, settings=settings, session_store=store,
-                thread_id=self.id, workspace=workspace, mcp_manager=manager,
+                thread_id=self.id, workspace=files, mcp_manager=manager,
                 on_event=self.core_event)
             if record['reasoning_effort']:
                 runner.request_model_change(record['model_id'], reasoning_effort=record['reasoning_effort'])
@@ -307,23 +303,23 @@ class Runtime:
                 d.put('session', record)
             self.event({'type': 'status', 'status': 'running'})
             runner = self.build()
-            workspace_root = d.DATA / 'workspaces' / record['workspace_id'] / 'files'
-            before = workspace_snapshot(workspace_root)
+            files_root = d.files_root()
+            before = file_snapshot(files_root)
             if operation == 'message':
                 from agent import ImageAttachment
                 images = []
                 for item in payload.get('images', []):
                     data = base64.b64decode(item['data'], validate=True)
                     images.append(ImageAttachment(filename=item['name'], mime_type=item['type'], data=data, size=len(data)))
-                uploads = upload_records(record['workspace_id'], payload.get('upload_ids', []))
+                uploads = upload_records(payload.get('upload_ids', []))
                 context = []
                 for item in uploads:
-                    path = d.DATA / 'workspaces' / record['workspace_id'] / 'files' / item['path']
+                    path = d.files_root() / item['path']
                     context.append(f'- {json.dumps(item["name"], ensure_ascii=False)}: {path}')
                     if runner.supports_next_input('image') and item['type'] in ('image/png', 'image/jpeg', 'image/webp', 'image/gif') and item['size'] <= 10 * 1024 * 1024 and len(images) < 4:
                         data = path.read_bytes()
                         images.append(ImageAttachment(filename=item['name'], mime_type=item['type'], data=data, size=len(data)))
-                text = payload['text'] + ('\n\n[Uploaded files in this workspace; use tools to read these paths]\n' + '\n'.join(context) if context else '')
+                text = payload['text'] + ('\n\n[Uploaded files; use tools to read these paths]\n' + '\n'.join(context) if context else '')
                 result = runner.invoke(text, images=images)
             elif operation == 'approve':
                 result = runner.decide_tools(payload['decisions'])
@@ -353,7 +349,7 @@ class Runtime:
                     reasoning_effort=None if runner.reasoning_effort() == 'default' else runner.reasoning_effort())
                 d.put('session', record)
             for service in self.artifact_services.values():service.detect_external()
-            changed = changed_workspace_files(workspace_root, before)
+            changed = changed_files(files_root, before)
             if changed:
                 self.event({'type': 'output_files', 'files': changed})
             self.event({'type': 'result', **{**asdict(result), 'error': record['error'] or ''}})
@@ -415,7 +411,7 @@ def schedule(session_id, operation, payload):
 
 
 class NewSession(BaseModel):
-    workspace_id: str
+    model_config = {'extra': 'forbid'}
     model_id: str | None = None
     reasoning_effort: str | None = None
     permission_mode: str = Field(default='ask', pattern='^(ask|allow)$')
@@ -430,25 +426,22 @@ def capabilities():
 
 
 @router.get('/sessions')
-def sessions(workspace_id: str | None = None):
-    return [public(r) for r in reversed(d.all_records('session')) if workspace_id is None or r['workspace_id'] == workspace_id]
+def sessions():
+    return [public(r) for r in reversed(d.all_records('session'))]
 
 
 @router.post('/sessions', status_code=201)
 def create_session(value: NewSession):
     if value.permission_mode == 'allow' and value.permission_confirmation != 'ALLOW':
         raise HTTPException(422, '请输入 ALLOW 确认自动批准模式')
-    try:
-        config = d.effective_workspace(value.workspace_id)
-    except KeyError:
-        raise HTTPException(404, '工作空间不存在')
+    config = d.effective_config()
     try:
         snapshot = m.selection(value.model_id, value.reasoning_effort if 'reasoning_effort' in value.model_fields_set else m.UNSET)
     except LookupError as exc:
         raise HTTPException(503, str(exc))
     except ValueError:
         raise HTTPException(422, '模型、思考强度或密钥配置无效')
-    record = dict(id=uuid4().hex, workspace_id=value.workspace_id, config=config, model_snapshot=snapshot,
+    record = dict(id=uuid4().hex, config=config, model_snapshot=snapshot,
         model_id=snapshot['id'], reasoning_effort=snapshot['reasoning_effort'], status='idle', messages=[],
         output='', error=None, created_at=now(), updated_at=now(), event_seq=0,
         pending_tool_calls=[], human_input={}, permission_mode=value.permission_mode,
@@ -464,7 +457,7 @@ def session(session_id: str):
 @router.get('/sessions/{session_id}/artifacts/{filename}')
 def artifact(session_id: str, filename: str):
     record = find(session_id)
-    root = d.DATA / 'artifacts' / record['workspace_id'] / session_id
+    root = d.artifact_root(session_id)
     path = root / filename
     if path.parent != root or not path.is_file() or path.is_symlink():
         raise HTTPException(404, '文件不存在')
@@ -482,7 +475,7 @@ def message(session_id: str, value: Message):
     record = find(session_id)
     if len(set(value.upload_ids)) != len(value.upload_ids):
         raise HTTPException(422, '上传文件不能重复')
-    uploads = upload_records(record['workspace_id'], value.upload_ids)
+    uploads = upload_records(value.upload_ids)
     for image in value.images:
         try:
             if image['type'] not in ('image/png', 'image/jpeg', 'image/webp', 'image/gif') or len(base64.b64decode(image['data'], validate=True)) > 10 * 1024 * 1024:
@@ -615,30 +608,22 @@ async def events(session_id: str, request: Request, after: int = 0):
     return StreamingResponse(stream(), media_type='text/event-stream', headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
-@router.get('/workspaces/{workspace_id}/files')
-def files(workspace_id: str):
-    try:
-        d.get('workspace', workspace_id)
-    except KeyError:
-        raise HTTPException(404, '工作空间不存在')
-    root = d.DATA / 'workspaces' / workspace_id / 'files'
+@router.get('/files')
+def files():
+    root = d.files_root()
     if not root.exists():
         return []
     return [{'path': str(p.relative_to(root)), 'size': p.stat().st_size} for p in root.rglob('*') if p.is_file() and not p.is_symlink() and not internal_path(p.relative_to(root)) and p.resolve().is_relative_to(root.resolve())][:1000]
 
 
-@router.get('/workspaces/{workspace_id}/files/{filename:path}')
-def download(workspace_id: str, filename: str):
-    root, path = workspace_file(workspace_id, filename)
+@router.get('/files/{filename:path}')
+def download(filename: str):
+    root, path = library_file(filename)
     return FileResponse(path, filename=path.name)
 
 
-def workspace_file(workspace_id, filename):
-    try:
-        d.get('workspace', workspace_id)
-    except KeyError:
-        raise HTTPException(404, '工作空间不存在')
-    root = d.DATA / 'workspaces' / workspace_id / 'files'
+def library_file(filename):
+    root = d.files_root()
     path = root / filename
     if internal_path(filename) or not path.resolve().is_relative_to(root.resolve()) or not path.is_file() or path.is_symlink():
         raise HTTPException(404, '文件不存在')

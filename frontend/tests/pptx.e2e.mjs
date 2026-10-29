@@ -2,15 +2,16 @@ import {chromium} from 'playwright'
 import assert from 'node:assert/strict'
 import {mkdir,writeFile} from 'node:fs/promises'
 const base=process.env.PPTX_E2E_BASE_URL||'http://127.0.0.1:8084'
+const timeoutScale = Number(process.env.OFFICE_E2E_TIMEOUT_SCALE || 1)
 const output=new URL('../test-results/',import.meta.url).pathname
 await mkdir(output,{recursive:true})
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']})
 const page=await browser.newPage({viewport:{width:1680,height:1040}}),errors=[]
 page.on('pageerror',e=>errors.push(e.message))
-async function poll(fn,timeout=180000){const end=Date.now()+timeout;while(Date.now()<end){const result=await fn();if(result)return result;await new Promise(resolve=>setTimeout(resolve,180))}throw Error('PPTX acceptance timed out')}
+async function poll(fn,timeout=180000){const end=Date.now()+timeout*timeoutScale;while(Date.now()<end){const result=await fn();if(result)return result;await new Promise(resolve=>setTimeout(resolve,180))}throw Error('PPTX acceptance timed out')}
 try{
  await page.goto(base);await page.evaluate(()=>localStorage.setItem('locale','zh'))
- const session=await(await page.request.post(base+'/api/agent/sessions',{data:{workspace_id:'office',model_id:'test/model'}})).json();const url=base+'/api/agent/sessions/'+session.id
+ const session=await(await page.request.post(base+'/api/agent/sessions',{data:{model_id:'test/model'}})).json();const url=base+'/api/agent/sessions/'+session.id
  await page.goto(base+'/?session='+session.id)
  const input=page.locator('.composer textarea')
  await input.fill('参考企业模板制作12页 AI Agent 平台技术汇报，需要封面、背景、架构图、能力、技术路线、对比图表和总结，保留原生可编辑对象。');await input.press('Enter')
