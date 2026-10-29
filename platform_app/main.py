@@ -13,12 +13,29 @@ from pydantic import BaseModel, Field
 from . import domain as d
 from . import models as m
 from . import runtime
+from . import format_plugins
 
 app = FastAPI(title='Deep Agent Platform')
 POOL = ThreadPoolExecutor(max_workers=4)
 d.init()
 runtime.initialize()
 app.include_router(runtime.router)
+app.include_router(format_plugins.router)
+class ArtifactHost:
+    def session(self,session_id):return runtime.find(session_id)
+    def service(self,session_id,feature):
+        if feature not in [m['id'] for m in format_plugins.enabled()]:raise HTTPException(404,'Feature is uninstalled or disabled')
+        value=runtime.runtime(session_id).ensure_artifact_services().get(feature)
+        if value is None:raise HTTPException(503,'Feature dependencies unavailable')
+        return value
+    def emit(self,session_id,event):runtime.runtime(session_id).event(event)
+artifact_host=ArtifactHost()
+for feature in format_plugins.enabled():
+    try:
+        plugin=format_plugins.load_plugin(feature['id'])
+        if hasattr(plugin,'create_router'):app.include_router(plugin.create_router(artifact_host))
+    except (ImportError,LookupError):pass
+
 STATIC = Path(__file__).parent / 'static'
 app.mount('/static', StaticFiles(directory=STATIC), name='static')
 WEB = Path(__file__).parent / 'web'
@@ -169,7 +186,7 @@ def run_task(record, model=None, raise_errors=False):
             profile = parsed.get_profile(snapshot['id'])
             settings = replace(settings, llm_profiles=parsed.llm_profiles, llm_default=profile.id, request_timeout=parsed.request_timeout)
             model = build_chat_model(profile, reasoning_effort=snapshot['reasoning_effort'], trust_env=True, timeout=parsed.request_timeout)
-        prepared = prepare_agent(settings=settings, model=model, instructions=adapter.instructions, skills=[], extra_tools=adapter.tools())
+        prepared = prepare_agent(settings=settings, model=model, instructions=adapter.instructions, skills=[], extra_tools=adapter.tools(), interrupt_on=format_plugins.approval_rules())
         runner = AgentRunner(prepared=prepared, settings=settings)
         result = runner.invoke(record['prompt'])
         record.update(status=result.status, output=result.output or '')

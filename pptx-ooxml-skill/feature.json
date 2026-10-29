@@ -1,0 +1,1 @@
+{"id":"pptx","name":"PowerPoint 演示文稿","adapter":"platform_adapter.py","requirements":"requirements.txt","skill_name":"pptx-ooxml-author","event_prefix":"presentation_","identity_key":"presentation_id","state_key":"presentations"}

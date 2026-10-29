@@ -1247,10 +1247,6 @@
     "zh": "点击下载",
     "en": "Click to download"
   },
-  "artifacts.preview": {
-    "zh": "点击预览",
-    "en": "Click to preview"
-  },
   "Download": {
     "zh": "下载",
     "en": "Download"
@@ -1259,44 +1255,240 @@
     "zh": "保存",
     "en": "Save"
   },
-  "File preview": {
-    "zh": "文件预览",
-    "en": "File preview"
+  "docx.preview": {
+    "zh": "文档只读预览",
+    "en": "Read-only document preview"
   },
-  "File content": {
-    "zh": "文件内容",
-    "en": "File content"
+  "docx.select": {
+    "zh": "选择文档",
+    "en": "Select document"
   },
-  "file.saved": {
-    "zh": "已保存",
-    "en": "Saved"
+  "docx.close": {
+    "zh": "关闭文档预览",
+    "en": "Close document preview"
   },
-  "file.reason.binary": {
-    "zh": "该文件是二进制文件，暂不支持在线编辑。",
-    "en": "Binary files cannot be edited here."
+  "docx.revision": {
+    "zh": "版本 {revision}",
+    "en": "Revision {revision}"
   },
-  "file.reason.too_large": {
-    "zh": "文件较大，请下载后查看。",
-    "en": "This file is too large to preview. Download it instead."
+  "docx.updating": {
+    "zh": "正在更新…",
+    "en": "Updating…"
   },
-  "file.reason.encoding": {
-    "zh": "该文件不是 UTF-8 文本，暂不支持在线编辑。",
-    "en": "This file is not UTF-8 text and cannot be edited here."
+  "docx.follow": {
+    "zh": "跟随最新内容",
+    "en": "Follow latest content"
   },
-  "file.reason.unknown": {
-    "zh": "该文件暂不支持在线编辑。",
-    "en": "This file cannot be edited here."
+  "docx.loadError": {
+    "zh": "文档预览加载失败，可重试或下载查看。",
+    "en": "Preview failed. Retry or download the document."
   },
-  "file.docxLoading": {
-    "zh": "正在打开 Word 文档…",
-    "en": "Opening Word document…"
+  "docx.retry": {
+    "zh": "重试",
+    "en": "Retry"
   },
-  "file.docxError": {
-    "zh": "文档编辑器加载失败，请重新打开或下载文件查看。",
-    "en": "Could not load the document editor. Reopen it or download the file."
+  "docx.page": {
+    "zh": "第 {page} 页",
+    "en": "Page {page}"
   },
-  "file.discardChanges": {
-    "zh": "还有未保存的修改，确定关闭吗？",
-    "en": "Discard unsaved changes and close?"
+  "docx.writing": {
+    "zh": "正在编写",
+    "en": "Writing"
+  },
+  "docx.pending": {
+    "zh": "待视觉检查",
+    "en": "Visual review pending"
+  },
+  "docx.passed": {
+    "zh": "检查通过",
+    "en": "Passed"
+  },
+  "docx.failed": {
+    "zh": "检查失败",
+    "en": "Failed"
+  },
+  "docx.checkFailed": {
+    "zh": "排版检查未完成：",
+    "en": "Layout check incomplete:"
+  },
+  "docx.gate.checkpoint": {
+    "zh": "等待排版检查，完成后继续生成。",
+    "en": "Waiting for a layout checkpoint."
+  },
+  "docx.gate.failed": {
+    "zh": "页面检查失败，正在等待修复与复检。",
+    "en": "Page check failed. Waiting for repairs and recheck."
+  },
+  "docx.gate.visual_pending": {
+    "zh": "严格模式：等待已完成页面的视觉检查。",
+    "en": "Strict mode: awaiting visual review of completed pages."
+  },
+  "docx.layoutNote": {
+    "zh": "预览与页面验收共用 LibreOffice 分页；Microsoft Word 可能存在排版差异。",
+    "en": "Preview and review use LibreOffice pagination; Microsoft Word layout may differ."
+  },
+  "docx.inspectPage": {
+    "zh": "检查第 {page} 页",
+    "en": "Inspect page {page}"
+  },
+  "docx.actualReview": {
+    "zh": "请查看实际渲染页面后填写检查依据。提交仅记录本页视觉审查，不会自动生成新内容。",
+    "en": "Inspect the rendered page and record evidence. This records visual review; it does not resume generation."
+  },
+  "docx.fullPage": {
+    "zh": "打开完整页面截图",
+    "en": "Open full page screenshot"
+  },
+  "docx.reviewNotes": {
+    "zh": "记录排版检查依据或需要修复的问题",
+    "en": "Record layout evidence or issues to fix"
+  },
+  "docx.approve": {
+    "zh": "本页视觉检查通过",
+    "en": "Page visually passed"
+  },
+  "docx.reject": {
+    "zh": "本页需要修复",
+    "en": "Page needs repairs"
+  },
+  "docx.steerAccepted": {
+    "zh": "已接收纠偏，等待当前操作完成后处理。",
+    "en": "Correction received; waiting for the current operation to finish."
+  },
+  "docx.draft": {
+    "zh": "草稿 · 尚未完成全部页面验收",
+    "en": "Draft · page review incomplete"
+  },
+  "docx.finalized": {
+    "zh": "文档已完成验收",
+    "en": "Document finalized"
+  },
+  "docx.paginating": {
+    "zh": "正在排版新版本…",
+    "en": "Paginating the new revision…"
+  },
+  "docx.previewUnavailable": {
+    "zh": "分页预览暂不可用，请检查 LibreOffice 与字体；仍可下载 DOCX。",
+    "en": "Paginated preview unavailable. Check LibreOffice and fonts, or download the DOCX."
+  },
+  "docx.zoom": {
+    "zh": "缩放",
+    "en": "Zoom"
+  },
+  "docx.fitPage": {
+    "zh": "适合整页",
+    "en": "Fit page"
+  },
+  "docx.fitWidth": {
+    "zh": "适合页宽",
+    "en": "Fit width"
+  },
+  "docx.externalConflict": {
+    "zh": "文件被外部操作修改，当前显示最后有效提交；请恢复或检查新文件后继续。",
+    "en": "External file changes detected. Showing the last valid commit; restore or check the new file before continuing."
+  },
+  "pptx.preview": {
+    "zh": "PPTX 只读预览",
+    "en": "PPTX read-only preview"
+  },
+  "pptx.select": {
+    "zh": "选择演示文稿",
+    "en": "Select presentation"
+  },
+  "pptx.close": {
+    "zh": "关闭演示文稿预览",
+    "en": "Close presentation preview"
+  },
+  "pptx.finalized": {
+    "zh": "全部幻灯片已验收",
+    "en": "All slides accepted"
+  },
+  "pptx.draft": {
+    "zh": "草稿 · 尚未完成全部视觉验收",
+    "en": "Draft · visual acceptance incomplete"
+  },
+  "pptx.follow": {
+    "zh": "跟随当前幻灯片",
+    "en": "Follow current slide"
+  },
+  "pptx.slides": {
+    "zh": "幻灯片缩略图",
+    "en": "Slide thumbnails"
+  },
+  "pptx.formal": {
+    "zh": "正式渲染",
+    "en": "Formal render"
+  },
+  "pptx.instant": {
+    "zh": "即时预览 · 排版以正式渲染为准",
+    "en": "Instant preview · formal render is authoritative"
+  },
+  "pptx.creating": {
+    "zh": "正在初始化幻灯片…",
+    "en": "Initializing slides…"
+  },
+  "pptx.writing": {
+    "zh": "正在制作",
+    "en": "Building"
+  },
+  "pptx.pending": {
+    "zh": "基础检查通过 · 待视觉检查",
+    "en": "Basic checks passed · visual review pending"
+  },
+  "pptx.blocked": {
+    "zh": "检查失败 · 等待修复",
+    "en": "Check failed · repair required"
+  },
+  "pptx.passed": {
+    "zh": "检查通过",
+    "en": "Passed"
+  },
+  "pptx.visual": {
+    "zh": "视觉审查",
+    "en": "Visual review"
+  },
+  "pptx.inspect": {
+    "zh": "检查正式渲染截图",
+    "en": "Inspect formal screenshot"
+  },
+  "Features": {
+    "zh": "扩展功能",
+    "en": "Features"
+  },
+  "features.explain": {
+    "zh": "DOCX 和 PPTX 独立安装、停用或卸载。卸载不会删除已生成的文件和版本。",
+    "en": "DOCX and PPTX can be installed, disabled or removed independently. Existing files and versions are preserved."
+  },
+  "features.uninstalled": {
+    "zh": "已卸载",
+    "en": "Uninstalled"
+  },
+  "features.install": {
+    "zh": "安装",
+    "en": "Install"
+  },
+  "features.enable": {
+    "zh": "启用",
+    "en": "Enable"
+  },
+  "features.disable": {
+    "zh": "停用",
+    "en": "Disable"
+  },
+  "features.uninstall": {
+    "zh": "卸载",
+    "en": "Uninstall"
+  },
+  "pptx_init": {
+    "zh": "授权并创建此演示文稿",
+    "en": "Authorize and create this presentation"
+  },
+  "pptx_apply_one": {
+    "zh": "修改一个幻灯片元素",
+    "en": "Edit one slide element"
+  },
+  "pptx_check_slide": {
+    "zh": "检查当前幻灯片",
+    "en": "Check current slide"
   }
 }

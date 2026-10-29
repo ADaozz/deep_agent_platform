@@ -115,7 +115,7 @@ def default_package():
       <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>
     </w:body></w:document>'''
     styles = f'''<w:styles xmlns:w="{W}">
-      <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:eastAsia="等线" w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>
+      <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:eastAsia="Noto Sans CJK SC" w:ascii="Liberation Sans" w:hAnsi="Liberation Sans"/><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>
       <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:after="120" w:line="360" w:lineRule="auto"/></w:pPr></w:style>
       <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/><w:spacing w:after="320"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="360" w:after="160"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style>
@@ -248,7 +248,7 @@ def inspect(parts, source):
     rows = []
     for i, p in enumerate(paragraphs):
         style = p.find('./' + q(W, 'pPr') + '/' + q(W, 'pStyle'))
-        rows.append({'index': i, 'text': ptext(p)[:500],
+        rows.append({'index': i, 'text': ptext(p)[:500], 'block_id': p.get('{urn:deep-agent:docx:blocks:v1}id'),
                      'style': style.get(q(W, 'val')) if style is not None else None,
                      'has_field': bool(p.xpath('.//w:fldChar|.//w:instrText', namespaces=NS)),
                      'has_drawing': bool(p.xpath('.//w:drawing|.//w:object', namespaces=NS))})
@@ -257,7 +257,7 @@ def inspect(parts, source):
         styles = [x.get(q(W, 'styleId')) for x in parse_xml(parts['word/styles.xml']).iter(q(W, 'style'))]
     return {'file': str(source), 'sha256': sha(source),
             'body_blocks': [{'index': i, 'type': 'paragraph' if b.tag == q(W, 'p') else 'table',
-                             'text': ptext(b)[:500]} for i, b in enumerate(blocks)],
+                             'text': ptext(b)[:500], 'block_id': b.get('{urn:deep-agent:docx:blocks:v1}id')} for i, b in enumerate(blocks)],
             'paragraphs': rows, 'styles': styles,
             'parts': sorted(parts.keys()), 'validation': validate_parts(parts)}
 
@@ -531,7 +531,7 @@ def json_print(obj):
 
 def run_render(docx, output, dpi=125):
     # LibreOffice is a layout engine; a PDF must be generated from the interim DOCX.
-    import fitz
+    import pymupdf as fitz
     docx = Path(docx).resolve()
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -544,6 +544,8 @@ def run_render(docx, output, dpi=125):
                '--headless', '--convert-to', 'pdf', '--outdir', str(output), str(docx)]
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError('LibreOffice rendering timed out after 120 seconds') from exc
         except FileNotFoundError as exc:
             raise RuntimeError('LibreOffice not installed') from exc
         if p.returncode != 0:
@@ -605,7 +607,7 @@ def run_compare(before, after, output):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest='command', required=True)
-    x = sub.add_parser('init'); x.add_argument('--output', required=True); x.add_argument('--template')
+    x = sub.add_parser('init'); x.add_argument('--output', required=True); x.add_argument('--template'); x.add_argument('--document-id'); x.add_argument('--mode', choices=['normal','strict'], default='normal')
     x = sub.add_parser('inspect'); x.add_argument('docx'); x.add_argument('--output')
     x = sub.add_parser('discover'); x.add_argument('--templates', required=True); x.add_argument('--query', required=True); x.add_argument('--limit', type=int, default=15)
     x = sub.add_parser('apply'); x.add_argument('docx'); x.add_argument('plan'); x.add_argument('--output', required=True); x.add_argument('--asset-root', default='.')
@@ -613,9 +615,27 @@ def main(argv=None):
     x = sub.add_parser('render'); x.add_argument('docx'); x.add_argument('--output-dir', required=True); x.add_argument('--dpi', type=int, default=125)
     x = sub.add_parser('compare'); x.add_argument('--before', required=True); x.add_argument('--after', required=True); x.add_argument('--output-dir', required=True)
     x = sub.add_parser('review-template'); x.add_argument('--render-dir', required=True); x.add_argument('--output', required=True)
-    x = sub.add_parser('finalize'); x.add_argument('docx'); x.add_argument('--render-dir', required=True); x.add_argument('--review', required=True); x.add_argument('--output', required=True)
+    x = sub.add_parser('finalize'); x.add_argument('docx'); x.add_argument('--render-dir'); x.add_argument('--review'); x.add_argument('--output'); x.add_argument('--base-revision', type=int)
+    x = sub.add_parser('apply-one'); x.add_argument('docx'); x.add_argument('request'); x.add_argument('--asset-root', default='.')
+    x = sub.add_parser('status'); x.add_argument('docx')
+    x = sub.add_parser('restore'); x.add_argument('docx'); x.add_argument('--revision', type=int, required=True); x.add_argument('--base-revision', type=int, required=True); x.add_argument('--operation-id', required=True)
+    x = sub.add_parser('checkpoint'); x.add_argument('docx'); x.add_argument('--final', action='store_true')
+    x = sub.add_parser('review-page'); x.add_argument('docx'); x.add_argument('--revision', type=int, required=True); x.add_argument('--page', type=int, required=True); x.add_argument('--reviewer', choices=['human','vision_model'], required=True); x.add_argument('--notes', required=True); x.add_argument('--passed', action='store_true')
+    x = sub.add_parser('publish'); x.add_argument('docx'); x.add_argument('--base-revision', type=int, required=True)
     a = p.parse_args(argv)
     try:
+        if a.command in ('apply-one', 'status', 'restore', 'checkpoint', 'review-page', 'publish') or (a.command == 'init' and a.document_id) or (a.command == 'finalize' and a.base_revision is not None):
+            from atomic_docx import DocumentStore
+            store = DocumentStore(a.output if a.command == 'init' else a.docx)
+            if a.command == 'init': result = store.init(a.document_id, a.template, a.mode)
+            elif a.command == 'apply-one': result = store.apply_one(json.loads(Path(a.request).read_text(encoding='utf-8')), a.asset_root)
+            elif a.command == 'restore': result = store.restore(a.revision, a.base_revision, a.operation_id)
+            elif a.command == 'checkpoint': result = store.checkpoint(a.final)
+            elif a.command == 'review-page': result = store.visual_review(a.revision, a.page, a.passed, a.reviewer, a.notes)
+            elif a.command in ('publish', 'finalize'): result = store.finalize(a.base_revision)
+            else: result = store.status()
+            json_print(result)
+            return 0
         if a.command == 'init':
             if a.template:
                 data = read_parts(a.template)
@@ -683,6 +703,8 @@ def main(argv=None):
             Path(a.output).write_text(json.dumps(template, ensure_ascii=False, indent=2), encoding='utf-8')
             json_print(template)
         elif a.command == 'finalize':
+            if not all((a.render_dir, a.review, a.output)):
+                raise ValueError('Use --base-revision for atomic finalize, or --render-dir --review --output for legacy finalization')
             val = validate_parts(read_parts(a.docx))
             if not val['ok']:
                 raise ValueError('Invalid candidate: %s' % val['errors'])

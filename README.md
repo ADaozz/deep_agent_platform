@@ -10,7 +10,7 @@
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements.lock
 npm --prefix frontend install
 npm --prefix frontend run build
 .venv/bin/uvicorn platform_app.main:app --host 127.0.0.1 --port 8080
@@ -24,7 +24,9 @@ npm --prefix frontend run build
 
 右上角提供浅色／夜间模式与中文／English 切换。首次打开跟随系统配色和浏览器语言，手动选择保存在本地浏览器，刷新后继续生效。界面标签、菜单、配置弹窗、状态提示和日期随语言更新；用户的会话内容与配置保持原文。侧栏文件入口为 Filebase（文件库）。
 
-文件库中点击 DOCX 文件可在页面右侧使用 SuperDoc 预览和编辑，点击保存或按 Ctrl/Cmd+S 写回原文件（最大 20MB）。保存时校验文件版本；原文件被其他操作更新后会拒绝覆盖，需要重新打开。编辑器按需加载，在浏览器内处理文档，关闭未保存的编辑会提示确认。SuperDoc 及其 DOCX Engine 的许可分别见安装包中的 `LICENSE` 与 `DOCX-ENGINE-LICENSE.md`。
+文件库展示工作区文件并提供下载；聊天附件和输出文件块可点击直接下载。DOCX 和 PPTX 是两个独立、可卸载的扩展，可在侧栏「扩展功能」中分别启用、停用或卸载，不与主 Agent 执行逻辑耦合；卸载不删除产物与版本。部署方式见 [可选 Office 功能](docs/optional-office-features.md)。
+
+DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PPTX 逐元素构建，提供缩略图、即时原生元素预览及完成页的正式渲染。两者只读、支持运行中纠偏，最终文件保持可编辑。未完成实际视觉审查时标记草稿。详见 [DOCX 说明](docs/docx-streaming.md) 和 [PPTX Skill](pptx-ooxml-skill/README.md)。
 
 - 参考页面的浅色布局、可折叠侧栏、工作区菜单、运行环境菜单和文件上传；适配手机屏幕。`Ctrl+Alt+B` 切换侧栏，Enter 发送，Shift+Enter 换行。
 - 新建/切换工作区，编辑系统提示词、规则、原生工具开关、额外 Office 工具和 Skill。
@@ -34,7 +36,7 @@ npm --prefix frontend run build
 - 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话与兼容任务接口均启用原生 `task` / `read_subagent_log`，按 CLI 默认策略委派子 Agent，并保留并发控制、取消传播与结果返回。
 - 输入框加号直接上传文件，每条消息最多 10 个文件、每个 20MB。文件存入当前工作区，随消息传入可供 Agent 读取的路径；若模型支持图片输入，则最多 4 张符合条件的图片同时通过内核图片附件接口发送。
 - 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认，与 CLI 一致。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具并开放沙箱网络，MCP 工具仍在宿主运行。
-- 工作区文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的工作区文件以文件块展示，点击可预览文本文件并直接编辑保存，也可单独下载；二进制文件仅提供预览说明和下载；原版任务历史保留。
+- 工作区文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的工作区文件以文件块展示，点击直接下载；原版任务历史保留。
 
 ## 工具、Skill 和 MCP
 

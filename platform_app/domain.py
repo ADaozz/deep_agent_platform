@@ -25,8 +25,6 @@ def schema(properties, required):
 
 TEXT = {'type': 'string', 'minLength': 1}
 TOOL_SCHEMAS = {
-    'create_docx': schema({'title': TEXT, 'paragraphs': {'type': 'array', 'items': TEXT}}, ['title', 'paragraphs']),
-    'create_pptx': schema({'title': TEXT, 'slides': {'type': 'array', 'items': schema({'title': TEXT, 'body': TEXT}, ['title', 'body'])}}, ['title', 'slides']),
     'create_xlsx': schema({'title': TEXT, 'rows': {'type': 'array', 'items': {'type': 'array', 'items': {'type': ['string', 'number', 'boolean', 'null']}}}}, ['title', 'rows']),
 }
 
@@ -75,6 +73,11 @@ def init():
     for workspace in all_records('workspace'):
         if any(name in workspace.get('core_tools', {}) for name in REMOVED_TOOLS):
             workspace['core_tools'] = {name: enabled for name, enabled in workspace['core_tools'].items() if name not in REMOVED_TOOLS}
+            workspace['revision'] += 1
+            put('workspace', workspace)
+    for workspace in all_records('workspace'):
+        if any(t['name'] in ('create_docx','create_pptx') for t in workspace.get('tools', [])):
+            workspace['tools'] = [t for t in workspace['tools'] if t['name'] not in ('create_docx','create_pptx')]
             workspace['revision'] += 1
             put('workspace', workspace)
     research = get('workspace', 'research') if any(w['id'] == 'research' for w in all_records('workspace')) else None
@@ -183,12 +186,14 @@ def validate_config(value):
 class WorkspaceAdapter:
     def __init__(self, workspace, task_id):
         self.config = copy.deepcopy(workspace)
+        self.config['tools'] = [t for t in self.config.get('tools', []) if t['name'] not in ('create_docx','create_pptx')]
         self.root = DATA / 'artifacts' / workspace['id'] / task_id
         self.root.mkdir(parents=True, exist_ok=True)
 
     @property
     def instructions(self):
-        return '\n\n'.join([self.config['system_prompt'], '\n'.join(self.config['rules']), *[f"技能：{s['name']}\n{s['content']}" for s in self.config['skills']]])
+        from .format_plugins import instructions
+        return instructions() + '\n\n' + '\n\n'.join([self.config['system_prompt'], '\n'.join(self.config['rules']), *[f"技能：{s['name']}\n{s['content']}" for s in self.config['skills']]])
 
     def execute(self, name, arguments):
         tool = next((t for t in self.config['tools'] if t['name'] == name and t['enabled']), None)
@@ -198,24 +203,7 @@ class WorkspaceAdapter:
         Draft202012Validator(TOOL_SCHEMAS[name]).validate(arguments)
         extension = name[7:]
         path = self.root / f'{uuid4().hex[:12]}.{extension}'
-        if extension == 'docx':
-            from docx import Document
-            doc = Document()
-            doc.add_heading(arguments['title'], 0)
-            for paragraph in arguments['paragraphs']:
-                doc.add_paragraph(paragraph)
-            doc.save(path)
-        elif extension == 'pptx':
-            from pptx import Presentation
-            doc = Presentation()
-            slide = doc.slides.add_slide(doc.slide_layouts[0])
-            slide.shapes.title.text = arguments['title']
-            for item in arguments['slides']:
-                slide = doc.slides.add_slide(doc.slide_layouts[1])
-                slide.shapes.title.text = item['title']
-                slide.placeholders[1].text = item['body']
-            doc.save(path)
-        else:
+        if extension == 'xlsx':
             from openpyxl import Workbook
             doc = Workbook()
             for row in arguments['rows']:
@@ -224,7 +212,7 @@ class WorkspaceAdapter:
             doc.save(path)
         return {'filename': path.name, 'type': extension}
 
-    def tools(self):
+    def tools(self, include_artifacts=True):
         from langchain_core.tools import StructuredTool
         tools = []
         for tool in self.config['tools']:
@@ -232,4 +220,7 @@ class WorkspaceAdapter:
                 def invoke(_name=tool['name'], **kwargs):
                     return self.execute(_name, kwargs)
                 tools.append(StructuredTool.from_function(func=invoke, name=tool['name'], description=tool['description'], args_schema=tool['schema']))
+        if include_artifacts:
+            from .format_plugins import build_services
+            tools.extend(tool for service in build_services(self.root,self.config['id'],self.root.name,lambda event:None).values() for tool in service.tools())
         return tools

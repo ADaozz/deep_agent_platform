@@ -39,8 +39,6 @@ def test_snapshot_and_tool_scoping(client):
 
 
 @pytest.mark.parametrize('name,args,entry', [
-    ('create_docx', {'title':'计划','paragraphs':['内容']}, 'word/document.xml'),
-    ('create_pptx', {'title':'发布','slides':[{'title':'目标','body':'内容'}]}, 'ppt/slides/slide2.xml'),
     ('create_xlsx', {'title':'预算','rows':[['费用',100],['=1+1',200]]}, 'xl/worksheets/sheet1.xml'),
 ])
 def test_office_files(client, name, args, entry):
@@ -63,7 +61,11 @@ def test_validation_and_missing_provider(client, monkeypatch):
 def test_task_file_download(client):
     d.put('task', dict(id='download',workspace_id='office',status='completed'))
     adapter = d.WorkspaceAdapter(d.get('workspace','office'),'download')
-    result = adapter.execute('create_docx',dict(title='Title',paragraphs=['Body']))
+    from platform_app.documents import Documents
+    docs = Documents(adapter.root, 'office')
+    docs.execute('init', dict(document_id='report'))
+    docs.execute('apply_one', dict(document_id='report', operation_id='p1', base_revision=0, operation=dict(type='append_paragraph', block_id='body', text='Body')))
+    result = {'filename': 'report.docx'}
     response = client.get('/api/tasks/download/artifacts/' + result['filename'])
     assert response.status_code == 200
     assert response.content[:2] == b'PK'
@@ -83,7 +85,9 @@ def test_real_core_executes_workspace_tool(client):
 
         def bind_tools(self, tools, **kwargs):
             names = [t.get('name') if isinstance(t, dict) else t.name for t in tools]
-            assert 'create_docx' in names
+            assert 'create_docx' not in names
+            assert 'docx_init' in names
+            assert 'docx_apply_one' in names
             assert 'execute' in names
             assert 'read_file' in names
             assert 'task' in names
@@ -94,7 +98,7 @@ def test_real_core_executes_workspace_tool(client):
             if any(isinstance(m, ToolMessage) for m in messages):
                 msg = AIMessage(content='文档已生成。')
             else:
-                msg = AIMessage(content='', tool_calls=[{'name':'create_docx','args':{'title':'测试','paragraphs':['来自真实内核的工具调用']},'id':'office-call','type':'tool_call'}])
+                msg = AIMessage(content='', tool_calls=[{'name':'docx_init','args':{'document_id':'test-report'},'id':'office-call','type':'tool_call'}])
             return ChatResult(generations=[ChatGeneration(message=msg)])
 
     record = dict(id='core-test',workspace_id='office',prompt='生成文档',config=d.get('workspace','office'),status='queued',output='',error=None,revision=1)

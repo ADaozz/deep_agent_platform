@@ -1,0 +1,1 @@
+{"id":"docx","name":"Word 文档","adapter":"platform_adapter.py","requirements":"requirements.txt","skill_name":"docx-ooxml-author","event_prefix":"document_","identity_key":"document_id","state_key":"documents"}

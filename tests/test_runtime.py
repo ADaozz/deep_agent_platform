@@ -100,6 +100,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(rt.POOL, 'submit', lambda fn, *args: fn(*args))
     yield TestClient(app)
     for runtime in rt.RUNTIMES.values():
+        for service in runtime.artifact_services.values():service.close()
         if runtime.runner:
             runtime.runner.close()
             runtime.runner.session_store.close()
@@ -140,7 +141,7 @@ def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
     assert response.status_code == 202
     assert approve(client, session_id).status_code == 202
     journal = d.all_records('event')
-    assert any(e['type'] == 'tool_completed' and 'core-command-ok' in e.get('content', '') for e in journal)
+    assert any(e['type'] == 'tool_completed' and 'core-command-ok' in e.get('content', '') for e in journal), [(e.get('type'),e.get('name'),e.get('content')) for e in journal if e.get('type') in ('tool_completed','error','result')]
     runner.close()
     runner.session_store.close()
     rt.RUNTIMES.pop(session_id)
@@ -292,122 +293,50 @@ def test_file_upload_is_workspace_scoped_and_reaches_real_core(client):
     assert client.post(f'/api/agent/sessions/{other["id"]}/messages', json={'text': 'x', 'upload_ids': [file['id']]}).status_code == 404
 
 
-def test_workspace_text_file_preview_edit_and_guards(client):
+def test_workspace_file_download_and_guards(client, tmp_path):
+    root = d.DATA / 'workspaces' / 'writing' / 'files'
+    root.mkdir(parents=True, exist_ok=True)
+    (root / 'nested').mkdir()
+    payload = b'# Hello'
+    (root / 'nested' / 'notes.md').write_bytes(payload)
+    response = client.get('/api/agent/workspaces/writing/files/nested/notes.md')
+    assert response.status_code == 200
+    assert response.content == payload
+    assert response.headers['content-disposition'].startswith('attachment;')
+    assert client.get('/api/agent/workspaces/writing/files').json() == [
+        {'path': 'nested/notes.md', 'size': len(payload)}]
+    outside = tmp_path / 'outside.md'
+    outside.write_text('private')
+    (root / 'link.md').symlink_to(outside)
+    assert client.get('/api/agent/workspaces/writing/files/link.md').status_code == 404
+    assert client.get('/api/agent/workspaces/writing/files/%2E%2E/platform.sqlite').status_code == 404
+    assert client.get('/api/agent/workspaces/missing/files/notes.md').status_code == 404
+
+
+def test_file_preview_and_edit_endpoints_removed(client):
     root = d.DATA / 'workspaces' / 'writing' / 'files'
     root.mkdir(parents=True, exist_ok=True)
     notes = root / 'notes.md'
-    notes.write_text('# Hello', encoding='utf-8')
-    preview = client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md'}).json()
-    assert preview == {'path': 'notes.md', 'size': 7, 'editable': True, 'content': '# Hello', 'reason': ''}
-    saved = client.put('/api/agent/workspaces/writing/file', json={'path': 'notes.md', 'content': '# Updated\n'})
-    assert saved.status_code == 200, saved.text
-    assert notes.read_text() == '# Updated\n'
-    assert saved.json()['size'] == 10
-    binary = root / 'report.docx'
-    binary.write_bytes(b'PK\x03\x04\x00\x00data')
-    assert client.get('/api/agent/workspaces/writing/file', params={'path': 'report.docx'}).json()['editable'] is False
-    assert client.put('/api/agent/workspaces/writing/file', json={'path': 'report.docx', 'content': 'x'}).status_code == 422
-    assert client.get('/api/agent/workspaces/writing/file', params={'path': '../platform.sqlite'}).status_code == 404
-    assert client.put('/api/agent/workspaces/writing/file', json={'path': '../escape.md', 'content': 'x'}).status_code == 404
+    notes.write_text('Original')
+    assert client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md'}).status_code == 404
+    assert client.get('/api/agent/workspaces/writing/file-view', params={'path': 'notes.md'}).status_code == 404
+    assert client.put('/api/agent/workspaces/writing/file', json={'path': 'notes.md', 'content': 'Changed'}).status_code == 404
+    assert client.put('/api/agent/workspaces/writing/document', params={'path': 'notes.md'},
+        files={'file': ('notes.md', b'Changed')}, data={'revision': 'old'}).status_code == 404
+    assert notes.read_text() == 'Original'
 
 
-def test_docx_editor_roundtrip_and_save_guards(client, monkeypatch, tmp_path):
-    import io
-    from docx import Document
-
-    def document_bytes(text):
-        doc = Document()
-        doc.add_paragraph(text)
-        data = io.BytesIO()
-        doc.save(data)
-        return data.getvalue()
-
-    root = d.DATA / 'workspaces' / 'writing' / 'files'
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / 'report.docx'
-    original = document_bytes('Original')
-    path.write_bytes(original)
-    preview = client.get('/api/agent/workspaces/writing/file', params={'path': 'report.docx'}).json()
-    assert preview['format'] == 'docx'
-    revision = preview['revision']
-
-    def save(data, name='report.docx', version=revision):
-        return client.put('/api/agent/workspaces/writing/document', params={'path': name},
-            files={'file': ('edited.docx', data, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')},
-            data={'revision': version})
-
-    assert save(b'not a document').status_code == 422
-    assert path.read_bytes() == original
-    edited = document_bytes('Edited in browser')
-    result = save(edited)
-    assert result.status_code == 200, result.text
-    assert result.json()['revision'] != revision
-    downloaded = client.get('/api/agent/workspaces/writing/files/report.docx')
-    assert Document(io.BytesIO(downloaded.content)).paragraphs[0].text == 'Edited in browser'
-    assert save(original).status_code == 409
-    assert path.read_bytes() == edited
-    assert save(edited, '../escape.docx').status_code == 404
-    (root / 'notes.txt').write_text('text')
-    assert save(edited, 'notes.txt').status_code == 422
-    outside = tmp_path / 'outside.docx'
-    outside.write_bytes(original)
-    (root / 'link.docx').symlink_to(outside)
-    assert save(edited, 'link.docx').status_code == 404
-    monkeypatch.setattr(rt, 'MAX_UPLOAD_BYTES', 10)
-    assert save(edited, version=result.json()['revision']).status_code == 413
-    assert path.read_bytes() == edited
-
-
-@pytest.mark.parametrize('kind', ['session', 'task'])
-def test_artifact_preview_and_edit_preserves_source(client, kind):
-    import io
-    from docx import Document
-
-    d.put(kind, {'id': 'artifact-preview', 'workspace_id': 'writing'})
-    root = d.DATA / 'artifacts' / 'writing' / 'artifact-preview'
+@pytest.mark.parametrize('kind,base', [('session', '/api/agent/sessions'), ('task', '/api/tasks')])
+def test_artifact_download_preserves_source(client, kind, base):
+    d.put(kind, {'id': 'artifact-download', 'workspace_id': 'writing'})
+    root = d.DATA / 'artifacts' / 'writing' / 'artifact-download'
     root.mkdir(parents=True)
     (root / 'notes.md').write_text('Artifact original')
-    doc = Document()
-    doc.add_paragraph('Original document')
-    doc.save(root / 'report.docx')
-    source = {'artifact_id': 'artifact-preview', 'artifact_kind': kind}
-    preview = client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md', **source})
-    assert preview.status_code == 200
-    assert preview.json()['content'] == 'Artifact original'
-    saved = client.put('/api/agent/workspaces/writing/file', json={'path': 'notes.md', 'content': 'Edited artifact', **source})
-    assert saved.status_code == 200
-    assert (root / 'notes.md').read_text() == 'Edited artifact'
-    preview = client.get('/api/agent/workspaces/writing/file', params={'path': 'report.docx', **source}).json()
-    assert preview['format'] == 'docx'
-    doc.paragraphs[0].text = 'Edited document'
-    output = io.BytesIO()
-    doc.save(output)
-    saved = client.put('/api/agent/workspaces/writing/document', params={'path': 'report.docx', **source},
-        files={'file': ('report.docx', output.getvalue())}, data={'revision': preview['revision']})
-    assert saved.status_code == 200, saved.text
-    assert Document(root / 'report.docx').paragraphs[0].text == 'Edited document'
-    assert not (d.DATA / 'workspaces' / 'writing' / 'files' / 'report.docx').exists()
-    assert client.get('/api/agent/workspaces/office/file', params={'path': 'report.docx', **source}).status_code == 404
-    assert client.get('/api/agent/workspaces/writing/file', params={'path': '../../notes.md', **source}).status_code == 404
-    assert client.get('/api/agent/workspaces/writing/file', params={'path': 'notes.md', **source, 'artifact_kind': 'workspace'}).status_code == 422
-
-
-def test_inline_image_and_pdf_preview(client):
-    root = d.DATA / 'workspaces' / 'writing' / 'files'
-    root.mkdir(parents=True)
-    for name, payload, format, media in [('picture.png', b'\x89PNG\r\n', 'image', 'image/png'),
-        ('report.pdf', b'%PDF-1.7', 'pdf', 'application/pdf')]:
-        (root / name).write_bytes(payload)
-        meta = client.get('/api/agent/workspaces/writing/file', params={'path': name}).json()
-        assert meta['format'] == format
-        response = client.get('/api/agent/workspaces/writing/file-view', params={'path': name})
-        assert response.status_code == 200
-        assert response.headers['content-type'] == media
-        assert response.headers['content-disposition'].startswith('inline;')
-        assert response.content == payload
-    (root / 'page.html').write_text('<script>alert(1)</script>')
-    assert client.get('/api/agent/workspaces/writing/file-view', params={'path': 'page.html'}).status_code == 422
-    assert client.get('/api/agent/workspaces/writing/file-view', params={'path': '../escape.png'}).status_code == 404
+    response = client.get(f'{base}/artifact-download/artifacts/notes.md')
+    assert response.status_code == 200
+    assert response.content == b'Artifact original'
+    assert response.headers['content-disposition'].startswith('attachment;')
+    assert not (d.DATA / 'workspaces' / 'writing' / 'files' / 'notes.md').exists()
 
 
 def test_upload_size_limit_and_sanitized_filename(client, monkeypatch):
@@ -567,3 +496,197 @@ def test_skill_binding_validation(client):
     for invalid in ({'../escape': True}, {'not-installed': True}, {'fake': 'yes'}):
         workspace['skill_bindings'] = invalid
         assert client.put('/api/workspaces/writing', json=workspace).status_code == 422
+
+
+def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monkeypatch):
+    """Every next model call can already read the previous commit in the journal."""
+    import json
+    from platform_app.documents import DocumentStore
+
+    class StreamingDocxModel(BaseChatModel):
+        @property
+        def _llm_type(self): return 'streaming-docx-test'
+        def bind_tools(self, tools, **kwargs):
+            names = [t.get('name') if isinstance(t, dict) else t.name for t in tools]
+            assert 'create_docx' not in names and 'docx_apply_one' in names
+            return self
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            completed = [m for m in messages if isinstance(m, ToolMessage)]
+            root = d.DATA / 'workspaces' / 'writing' / 'files'
+            if not completed:
+                name, args = 'docx_init', {'document_id': 'report'}
+            else:
+                state = DocumentStore(root / 'report.docx').status()
+                revisions = [e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]
+                assert len(revisions) >= state['revision'] + 1
+                if state['revision'] >= 10:
+                    return ChatResult(generations=[ChatGeneration(message=AIMessage(content='Draft ready; visual review pending.'))])
+                if state['gate'] != 'open':
+                    name, args = 'docx_checkpoint', {'document_id': 'report'}
+                else:
+                    n = state['revision'] + 1
+                    name = 'docx_apply_one'
+                    args = dict(document_id='report', operation_id=f'op-{n}', base_revision=n-1,
+                        operation=dict(type='append_paragraph', block_id=f'p-{n}', text=f'Paragraph {n}'))
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[dict(name=name, args=args, id=f'doc-{len(completed)}', type='tool_call')]))])
+
+    # Deterministic rendering fixture; live main-Agent/tool execution is real.
+    import pymupdf as fitz
+    from platform_app.documents import engine
+    def render(docx, output, dpi=125):
+        doc = fitz.open(); page = doc.new_page(); page.insert_text((72,72), 'Paragraph body')
+        doc.save(output / 'preview.pdf'); page.get_pixmap().save(output / 'page-001.png'); doc.close()
+    monkeypatch.setattr(engine.o, 'run_render', render)
+    monkeypatch.setattr('agent.llm.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
+    monkeypatch.setattr('agent.runner.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
+    session_id = new_session(client)
+    response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'Write a report incrementally'})
+    assert response.status_code == 202, response.text
+    assert client.get(f'/api/agent/sessions/{session_id}').json()['status'] == 'completed'
+    journal = client.get(f'/api/agent/sessions/{session_id}/journal').json()['events']
+    updates = [e for e in journal if e['type'] in ('document_initialized', 'document_revision')]
+    assert [e['revision'] for e in updates] == list(range(11))
+    assert updates[-1]['seq'] < next(e['seq'] for e in journal if e['type'] == 'result')
+    docs = client.get(f'/api/agent/sessions/{session_id}/documents').json()
+    assert docs[0]['revision'] == 10
+    assert client.get(f'/api/agent/sessions/{session_id}/documents/report/revisions/2').content.startswith(b'PK')
+    # Rebuild runtime without losing latest version or replaying old store events.
+    runtime = rt.RUNTIMES[session_id]
+    runtime.artifact_services['docx'].close(); runtime.runner.close(); runtime.runner.session_store.close(); rt.RUNTIMES.clear()
+    rt.initialize()
+    assert client.get(f'/api/agent/sessions/{session_id}/documents').json()[0]['revision'] == 10
+    rebuilt = rt.runtime(session_id); rebuilt.build(); rebuilt.artifact_services['docx'].sync()
+    assert len([e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]) == 11
+    # Internal version database is never downloadable/listed as a workspace file.
+    assert all('.docx-state' not in item['path'] for item in client.get('/api/agent/workspaces/writing/files').json())
+    assert client.get('/api/agent/workspaces/writing/files/.docx-state/report.docx/history.sqlite').status_code == 404
+
+
+def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
+    from platform_app.documents import Documents, DocumentStore
+    from dataclasses import dataclass
+    session_id = new_session(client)
+    runtime = rt.runtime(session_id)
+    root = d.DATA / 'workspaces' / 'writing' / 'files'; root.mkdir(parents=True, exist_ok=True)
+    runtime.artifact_services['docx'] = Documents(root, 'writing', lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
+    runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
+        operation=dict(type='append_paragraph', block_id='p1', text='Original')))
+    from docx import Document
+    doc = Document(root / 'report.docx'); doc.add_paragraph('Native tool wrote this'); doc.save(root / 'report.docx')
+    @dataclass
+    class Event:
+        type: str = 'tool_completed'
+        name: str = 'execute'
+    runtime.core_event(Event())
+    store = DocumentStore(root / 'report.docx')
+    assert store.status()['revision'] == 2
+    assert store.status()['gate'] == 'checkpoint'
+    with pytest.raises(ValueError, match='Text-only'):
+        runtime.artifact_services['docx'].execute('review', dict(document_id='report', revision=2, page=1, passed=True, notes='Cannot see screenshot'))
+    assert client.get(f'/api/agent/sessions/{session_id}/documents').json()[0]['revision'] == 2
+    other = new_session(client)
+    assert client.get(f'/api/agent/sessions/{other}/documents/report/revisions/2').status_code == 404
+
+
+def test_docx_steering_persists_viewed_revision_and_uses_current_version(client):
+    from platform_app.documents import Documents
+    from unittest.mock import Mock
+    session_id = new_session(client); runtime = rt.runtime(session_id)
+    root = d.DATA / 'workspaces' / 'writing' / 'files'
+    runtime.artifact_services['docx'] = Documents(root, 'writing', lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
+    runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
+        operation=dict(type='append_paragraph', block_id='p1', text='Original')))
+    record = d.get('session', session_id); record['status'] = 'running'; d.put('session', record)
+    runtime.runner = Mock()
+    result = client.post(f'/api/agent/sessions/{session_id}/actions/steer', json=dict(text='Use business language', artifact=dict(feature='docx',document_id='report', revision=0)))
+    assert result.status_code == 202
+    instruction = runtime.runner.steer.call_args.args[0]
+    assert 'viewed_revision=0' in instruction and 'current_revision=1' in instruction
+    event = [e for e in rt.journal(session_id, 0) if e['type'] == 'steer'][-1]
+    assert event['document']['revision'] == 0 and event['status'] == 'accepted_pending_boundary'
+    assert client.post(f'/api/agent/sessions/{session_id}/actions/steer', json=dict(text='bad', artifact=dict(feature='docx',document_id='report', revision=999))).status_code == 409
+    runtime.runner = None
+
+
+def test_nested_native_docx_is_tracked_and_downloadable(client):
+    from platform_app.documents import Documents
+    from docx import Document
+    session_id=new_session(client); runtime=rt.runtime(session_id)
+    root=d.DATA/'workspaces'/'writing'/'files'; (root/'reports').mkdir(parents=True)
+    document=Document(); document.add_paragraph('Native nested report'); document.save(root/'reports'/'report.docx')
+    runtime.artifact_services['docx']=Documents(root,'writing',lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    runtime.artifact_services['docx'].detect_external()
+    result=client.get(f'/api/agent/sessions/{session_id}/documents').json()
+    assert result[0]['path']=='reports/report.docx' and result[0]['revision']==0
+    assert client.get(f'/api/agent/sessions/{session_id}/documents/{result[0]["document_id"]}/revisions/0').content.startswith(b'PK')
+
+
+def test_background_preview_follows_the_last_commit(client, monkeypatch):
+    import threading
+    import time
+    import pymupdf as fitz
+    from platform_app.documents import Documents, engine
+    started=threading.Event(); release=threading.Event()
+    def render(docx, output, dpi=125):
+        started.set(); assert release.wait(5)
+        doc=fitz.open(); page=doc.new_page(); page.insert_text((72,72),'Actual one-page render fixture')
+        doc.save(output/'preview.pdf'); page.get_pixmap().save(output/'page-001.png'); doc.close()
+    monkeypatch.setattr(engine.o,'run_render',render)
+    session_id=new_session(client); runtime=rt.runtime(session_id)
+    root=d.DATA/'workspaces'/'writing'/'files'
+    runtime.artifact_services['docx']=Documents(root,'writing',lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))),live_preview=True)
+    docs=runtime.artifact_services['docx']
+    docs.execute('init',dict(document_id='report'))
+    assert started.wait(5)
+    for i in range(3):
+        docs.execute('apply_one',dict(document_id='report',base_revision=i,operation_id=f'op-{i}',operation=dict(type='append_paragraph',block_id=f'p-{i}',text=f'Short formatted fixture {i}')))
+    release.set()
+    end=time.time()+5
+    while time.time()<end:
+        state=engine.DocumentStore(root/'report.docx').status()
+        delivered=[event.get('preview_revision') for event in rt.journal(session_id,0) if event['type']=='document_preview']
+        if state.get('preview_revision')==3 and delivered and delivered[-1]==3:break
+        time.sleep(.01)
+    assert state.get('preview_revision')==3
+    previews=[event['preview_revision'] for event in rt.journal(session_id,0) if event['type']=='document_preview']
+    assert previews==sorted(set(previews)) and previews[-1]==3
+
+
+def test_invalid_native_write_keeps_last_committed_document_visible(client):
+    from platform_app.documents import Documents
+    session_id=new_session(client); runtime=rt.runtime(session_id)
+    root=d.DATA/'workspaces'/'writing'/'files'
+    runtime.artifact_services['docx']=Documents(root,'writing',lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
+    runtime.artifact_services['docx'].execute('init',dict(document_id='report'))
+    original=(root/'report.docx').read_bytes()
+    (root/'report.docx').write_bytes(b'partial invalid native ZIP')
+    runtime.artifact_services['docx'].detect_external()
+    docs=client.get(f'/api/agent/sessions/{session_id}/documents').json()
+    assert docs[0]['revision']==0 and docs[0]['external_conflict'] is True
+    assert client.get(f'/api/agent/sessions/{session_id}/documents/report/revisions/0').content==original
+
+
+def test_agent_runs_with_both_format_features_uninstalled(client):
+    assert client.delete('/api/features/docx').status_code==200
+    assert client.delete('/api/features/pptx').status_code==200
+    session_id=new_session(client)
+    response=client.post(f'/api/agent/sessions/{session_id}/messages',json={'text':'hello without document extensions'})
+    assert response.status_code==202
+    assert client.get(f'/api/agent/sessions/{session_id}').json()['status']=='completed'
+    native=rt.RUNTIMES[session_id].runner
+    assert not any(name.startswith(('docx_','pptx_')) for name in native.prepared.model_tool_names)
+    assert 'execute' in native.prepared.model_tool_names
+    assert rt.RUNTIMES[session_id].artifact_services=={}
+
+
+def test_native_conversation_storage_is_not_an_output_or_download(client):
+    root=d.DATA/'workspaces'/'writing'/'files';internal=root/'.deepagents'/'conversation_history'
+    internal.mkdir(parents=True);(internal/'session_private.md').write_text('internal trace')
+    (root/'report.txt').write_text('public output')
+    assert rt.changed_workspace_files(root,{})==[{'path':'report.txt','size':13}]
+    assert client.get('/api/agent/workspaces/writing/files/.deepagents/conversation_history/session_private.md').status_code==404
+    assert client.get('/api/agent/workspaces/writing/files').json()==[{'path':'report.txt','size':13}]
+    event=rt.public_event(dict(type='output_files',files=[dict(path='.deepagents/conversation_history/session_private.md'),dict(path='report.txt')]))
+    assert event['files']==[dict(path='report.txt')]

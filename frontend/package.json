@@ -5,17 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build"
+    "build": "vite build",
+    "test:e2e:docx": "node tests/docx.e2e.mjs",
+    "test:e2e:pptx": "node tests/pptx.e2e.mjs"
   },
   "dependencies": {
     "dompurify": "^3.2.0",
     "lucide-vue-next": "^0.468.0",
     "marked": "^15.0.0",
-    "superdoc": "^2.27.0",
     "vue": "^3.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.0",
+    "playwright": "^1.64.1",
     "vite": "^6.0.0"
   }
 }

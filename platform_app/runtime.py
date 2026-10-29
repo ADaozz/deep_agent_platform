@@ -1,27 +1,25 @@
 """HTTP presentation adapter for the upstream AgentRunner, never an agent loop."""
 import asyncio
 import base64
-import hashlib
-import io
 import json
 import logging
 import mimetypes
 import re
 import shutil
 import threading
-import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import domain as d, models as m
 from .usage import runner_usage, saved_usage
+from . import format_plugins
 
 router = APIRouter(prefix='/api/agent')
 POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='agent-core')
@@ -30,15 +28,6 @@ LOCK = threading.RLock()
 LOG = logging.getLogger(__name__)
 ACTIVE = ('queued', 'running')
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024
-TEXT_FILE_SUFFIXES = {
-    '.md', '.markdown', '.txt', '.text', '.json', '.jsonl', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
-    '.env', '.csv', '.tsv', '.log', '.py', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.vue', '.svelte',
-    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat',
-    '.sql', '.xml', '.svg', '.go', '.rs', '.java', '.kt', '.c', '.h', '.cc', '.cpp', '.hpp', '.cs', '.rb',
-    '.php', '.lua', '.r', '.swift', '.dart', '.graphql', '.proto', '.ipynb', '.tex', '.rst',
-}
-TEXT_FILE_NAMES = {'Makefile', 'Dockerfile', '.gitignore', '.env'}
 
 
 def upload_records(workspace_id, ids):
@@ -97,20 +86,30 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def internal_path(path):
+    return any(part=='.deepagents' or (part.startswith('.') and part.endswith('-state')) for part in Path(path).parts)
+
+
+def public_event(event):
+    if event.get('type')=='output_files':
+        return {**event,'files':[item for item in event.get('files',[]) if not internal_path(item.get('path',''))]}
+    return event
+
+
 def journal(session_id, after):
     prefix = f'{session_id}:'
     with d.db() as connection:
         rows = connection.execute(
             'SELECT data FROM records WHERE kind=? AND id>? AND id<? ORDER BY id LIMIT 512',
             ('event', f'{prefix}{after:010d}', prefix + '~')).fetchall()
-    return [json.loads(row[0]) for row in rows]
+    return [public_event(json.loads(row[0])) for row in rows]
 
 
 def workspace_snapshot(root):
     snapshot = {}
     if root.exists():
         for path in root.rglob('*'):
-            if not path.is_file() or path.is_symlink():
+            if not path.is_file() or path.is_symlink() or internal_path(path.relative_to(root)):
                 continue
             try:
                 stat = path.stat()
@@ -154,6 +153,7 @@ class Runtime:
     def __init__(self, session_id):
         self.id = session_id
         self.runner = None
+        self.artifact_services = {}
         self.lock = threading.RLock()
 
     def event(self, event):
@@ -172,10 +172,39 @@ class Runtime:
                 record['usage'] = {}
             elif event['type'] == 'usage':
                 record['usage'] = event.get('result') or {}
+            artifact=event.get('artifact_extension')
+            if artifact:
+                items=record.setdefault(artifact['state_key'],{})
+                previous=items.get(artifact['id'],{})
+                if event.get('revision',-1)>=previous.get('revision',-1):
+                    newer=event.get('revision',-1)>previous.get('revision',-1)
+                    items[artifact['id']]={**previous,**({'pages':[],'finalized':False,'render_error':None} if newer else {}),**event}
+                if event.get('store_seq') and event.get('path'):
+                    record.setdefault('artifact_cursors',{}).setdefault(artifact['feature'],{})[event['path']]=event['store_seq']
             # Event journal is durable; reconnecting clients resume by sequence.
-            d.put('event', {'id': f'{self.id}:{event["seq"]:010d}', 'session_id': self.id, **event})
             record['updated_at'] = now()
-            d.put('session', record)
+            with d.LOCK, d.db() as connection:
+                for kind, value in [('event', {'id': f'{self.id}:{event["seq"]:010d}', 'session_id': self.id, **event}), ('session', record)]:
+                    connection.execute('INSERT INTO records VALUES (?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data', (kind, value['id'], json.dumps(value, ensure_ascii=False)))
+
+    def ensure_artifact_services(self):
+        with self.lock:
+            if self.artifact_services:
+                return self.artifact_services
+            record=find(self.id)
+            workspace=d.DATA/'workspaces'/record['workspace_id']/'files'
+            workspace.mkdir(parents=True,exist_ok=True)
+            self.artifact_services=format_plugins.build_services(workspace,record['workspace_id'],self.id,self.event)
+            for feature,service in self.artifact_services.items():
+                service.bind_state(record)
+            return self.artifact_services
+
+    def core_event(self,event):
+        data=asdict(event)
+        self.event(data)
+        for service in self.artifact_services.values():
+            if self.runner:service.vision=self.runner.supports_next_input('image')
+            if data['type'] in ('tool_completed','tool_failed'):service.detect_external()
 
     def build(self):
         if self.runner is not None:
@@ -225,6 +254,7 @@ class Runtime:
                 shutil.rmtree(temporary)
             shutil.copytree(source, temporary, symlinks=True, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '*.pyc'))
             temporary.rename(destination)
+        format_plugins.snapshot_skills(skills)
         snapshot = record['model_snapshot']
         settings = Settings.from_mapping({'llm': m.unseal(snapshot['encrypted'])})
         hidden = d.hidden_tools(config)
@@ -241,13 +271,15 @@ class Runtime:
         manager = MCPManager(root / 'mcp.json', trust_env=True)
         manager.load()
         adapter = d.WorkspaceAdapter(config, self.id)
+        self.ensure_artifact_services()
+        for service in self.artifact_services.values():service.vision='image' in settings.active_profile.input
         try:
             prepared = prepare_agent(settings=settings, model=model, checkpointer=store.checkpointer,
-                instructions='\n\n'.join([config['system_prompt'], '\n'.join(config['rules'])]), skills=['/workspace-skills/', '/workspace-skills/installed/'],
-                extra_tools=adapter.tools(), interrupt_on={t['name']: True for t in config['tools'] if t['enabled']} or None, mcp=manager)
+                instructions=format_plugins.instructions() + '\n\n' + '\n\n'.join([config['system_prompt'], '\n'.join(config['rules'])]), skills=['/workspace-skills/', '/workspace-skills/installed/'],
+                extra_tools=[*adapter.tools(include_artifacts=False), *[tool for service in self.artifact_services.values() for tool in service.tools()]], interrupt_on={**{t['name']: True for t in config['tools'] if t['enabled'] and t['name'] in d.TOOL_SCHEMAS}, **{name: True for service in self.artifact_services.values() for name in getattr(service,'approval_tools',())}} or None, mcp=manager)
             runner = AgentRunner(prepared=prepared, settings=settings, session_store=store,
                 thread_id=self.id, workspace=workspace, mcp_manager=manager,
-                on_event=lambda event: self.event(asdict(event)))
+                on_event=self.core_event)
             if record['reasoning_effort']:
                 runner.request_model_change(record['model_id'], reasoning_effort=record['reasoning_effort'])
             runner.request_permission_change(record.get('pending_permission_mode') or record.get('permission_mode', 'ask'))
@@ -319,6 +351,7 @@ class Runtime:
                     sandbox_mode=runner.sandbox_mode(),
                     reasoning_effort=None if runner.reasoning_effort() == 'default' else runner.reasoning_effort())
                 d.put('session', record)
+            for service in self.artifact_services.values():service.detect_external()
             changed = changed_workspace_files(workspace_root, before)
             if changed:
                 self.event({'type': 'output_files', 'files': changed})
@@ -473,8 +506,17 @@ def action(session_id: str, action: str, value: dict):
             text = value.get('text', '').strip()
             if not text:
                 raise HTTPException(422, '指令不能为空')
-            getattr(rt.runner, action)(text)
-            rt.event({'type': action, 'content': text})
+            context=value.get('artifact')
+            instruction=text
+            if context is not None:
+                if not isinstance(context,dict):raise HTTPException(422,'Artifact feedback context invalid')
+                feature=context.get('feature')
+                service=rt.ensure_artifact_services().get(feature)
+                if service is None:raise HTTPException(404,'Artifact feature is unavailable')
+                try:instruction=service.feedback(text,context)
+                except ValueError as exc:raise HTTPException(409,str(exc))
+            getattr(rt.runner, action)(instruction)
+            rt.event({'type': action, 'content': text, 'document': context, 'artifact_context': context, 'status': 'accepted_pending_boundary'})
         else:
             raise HTTPException(404, '操作不存在')
     return {'accepted': True}
@@ -549,7 +591,7 @@ def session_journal(session_id: str):
         rows = connection.execute(
             'SELECT data FROM records WHERE kind=? AND id>? AND id<? ORDER BY id',
             ('event', f'{prefix}{0:010d}', prefix + '~')).fetchall()
-    events = [json.loads(row[0]) for row in rows]
+    events = [public_event(json.loads(row[0])) for row in rows]
     if record['status'] == 'completed':
         # Completed calls already carry their final text and thinking; token deltas
         # only bloat a history payload and throttle its replay through SSE.
@@ -572,7 +614,7 @@ async def events(session_id: str, request: Request, after: int = 0):
                 cursor = event['seq']
                 yield f'id: {cursor}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n'
             yield ': heartbeat\n\n'
-            await asyncio.sleep(0.35)
+            await asyncio.sleep(0.1)
     return StreamingResponse(stream(), media_type='text/event-stream', headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
@@ -585,7 +627,7 @@ def files(workspace_id: str):
     root = d.DATA / 'workspaces' / workspace_id / 'files'
     if not root.exists():
         return []
-    return [{'path': str(p.relative_to(root)), 'size': p.stat().st_size} for p in root.rglob('*') if p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(root.resolve())][:1000]
+    return [{'path': str(p.relative_to(root)), 'size': p.stat().st_size} for p in root.rglob('*') if p.is_file() and not p.is_symlink() and not internal_path(p.relative_to(root)) and p.resolve().is_relative_to(root.resolve())][:1000]
 
 
 @router.get('/workspaces/{workspace_id}/files/{filename:path}')
@@ -594,127 +636,13 @@ def download(workspace_id: str, filename: str):
     return FileResponse(path, filename=path.name)
 
 
-def workspace_file(workspace_id, filename, artifact_id=None, artifact_kind='session'):
+def workspace_file(workspace_id, filename):
     try:
         d.get('workspace', workspace_id)
     except KeyError:
         raise HTTPException(404, '工作空间不存在')
     root = d.DATA / 'workspaces' / workspace_id / 'files'
-    if artifact_id:
-        if artifact_kind not in ('session', 'task'):
-            raise HTTPException(422, '文件来源无效')
-        try:
-            record = d.get(artifact_kind, artifact_id)
-        except KeyError:
-            raise HTTPException(404, '文件不存在')
-        if record['workspace_id'] != workspace_id:
-            raise HTTPException(404, '文件不存在')
-        root = d.DATA / 'artifacts' / workspace_id / record['id']
     path = root / filename
-    if not path.resolve().is_relative_to(root.resolve()) or not path.is_file() or path.is_symlink():
+    if internal_path(filename) or not path.resolve().is_relative_to(root.resolve()) or not path.is_file() or path.is_symlink():
         raise HTTPException(404, '文件不存在')
     return root, path
-
-
-def text_file(path):
-    return path.suffix.lower() in TEXT_FILE_SUFFIXES or path.name in TEXT_FILE_NAMES
-
-
-@router.get('/workspaces/{workspace_id}/file')
-def preview_file(workspace_id: str, path: str, artifact_id: str | None = None, artifact_kind: str = 'session'):
-    root, target = workspace_file(workspace_id, path, artifact_id, artifact_kind)
-    size = target.stat().st_size
-    if target.suffix.lower() == '.docx':
-        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False,
-            'content': '', 'reason': 'binary', 'format': 'docx',
-            'revision': hashlib.sha256(target.read_bytes()).hexdigest()}
-    media_type = mimetypes.guess_type(target.name)[0]
-    if media_type in ('image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'):
-        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False,
-            'content': '', 'reason': '', 'format': 'pdf' if media_type == 'application/pdf' else 'image'}
-    if not text_file(target):
-        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False, 'content': '', 'reason': 'binary'}
-    if size > MAX_TEXT_FILE_BYTES:
-        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False, 'content': '', 'reason': 'too_large'}
-    try:
-        raw = target.read_bytes()
-    except OSError:
-        raise HTTPException(500, '文件读取失败')
-    if b'\0' in raw[:8192]:
-        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False, 'content': '', 'reason': 'binary'}
-    try:
-        content = raw.decode('utf-8')
-    except UnicodeDecodeError:
-        return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': False, 'content': '', 'reason': 'encoding'}
-    return {'path': target.relative_to(root).as_posix(), 'size': size, 'editable': True, 'content': content, 'reason': ''}
-
-
-@router.get('/workspaces/{workspace_id}/file-view')
-def view_file(workspace_id: str, path: str, artifact_id: str | None = None, artifact_kind: str = 'session'):
-    _, target = workspace_file(workspace_id, path, artifact_id, artifact_kind)
-    media_type = mimetypes.guess_type(target.name)[0]
-    if media_type not in ('image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'):
-        raise HTTPException(422, '该文件不支持内嵌预览')
-    return FileResponse(target, filename=target.name, media_type=media_type, content_disposition_type='inline',
-        headers={'X-Content-Type-Options': 'nosniff'})
-
-
-class FileContent(BaseModel):
-    path: str = Field(min_length=1, max_length=1024)
-    content: str = Field(max_length=MAX_TEXT_FILE_BYTES)
-    artifact_id: str | None = None
-    artifact_kind: str = 'session'
-
-
-@router.put('/workspaces/{workspace_id}/document')
-async def save_document(workspace_id: str, path: str, file: UploadFile = File(...), revision: str = Form(...),
-    artifact_id: str | None = None, artifact_kind: str = 'session'):
-    root, target = workspace_file(workspace_id, path, artifact_id, artifact_kind)
-    try:
-        if target.suffix.lower() != '.docx':
-            raise HTTPException(422, '仅支持保存 DOCX 文件')
-        data = await file.read(MAX_UPLOAD_BYTES + 1)
-        if len(data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, '每个文件不能超过 20MB')
-        try:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                if not {'[Content_Types].xml', 'word/document.xml'}.issubset(archive.namelist()):
-                    raise ValueError('Not a DOCX document')
-        except (zipfile.BadZipFile, ValueError):
-            raise HTTPException(422, 'DOCX 文件格式无效')
-        temporary = target.with_name(f'.{target.name}.{uuid4().hex}.tmp')
-        try:
-            # Serialize editor saves and reject stale copies instead of overwriting them.
-            with LOCK:
-                if hashlib.sha256(target.read_bytes()).hexdigest() != revision:
-                    raise HTTPException(409, '文件已更新，请重新打开后再编辑')
-                temporary.write_bytes(data)
-                shutil.copymode(target, temporary)
-                temporary.replace(target)
-        except OSError:
-            raise HTTPException(500, '文件保存失败')
-        finally:
-            temporary.unlink(missing_ok=True)
-        return preview_file(workspace_id, path, artifact_id, artifact_kind)
-    finally:
-        await file.close()
-
-
-@router.put('/workspaces/{workspace_id}/file')
-def save_file(workspace_id: str, value: FileContent):
-    root, target = workspace_file(workspace_id, value.path, value.artifact_id, value.artifact_kind)
-    if not text_file(target):
-        raise HTTPException(422, '该文件不支持在线编辑')
-    data = value.content.encode('utf-8')
-    if len(data) > MAX_TEXT_FILE_BYTES:
-        raise HTTPException(413, '文件内容过大')
-    temporary = target.with_name(f'.{target.name}.{uuid4().hex[:8]}.tmp')
-    try:
-        temporary.write_bytes(data)
-        shutil.copymode(target, temporary)
-        temporary.replace(target)
-    except OSError:
-        raise HTTPException(500, '文件保存失败')
-    finally:
-        temporary.unlink(missing_ok=True)
-    return {'path': target.relative_to(root).as_posix(), 'size': len(data), 'editable': True, 'content': value.content, 'reason': ''}
