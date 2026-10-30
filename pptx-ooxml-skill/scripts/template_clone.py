@@ -15,12 +15,19 @@ from pptx.oxml.ns import qn
 
 REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 CHART_STYLE = 'http://schemas.microsoft.com/office/2011/relationships/chartStyle'
-# These targets are immutable shared resources, or are already attached to the new slide.
+# Shared targets stay one part. A slide jump must keep pointing at the existing slide, not spawn another.
 SHARE = {
-    RT.IMAGE, RT.SLIDE_LAYOUT, RT.SLIDE_MASTER, RT.THEME, RT.AUDIO, RT.VIDEO, RT.MEDIA,
+    RT.IMAGE, RT.SLIDE, RT.SLIDE_LAYOUT, RT.SLIDE_MASTER, RT.THEME, RT.AUDIO, RT.VIDEO, RT.MEDIA,
     RT.CHART_COLOR_STYLE, CHART_STYLE,
 }
+# Mutable or slide-specific parts get their own copy so later edits do not alias the source.
+DUPLICATE = {
+    RT.CHART, RT.PACKAGE, RT.OLE_OBJECT, RT.TAGS, RT.CHART_USER_SHAPES,
+    RT.DIAGRAM_COLORS, RT.DIAGRAM_DATA, RT.DIAGRAM_LAYOUT,
+    getattr(RT, 'DIAGRAM_STYLE', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramStyle'),
+}
 SKIP_ON_SLIDE = {RT.SLIDE_LAYOUT, RT.NOTES_SLIDE}
+last_clone_report = None
 
 
 def clone_slide(prs, source, new_slide_id):
@@ -30,14 +37,17 @@ def clone_slide(prs, source, new_slide_id):
     new slide's ``cSld/@name`` is ``da-slide:{new_slide_id}``. Shape names are
     copied, so slot ids such as ``title`` still resolve on the clone.
     """
+    global last_clone_report
     if not isinstance(new_slide_id, str) or not new_slide_id:
         raise ValueError('slide.clone requires a new slide_id')
+    report = dict(shared=[], duplicated=[], omitted=[], external=[])
     dest = prs.slides.add_slide(source.slide_layout)
     _clear_layout_shapes(dest)
     for shape in source.shapes:
         dest.shapes._spTree.append(copy.deepcopy(shape._element))
     _copy_slide_extras(source, dest)
-    mapping = _clone_relationships(source, dest)
+    mapping = _clone_relationships(source, dest, report)
+    last_clone_report = report
     missing = _relationship_ids(dest._element) - set(mapping)
     # Ids that already belonged to the destination (its layout relationship) are not in the map.
     dest_ids = {rel.rId for rel in dest.part.rels.values()}
@@ -75,22 +85,57 @@ def _copy_slide_extras(source, dest):
     dest.shapes._spTree.addprevious(copy.deepcopy(background))
 
 
-def _clone_relationships(source, dest):
+def _clone_relationships(source, dest, report):
     mapping = {}
     memo = {}
     reserved = set()
     package = source.part.package
     for rel in list(source.part.rels.values()):
-        if rel.reltype in SKIP_ON_SLIDE:
+        action = _policy(rel)
+        if action == 'skip':
+            report['omitted'].append(rel.reltype.rsplit('/', 1)[-1])
             continue
-        if rel.is_external:
+        if action == 'external':
             mapping[rel.rId] = dest.part.rels.get_or_add_ext_rel(rel.reltype, rel.target_ref)
+            report['external'].append(rel.reltype.rsplit('/', 1)[-1])
             continue
         target = rel.target_part
-        if rel.reltype not in SHARE:
+        if action == 'duplicate':
             target = _duplicate_part(package, target, memo, reserved)
+            report['duplicated'].append(str(target.partname))
+        else:
+            report['shared'].append(rel.reltype.rsplit('/', 1)[-1])
         mapping[rel.rId] = dest.part.relate_to(target, rel.reltype)
     return mapping
+
+
+def _policy(rel):
+    if rel.reltype in SKIP_ON_SLIDE:
+        return 'skip'
+    if rel.is_external:
+        return 'external'
+    if rel.reltype in SHARE:
+        return 'share'
+    if rel.reltype in DUPLICATE:
+        return 'duplicate'
+    raise ValueError('No clone policy for relationship ' + rel.reltype.rsplit('/', 1)[-1] + '; refusing to copy it blindly')
+
+
+def remove_slide(prs, slide):
+    """Drop one slide from the presentation. Unreferenced parts disappear on the next save."""
+    rel_id = None
+    for rel in prs.part.rels.values():
+        if not rel.is_external and rel.reltype == RT.SLIDE and rel.target_part is slide.part:
+            rel_id = rel.rId
+            break
+    if rel_id is None:
+        raise ValueError('Slide is not attached to the presentation')
+    namespace = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
+    node = next((item for item in prs.slides._sldIdLst if item.get(namespace) == rel_id), None)
+    if node is None:
+        raise ValueError('Slide identifier is missing from the presentation')
+    prs.slides._sldIdLst.remove(node)
+    prs.part.drop_rel(rel_id)
 
 
 def _duplicate_part(package, part, memo, reserved):
@@ -111,9 +156,15 @@ def _duplicate_part(package, part, memo, reserved):
         if rel.is_external:
             mapping[rel.rId] = created.rels.get_or_add_ext_rel(rel.reltype, rel.target_ref)
             continue
+        action = _policy(rel)
+        if action == 'skip':
+            continue
         target = rel.target_part
-        if rel.reltype not in SHARE:
+        if action == 'duplicate':
             target = _duplicate_part(package, target, memo, reserved)
+        elif action == 'external':
+            mapping[rel.rId] = created.rels.get_or_add_ext_rel(rel.reltype, rel.target_ref)
+            continue
         mapping[rel.rId] = created.relate_to(target, rel.reltype)
     if isinstance(created, XmlPart):
         _rewrite_rel_ids(created._element, mapping)

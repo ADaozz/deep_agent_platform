@@ -195,11 +195,20 @@ def _describe_slide(slide, index, prs):
     elements = []
     for shape_index, shape in enumerate(slide.shapes):
         kind = _kind(shape)
+        props = shape._element.find('.//{http://schemas.openxmlformats.org/presentationml/2006/main}cNvPr')
+        original_name = shape.name
+        original_descr = props.get('descr') or '' if props is not None else ''
+        label = f'{original_name} {original_descr}'.lower()
+        semantic = 'logo' if 'logo' in label else ('brand' if 'brand' in label else None)
         elements.append(dict(
             id=_element_id(shape, shape_index),
             index=shape_index,
             kind=kind,
             name=shape.name,
+            original_name=original_name,
+            original_descr=original_descr,
+            semantic_role=semantic,
+            preserve=semantic in ('logo', 'brand'),
             text=(shape.text_frame.text if shape.has_text_frame and not shape.has_table else '')[:200],
             x=shape.left / prs.slide_width,
             y=shape.top / prs.slide_height,
@@ -214,7 +223,7 @@ def _describe_slide(slide, index, prs):
         layout=getattr(slide.slide_layout, 'name', ''),
         slots=slots,
         elements=elements,
-        preserve=[element['id'] for element in elements if 'logo' in element['id'].lower() or 'logo' in element['name'].lower()],
+        preserve=[element['id'] for element in elements if element.get('preserve')],
     )
 
 

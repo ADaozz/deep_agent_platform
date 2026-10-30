@@ -2,12 +2,17 @@
 import math
 
 from lxml import etree
+from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 
 A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
 P = '{http://schemas.openxmlformats.org/presentationml/2006/main}'
 XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
+# spPr children. Fill is exactly one of these, after geometry and before the line.
+FILL_NAMES = ('noFill', 'solidFill', 'gradFill', 'blipFill', 'pattFill', 'grpFill')
+UNSAFE_FILLS = {'blipFill', 'pattFill', 'grpFill'}
+AFTER_FILL = ('ln', 'effectLst', 'effectDag', 'scene3d', 'sp3d', 'extLst')
 
 
 def slot_targets(slide, slots, aliases=None):
@@ -109,7 +114,7 @@ def apply_imported_style(shape, style):
     if unknown:
         raise ValueError('Imported element.set_style cannot apply ' + ', '.join(sorted(unknown)) + ' without rebuilding the shape')
     if 'fill' in style:
-        _set_solid_fill(_sp_pr(shape), _hex(style['fill']))
+        set_shape_fill(shape, _hex(style['fill']))
     text_color = style.get('text_color', style.get('color'))
     runs = [node for node in shape._element.iter(A + 'r')]
     if any(key in style for key in ('color', 'text_color', 'bold', 'italic', 'font_size')):
@@ -211,11 +216,52 @@ def _hex(value):
     return text.upper()
 
 
+def set_shape_fill(shape, color):
+    """Replace the shape fill with one solid color and leave geometry, line and effects alone.
+
+    python-pptx's fill choice writes ``a:solidFill`` in the DrawingML position.
+    Picture, pattern and group fills are refused because replacing them would
+    discard artwork rather than change a color.
+    """
+    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE or shape._element.find('.//' + A + 'blipFill') is not None:
+        raise ValueError('Refusing to replace blipFill; that would discard the existing artwork')
+    props = _sp_pr(shape)
+    present = [etree.QName(child).localname for child in props if etree.QName(child).localname in FILL_NAMES]
+    unsafe = [name for name in present if name in UNSAFE_FILLS]
+    if unsafe:
+        raise ValueError('Refusing to replace ' + ', '.join(unsafe) + '; that would discard the existing artwork')
+    line_before, effect_before, xfrm_before = (_xml(props, name) for name in ('ln', 'effectLst', 'xfrm'))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor.from_string(color)
+    if (_xml(props, 'ln'), _xml(props, 'effectLst'), _xml(props, 'xfrm')) != (line_before, effect_before, xfrm_before):
+        raise ValueError('Fill change altered geometry, the line, or effects')
+    _assert_fill_order(props)
+
+
 def _sp_pr(shape):
-    props = shape._element.find('.//' + A + 'spPr')
+    props = getattr(shape._element, 'spPr', None)
+    if props is None:
+        props = shape._element.find('{http://schemas.openxmlformats.org/presentationml/2006/main}spPr')
     if props is None:
         raise ValueError('Shape has no properties to recolor')
     return props
+
+
+def _xml(parent, name):
+    node = next((child for child in parent if etree.QName(child).localname == name), None)
+    return etree.tostring(node) if node is not None else None
+
+
+def _assert_fill_order(props):
+    names = [etree.QName(child).localname for child in props]
+    fills = [index for index, name in enumerate(names) if name in FILL_NAMES]
+    if fills != [names.index('solidFill')]:
+        raise ValueError('Shape does not have exactly one solid fill')
+    index = fills[0]
+    if any(names.index(name) < index for name in AFTER_FILL if name in names):
+        raise ValueError('solidFill is after a line or effect; DrawingML order is invalid')
+    if any(names.index(name) > index for name in ('xfrm', 'prstGeom', 'custGeom') if name in names):
+        raise ValueError('solidFill is before geometry; DrawingML order is invalid')
 
 
 def _run_props(run):
@@ -237,14 +283,19 @@ def _default_runs(shape):
 
 
 def _set_solid_fill(parent, color):
+    """Put one solid color on a run. Other run fills are removed; font attributes stay."""
+    unsafe = [etree.QName(child).localname for child in parent if etree.QName(child).localname in UNSAFE_FILLS]
+    if unsafe:
+        raise ValueError('Refusing to replace ' + ', '.join(unsafe) + ' on text')
     for child in list(parent):
-        if etree.QName(child).localname == 'solidFill':
+        if etree.QName(child).localname in FILL_NAMES:
             parent.remove(child)
     solid = etree.Element(A + 'solidFill')
-    # Character properties keep latin/ea children after the fill; spPr wants fill first.
-    if etree.QName(parent).localname == 'rPr':
-        parent.insert(0, solid)
-    else:
-        parent.append(solid)
     srgb = etree.SubElement(solid, A + 'srgbClr')
     srgb.set('val', color)
+    # rPr: optional ln, then fill, then effects, highlight and typefaces.
+    for child in parent:
+        if etree.QName(child).localname in ('effectLst', 'effectDag', 'highlight', 'latin', 'ea', 'cs', 'sym'):
+            child.addprevious(solid)
+            return
+    parent.append(solid)

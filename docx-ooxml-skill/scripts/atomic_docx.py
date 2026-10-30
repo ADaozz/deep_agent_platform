@@ -506,10 +506,18 @@ def _template_manifest(parts, template):
     if sidecar.is_file():
         recorded = json.loads(sidecar.read_text(encoding='utf-8'))
         if isinstance(recorded, dict):
+            known = {block['block_id'] for block in manifest.get('blocks') or []}
+            for key in ('sections', 'tables'):
+                for item in recorded.get(key) or []:
+                    block_id = item.get('block_id')
+                    if block_id and block_id not in known:
+                        raise ValueError(f'Sidecar {key} block_id {block_id} is not in the template')
             manifest['template_id'] = recorded.get('template_id') or manifest['template_id']
             if recorded.get('license'):
                 manifest['license'] = recorded['license']
             for key in ('sections', 'tables', 'content_controls'):
                 if recorded.get(key):
                     manifest[key] = recorded[key]
+    if not manifest.get('blocks'):
+        raise ValueError('Template has no paragraphs or tables to index')
     return manifest

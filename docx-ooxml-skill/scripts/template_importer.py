@@ -12,6 +12,15 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _mark(parts):
+    import importlib.util
+    path = Path(__file__).with_name('atomic_docx.py')
+    spec = importlib.util.spec_from_file_location('docx_template_atomic', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.mark_blocks(parts)
+
+
 def load_office():
     import importlib.util
     path = Path(__file__).with_name('office_docx.py')
@@ -26,8 +35,17 @@ def import_template(path, template_id=None, output=None, license_note=''):
     if not source.is_file():
         raise ValueError('Template file not found')
     office = load_office()
+    original = source.read_bytes()
     parts = office.read_parts(source)
+    parts = _mark(parts)
     manifest = analyze(parts, office, template_id or source.stem, source=str(source), license_note=license_note)
+    if not manifest['sections']:
+        manifest['precheck']['warnings'].append(
+            'No Heading-styled paragraph was found. section.clone has no source until the document uses Heading styles. Paragraphs and tables are still listed in blocks.')
+    if not manifest['blocks']:
+        raise ValueError('Template import found no paragraphs or tables to index')
+    if source.read_bytes() != original:
+        raise RuntimeError('import-template must not modify the source file')
     if output:
         dest = Path(output)
         if dest.suffix.lower() != '.json':

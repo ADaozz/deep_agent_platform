@@ -42,6 +42,8 @@ def clone_section(parts, op, o, block_attr):
     body = root.find(o.q(o.W, 'body'))
     source = _one(root, op['source_block_id'], o, block_attr)
     nodes = _section_nodes(body, source, o)
+    if len(nodes) > 40 or sum(len(o.ptext(node)) for node in nodes) > 20000:
+        raise ValueError('section.clone exceeds 40 blocks or 20000 characters')
     clones = [copy.deepcopy(node) for node in nodes]
     if op.get('heading') is not None:
         _set_paragraph_text(clones[0], op['heading'], o)
@@ -145,6 +147,9 @@ def _heading_level(paragraph, o):
 
 
 def _replace_table_rows(table, rows, o):
+    problems = _unsupported(table, o, structural=True)
+    if problems:
+        raise ValueError('Refusing to rewrite table rows: ' + ', '.join(problems))
     if not isinstance(rows, list) or not 1 <= len(rows) <= 10:
         raise ValueError('A cloned table stays within 1-10 rows')
     existing = [row for row in table if row.tag == o.q(o.W, 'tr')]
@@ -168,15 +173,30 @@ def _replace_table_rows(table, rows, o):
 def _write_row(row, values, o):
     cells = [cell for cell in row if cell.tag == o.q(o.W, 'tc')]
     for cell, text in zip(cells, values):
-        paragraph = cell.find('.//' + o.q(o.W, 'p'))
-        if paragraph is None:
-            paragraph = o.etree.SubElement(cell, o.q(o.W, 'p'))
-        _set_paragraph_text(paragraph, text, o)
+        _write_cell(cell, text, o)
+
+
+def _write_cell(cell, text, o):
+    problems = _unsupported(cell, o, structural=False)
+    if problems:
+        raise ValueError('Refusing to replace a table cell: ' + ', '.join(problems))
+    paragraphs = [paragraph for paragraph in cell.iter(o.q(o.W, 'p')) if not _inside_nested_table(paragraph, cell, o)]
+    if not paragraphs:
+        paragraph = o.etree.SubElement(cell, o.q(o.W, 'p'))
+        paragraphs = [paragraph]
+    for extra in paragraphs[1:]:
+        extra.getparent().remove(extra)
+    _set_paragraph_text(paragraphs[0], text, o)
 
 
 def _set_paragraph_text(paragraph, text, o):
     _bounded_text(text)
+    problems = _unsupported(paragraph, o, structural=False)
+    if problems:
+        raise ValueError('Refusing to replace paragraph text: ' + ', '.join(problems))
     runs = [child for child in paragraph if child.tag == o.q(o.W, 'r') and child.find(o.q(o.W, 't')) is not None]
+    if len({_run_signature(run, o) for run in runs}) > 1:
+        raise ValueError('Refusing to replace mixed character styles; the edit would not keep every run')
     if not runs:
         run = o.etree.SubElement(paragraph, o.q(o.W, 'r'))
         node = o.etree.SubElement(run, o.q(o.W, 't'))
@@ -188,6 +208,39 @@ def _set_paragraph_text(paragraph, text, o):
         node.set(o.q(o.XMLNS, 'space'), 'preserve')
     for extra in runs[1:]:
         paragraph.remove(extra)
+
+
+def _unsupported(node, o, structural):
+    problems = []
+    if node.find('.//' + o.q(o.W, 'drawing')) is not None or node.find('.//' + o.q(o.W, 'object')) is not None:
+        problems.append('image or embedded object')
+    if node.find('.//' + o.q(o.W, 'fldChar')) is not None or node.find('.//' + o.q(o.W, 'instrText')) is not None:
+        problems.append('field')
+    if node.find('.//' + o.q(o.W, 'hyperlink')) is not None:
+        problems.append('hyperlink')
+    if structural and (node.find('.//' + o.q(o.W, 'gridSpan')) is not None or node.find('.//' + o.q(o.W, 'vMerge')) is not None):
+        problems.append('merged cells')
+    if node.tag == o.q(o.W, 'tbl') and node.find('./' + o.q(o.W, 'tr') + '/' + o.q(o.W, 'tc') + '/' + o.q(o.W, 'tbl')) is not None:
+        problems.append('nested table')
+    if node.tag != o.q(o.W, 'tbl') and node.find('.//' + o.q(o.W, 'tbl')) is not None:
+        problems.append('nested table')
+    return problems
+
+
+def _inside_nested_table(paragraph, cell, o):
+    parent = paragraph.getparent()
+    while parent is not None and parent is not cell:
+        if parent.tag == o.q(o.W, 'tbl'):
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def _run_signature(run, o):
+    props = run.find(o.q(o.W, 'rPr'))
+    if props is None:
+        return ''
+    return o.etree.tostring(props)
 
 
 def _retarget(root, nodes, prefix, o, block_attr):

@@ -86,12 +86,46 @@ def palette_of(profile):
     return {key:value for key,value in profile['colors'].items() if key!='chart_series'}
 
 
+def _blend(first,second,ratio):
+    def channel(value,index):return int(value[index:index+2],16)
+    mixed=[round(channel(first,index)*(1-ratio)+channel(second,index)*ratio) for index in (0,2,4)]
+    return ''.join(f'{max(0,min(255,item)):02X}' for item in mixed)
+
+
+def semantic_palette(tokens):
+    """Map a theme clrScheme onto the names new objects already use."""
+    tokens=tokens or {}
+    accent=tokens.get('accent1'); background=tokens.get('lt1') or tokens.get('lt2'); text=tokens.get('dk1'); muted=tokens.get('dk2') or tokens.get('accent2')
+    if not accent or not background or not text:return {}
+    muted=muted or text
+    return dict(accent=accent.upper(),background=background.upper(),text=text.upper(),muted=muted.upper(),
+        card=_blend(background,muted,0.12),border=muted.upper())
+
+
+def apply_effective_palette(state,palette):
+    """Document colors win over the profile palette. The original template tokens stay untouched."""
+    theme=state.setdefault('theme',{})
+    for key in ('accent','background','text','muted','card','border'):
+        if palette.get(key):theme[key]=palette[key].upper()
+    if not palette.get('card') and palette.get('background') and palette.get('muted'):
+        theme['card']=_blend(palette['background'],palette['muted'],0.12)
+    theme['surface']=theme.get('card',theme.get('background','FFFFFF'))
+    if not palette.get('border') and palette.get('muted'):theme['border']=palette['muted'].upper()
+    theme['accent_soft']=_blend(theme.get('background','FFFFFF'),theme.get('accent','246BCE'),0.25)
+    state['effective_palette']={key:theme[key] for key in ('accent','background','text','muted','card','border') if key in theme}
+
+
 def apply_profile(state,profile_id):
     profile=profiles().get(profile_id)
+    kept=dict(state.get('effective_palette') or {})
     state.update(profile_id=profile_id,profile=profile,theme_name=profile_id,theme=palette_of(profile))
     conflicts=[]
     accent=state.get('template_accent')
-    if accent:
+    # A palette already chosen for this document stays in force. set_profile changes
+    # type scale and layout policy, not colors the user or the template already set.
+    if kept:
+        apply_effective_palette(state,kept)
+    elif accent:
         background=state['theme']['background'];card=state['theme']['card']
         ratios=[design_quality.contrast(accent,background),design_quality.contrast(accent,card)]
         if min(ratios)>=3.0:state['theme']['accent']=accent
@@ -231,6 +265,17 @@ def check_color(color):
 
 def serialize(prs):
     out=io.BytesIO(); prs.save(out); data=out.getvalue(); validator.validate_package(data); return data
+
+
+def _require_checked(state,prs):
+    """Content slides must pass check-slide before another one is added. Prototypes are layout sources, not delivery pages."""
+    prototypes=set(state.get('prototype_slides') or [])
+    for slide in prs.slides:
+        sid=renderer.slide_identity(slide)
+        if sid in prototypes:continue
+        review=state['reviews'].get(sid,{})
+        if review.get('status')=='blocked' or not review.get('automatic_passed') or (state['mode']=='strict' and review.get('visual_review')!='passed'):
+            raise ValueError('Check all affected slides before creating the next slide')
 
 
 def find_slide(prs,sid):
@@ -505,7 +550,10 @@ class PresentationStore(shared.ArtifactStore):
             layout_slots=state.get('layout_slots',{}),backgrounds=state.get('backgrounds',{}),
             template_font=state.get('template_font'),template_accent=state.get('template_accent'),
             conflicts=state.get('design_conflicts',[]),
-            template_manifest=state.get('template_manifest'),template_slots=state.get('template_slots',{}))
+            template_manifest=state.get('template_manifest'),template_slots=state.get('template_slots',{}),
+            effective_palette=state.get('effective_palette'),template_tokens=state.get('template_tokens'),
+            protected_elements=state.get('protected_elements'),template_use=state.get('template_use'),
+            prototype_slides=state.get('prototype_slides'))
     def commit(self,c,state,data,operation_id,request,changed,kind='presentation_revision',extra=None):
         validator.validate_package(data)
         state.update(revision=state['revision']+1,sha256=hashlib.sha256(data).hexdigest(),pending_publish=True,finalized=False)
@@ -524,10 +572,11 @@ class PresentationStore(shared.ArtifactStore):
         if extra:event.update(extra)
         self.persist_revision(c,state,data,event,request,operation_id,kind)
         return event
-    def init(self,presentation_id,template=None,mode='normal',theme=DEFAULT_PROFILE,profile=None):
+    def init(self,presentation_id,template=None,mode='normal',theme=DEFAULT_PROFILE,profile=None,use='edit_existing'):
         identifier(presentation_id)
         profile_id=profile or theme
         if mode not in ('normal','strict'):raise ValueError('Unknown review mode')
+        if use not in ('edit_existing','template_reference'):raise ValueError('use must be edit_existing or template_reference')
         profiles().get(profile_id)
         with self.locked() as (c,state):
             if state:
@@ -539,7 +588,8 @@ class PresentationStore(shared.ArtifactStore):
             else:
                 prs=Presentation(); prs.slide_width=Inches(13.333333); prs.slide_height=Inches(7.5)
             state=dict(presentation_id=presentation_id,revision=-1,mode=mode,slots={},layouts={},layout_variants={},layout_modules={},
-                layout_slots={},backgrounds={},reviews={},renders={},repair_attempts={},template=bool(template),template_complex={})
+                layout_slots={},backgrounds={},reviews={},renders={},repair_attempts={},template=bool(template),template_complex={},
+                template_use=use if template else 'blank',prototype_slides=[],protected_elements={})
             apply_profile(state,profile_id)
             if template:
                 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -555,6 +605,17 @@ class PresentationStore(shared.ArtifactStore):
                 manifest=template_importer.index_loaded(prs,template)
                 state['template_manifest']=manifest
                 state['template_slots']=manifest.get('slots_by_slide') or {}
+                state['template_tokens']=dict(manifest.get('tokens') or {})
+                state['protected_elements']={slide['slide_id']:list(slide.get('preserve') or []) for slide in manifest.get('slides') or []}
+                # An unreadable template accent stays recorded in template_tokens. The profile
+                # accent remains the effective color and the existing contrast conflict is kept.
+                if not state.get('design_conflicts'):
+                    derived=semantic_palette(state['template_tokens'])
+                    if derived:
+                        state['effective_palette']=derived
+                        apply_effective_palette(state,derived)
+                if use=='template_reference':
+                    state['prototype_slides']=[renderer.slide_identity(slide) for slide in prs.slides]
             for slide in prs.slides:
                 sid=renderer.slide_identity(slide)
                 state['template_complex'][sid]=bool(template)
@@ -610,9 +671,7 @@ class PresentationStore(shared.ArtifactStore):
             self.assert_current(state,request['base_revision']); prs=Presentation(io.BytesIO(self.snapshot_unlocked(c,state['revision'])))
             state=copy.deepcopy(state); normalize_state(state); op=request['operation']; sid=request.get('slide_id'); changed=[sid] if sid else ['*']; extra=None
             if op=='slide.add':
-                for slide in prs.slides:
-                    review=state['reviews'].get(renderer.slide_identity(slide),{})
-                    if review.get('status')=='blocked' or not review.get('automatic_passed') or (state['mode']=='strict' and review.get('visual_review')!='passed'):raise ValueError('Check all affected slides before creating the next slide')
+                _require_checked(state,prs)
                 identifier(sid)
                 if any(renderer.slide_identity(s)==sid for s in prs.slides):raise ValueError('Duplicate slide ID')
                 index=request.get('layout_index',next((i for i,layout in enumerate(prs.slide_layouts) if layout.name.lower()=='blank'),0))
@@ -639,10 +698,25 @@ class PresentationStore(shared.ArtifactStore):
                 slide=find_slide(prs,sid); index=request['index']
                 if type(index)is not int or not 0<=index<len(prs.slides):raise ValueError('Invalid slide order')
                 node=next(n for n in prs.slides._sldIdLst if int(n.get('id'))==slide.slide_id); prs.slides._sldIdLst.remove(node); prs.slides._sldIdLst.insert(index,node); changed=['*']
+            elif op=='slide.remove':
+                slide=find_slide(prs,sid)
+                template_clone.remove_slide(prs,slide)
+                for bucket in ('reviews','template_slots','protected_elements','layouts','layout_slots','backgrounds'):
+                    state.get(bucket,{}).pop(sid,None)
+                prototypes=state.get('prototype_slides') or []
+                state['prototype_slides']=[item for item in prototypes if item!=sid]
+                changed=['*']
+            elif op=='presentation.discard_prototypes':
+                if state.get('template_use')!='template_reference':raise ValueError('discard_prototypes applies to a template_reference deck')
+                for prototype in list(state.get('prototype_slides') or []):
+                    template_clone.remove_slide(prs,find_slide(prs,prototype))
+                    for bucket in ('reviews','template_slots','protected_elements','layouts','layout_slots','backgrounds'):
+                        state.get(bucket,{}).pop(prototype,None)
+                removed=list(state.get('prototype_slides') or [])
+                state['prototype_slides']=[]
+                changed=['*']; extra=dict(discarded_prototypes=removed)
             elif op=='slide.clone':
-                for slide in prs.slides:
-                    review=state['reviews'].get(renderer.slide_identity(slide),{})
-                    if review.get('status')=='blocked' or not review.get('automatic_passed') or (state['mode']=='strict' and review.get('visual_review')!='passed'):raise ValueError('Check all affected slides before creating the next slide')
+                _require_checked(state,prs)
                 identifier(sid)
                 source=find_slide(prs,request['source_slide_id'])
                 if any(renderer.slide_identity(s)==sid for s in prs.slides):raise ValueError('Duplicate slide ID')
@@ -655,11 +729,15 @@ class PresentationStore(shared.ArtifactStore):
                     prs.slides._sldIdLst.remove(node); prs.slides._sldIdLst.insert(index,node)
                 copied=state.get('template_slots',{}).get(request['source_slide_id'])
                 if copied:state.setdefault('template_slots',{})[sid]=dict(copied)
+                protected=(state.get('protected_elements') or {}).get(request['source_slide_id'])
+                if protected:state.setdefault('protected_elements',{})[sid]=list(protected)
                 state.setdefault('template_complex',{})[sid]=state.get('template_complex',{}).get(request['source_slide_id'],True)
+                if getattr(template_clone,'last_clone_report',None):extra=dict(clone=template_clone.last_clone_report)
                 state['active_slide']=sid
                 changed=[sid]
             elif op=='presentation.recolor':
-                report=template_recolor.recolor(prs,request.get('palette'),request.get('preserve'))
+                report=template_recolor.recolor(prs,request.get('palette'),request.get('preserve'),state.get('protected_elements') or {})
+                apply_effective_palette(state,request.get('palette') or {})
                 changed=['*']; extra=dict(recolor=report)
             else:
                 slide=find_slide(prs,sid)
@@ -885,7 +963,7 @@ class PresentationStore(shared.ArtifactStore):
         prior=json.loads(c.execute('SELECT result FROM revisions WHERE revision=?',(revision,)).fetchone()[0])
         state=copy.deepcopy(state);design=prior.get('design') or {}
         if design:
-            for key in ('theme','font_family','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_font','template_accent','design_conflicts','template_manifest','template_slots'):
+            for key in ('theme','font_family','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_font','template_accent','design_conflicts','template_manifest','template_slots','effective_palette','template_tokens','protected_elements','template_use','prototype_slides'):
                 if key in design:state[key]=design[key]
             state['profile_id']=design.get('profile_id',state.get('profile_id',DEFAULT_PROFILE));state['theme_name']=state['profile_id']
             try:state['profile']=profiles().get(state['profile_id'])
@@ -1134,7 +1212,7 @@ def plan_request(store,request):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','plan','import-template','list-templates','match-template']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--template-id'); parser.add_argument('--output'); parser.add_argument('--license-note',default=''); parser.add_argument('--role'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','plan','import-template','list-templates','match-template']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--template-id'); parser.add_argument('--output'); parser.add_argument('--license-note',default=''); parser.add_argument('--role'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--use',choices=['edit_existing','template_reference'],default='edit_existing'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
     if args.command in ('profiles','layouts','components','catalog'):
         result=catalog() if args.command=='catalog' else {args.command:catalog()[args.command]}
         print(json.dumps(result,ensure_ascii=False)); return
@@ -1146,7 +1224,7 @@ def main():
     if not args.pptx:parser.error('a presentation path is required')
     store=PresentationStore(args.pptx)
     if args.command=='plan':result=plan_request(store,json.loads(Path(args.request).read_text()))
-    elif args.command=='init':result=store.init(args.presentation_id,args.template,theme=args.theme or args.profile or DEFAULT_PROFILE,profile=args.profile)
+    elif args.command=='init':result=store.init(args.presentation_id,args.template,theme=args.theme or args.profile or DEFAULT_PROFILE,profile=args.profile,use=args.use)
     elif args.command=='apply-one':result=store.apply_one(json.loads(Path(args.request).read_text()),Path(args.pptx).parent)
     elif args.command=='status':result=store.status()
     elif args.command=='restore':result=store.restore(args.revision,args.base_revision,args.operation_id)

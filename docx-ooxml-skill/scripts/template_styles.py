@@ -35,13 +35,15 @@ def recolor(parts, op, o):
         _walk(root, colors, mapping, name, unhandled, seen, o)
         parts[name] = o.xml_bytes(root)
     for color in ambiguous:
-        _add(unhandled, seen, 'theme', color, 'ambiguous theme color maps to more than one role')
+        _add(unhandled, seen, 'theme', color, 'ambiguous theme color maps to more than one role', 'unmapped', 'theme/clrScheme')
+    outstanding = [item for item in unhandled if item['status'] in ('unmapped', 'unsupported')]
     report = dict(
-        recolor_complete=not unhandled,
+        recolor_complete=not outstanding,
         remapped=[{'from': src, 'to': dst} for src, dst in sorted(mapping.items())],
-        unhandled=unhandled[:40],
-        unhandled_count=len(unhandled),
-        preserved=list(op.get('preserve') or ['images']),
+        unhandled=outstanding[:40],
+        unhandled_count=len(outstanding),
+        findings=unhandled[:80],
+        preserved=[item for item in unhandled if item['status'] == 'preserved'][:40],
     )
     return parts, ['styles'], report
 
@@ -119,9 +121,18 @@ def _hex_mapping(old, colors):
 
 
 def _walk(node, colors, mapping, part, unhandled, seen, o):
-    if node.tag == o.q(o.W, 'drawing') and node.find('.//' + A + 'blip') is not None:
+    if not isinstance(node.tag, str):
         return
-    local = etree.QName(node).localname if isinstance(node.tag, str) else ''
+    local = etree.QName(node).localname
+    if local == 'drawing' and node.find('.//' + A + 'blip') is not None:
+        _add(unhandled, seen, part, '', 'picture was kept', 'preserved', _location(node))
+        return
+    if local == 'drawing':
+        for color_node in node.iter(A + 'srgbClr'):
+            value = (color_node.get('val') or '').upper()
+            if value:
+                _add(unhandled, seen, part, value, 'drawing shape color is outside the recolor scope', 'unsupported', _location(color_node))
+        return
     if local == 'color':
         value = (node.get(o.q(o.W, 'val')) or '').upper()
         theme = node.get(o.q(o.W, 'themeColor'))
@@ -129,19 +140,36 @@ def _walk(node, colors, mapping, part, unhandled, seen, o):
             node.set(o.q(o.W, 'val'), colors[WORD_THEME[theme]])
         elif value in mapping:
             node.set(o.q(o.W, 'val'), mapping[value])
-        elif len(value) == 6 and value not in ('AUTO',) and all(c in '0123456789ABCDEF' for c in value):
-            _add(unhandled, seen, part, value, 'direct color is outside the theme palette')
-    elif local == 'shd':
-        value = (node.get(o.q(o.W, 'fill')) or '').upper()
+        elif _hex_color(value):
+            _add(unhandled, seen, part, value, 'direct color is outside the theme palette', 'unmapped', _location(node))
+    elif local in ('shd', 'highlight'):
+        value = (node.get(o.q(o.W, 'fill') if local == 'shd' else o.q(o.W, 'val')) or '').upper()
         if value in mapping:
-            node.set(o.q(o.W, 'fill'), mapping[value])
+            attribute = o.q(o.W, 'fill') if local == 'shd' else o.q(o.W, 'val')
+            node.set(attribute, mapping[value])
+        elif _hex_color(value):
+            kind = 'table or paragraph shading' if local == 'shd' else 'highlight'
+            _add(unhandled, seen, part, value, kind + ' is outside the theme palette', 'unmapped', _location(node))
     for child in list(node):
         _walk(child, colors, mapping, part, unhandled, seen, o)
 
 
-def _add(unhandled, seen, part, color, reason):
-    key = (part, color, reason)
+def _hex_color(value):
+    return len(value) == 6 and value not in ('AUTO',) and all(character in '0123456789ABCDEF' for character in value)
+
+
+def _location(node):
+    names = []
+    current = node
+    while current is not None and len(names) < 6 and isinstance(current.tag, str):
+        names.append(etree.QName(current).localname)
+        current = current.getparent()
+    return '/'.join(reversed(names))
+
+
+def _add(unhandled, seen, part, color, reason, status, location):
+    key = (part, color, reason, status, location)
     if key in seen:
         return
     seen.add(key)
-    unhandled.append(dict(part=part, color=color, reason=reason))
+    unhandled.append(dict(part=part, color=color, reason=reason, status=status, location=location))
