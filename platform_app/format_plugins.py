@@ -64,7 +64,10 @@ def load_plugin(feature_id):
     return CACHE[key]
 
 
-def build_services(root,emit,temporary_root=None,skill_bindings=None):
+def build_services(root,emit,temporary_root=None,skill_bindings=None,host=None):
+    """``host`` carries host-only capabilities (private directory, model access)
+    for adapters that declare a ``host`` parameter; it never reaches the sandbox."""
+    import inspect
     result={}
     for meta in enabled(skill_bindings):
         try:
@@ -73,7 +76,10 @@ def build_services(root,emit,temporary_root=None,skill_bindings=None):
                 identity=event.get(_meta['identity_key'])
                 if identity:event={**event,'artifact_extension':dict(feature=_meta['id'],id=identity,state_key=_meta['state_key'])}
                 emit(event)
-            result[meta['id']]=module.create_service(root,publish,temporary_root=temporary_root)
+            extra={}
+            if host is not None and 'host' in inspect.signature(module.create_service).parameters:
+                extra['host']={**host,'private_root':Path(host['private_root'])/meta['id']} if host.get('private_root') else dict(host)
+            result[meta['id']]=module.create_service(root,publish,temporary_root=temporary_root,**extra)
         except (ImportError,LookupError):
             continue
     return result
@@ -97,7 +103,9 @@ def snapshot_skills(destination,skill_bindings=None):
     for meta in active:
         folder=destination/meta['skill_name']
         if not folder.exists():
-            shutil.copytree(meta['directory'],folder,ignore=shutil.ignore_patterns('__pycache__','.pytest_cache','tests','platform_adapter.py'))
+            # Host-only modules (adapter, model access) stay out of the sandbox snapshot.
+            host_only=tuple(meta.get('host_only',()))
+            shutil.copytree(meta['directory'],folder,ignore=shutil.ignore_patterns('__pycache__','.pytest_cache','tests','platform_adapter.py',*host_only))
             shutil.copy2(Path(__file__).with_name('artifact_runtime.py'),folder/'scripts'/'artifact_runtime.py')
 
 router=APIRouter(prefix='/api/features')

@@ -66,8 +66,45 @@ def design_context(state, slide_id, prs):
     return profile,components,slots,registry_error
 
 
-def check(store,slide_id,content_notes):
+INTEGRITY_TYPES={'render_failed','rendered_text_missing','out_of_bounds','text_overflow','unexpected_overlap','missing_font','font_measurement_unavailable',
+    'connector_unbound','connector_dangling','connector_endpoint_missing','connector_crosses_text','arrow_direction_mismatch','connector_meaningless_short'}
+CARRIED_AESTHETIC={'passed','failed','uncertain'}
+
+
+def effective_aesthetic(review):
+    aesthetic=(review or {}).get('aesthetic_review') or {}
+    decision=(aesthetic.get('human') or {}).get('decision')
+    if decision=='accept':return 'passed'
+    if decision=='reject':return 'failed'
+    return aesthetic.get('status','pending')
+
+
+def derive_status(review):
+    """blocked: deterministic errors; needs_attention: model/human found real defects."""
+    if not review.get('automatic_passed'):return 'blocked'
+    value=effective_aesthetic(review)
+    return {'passed':'passed','failed':'needs_attention'}.get(value,'pending')
+
+
+def compat_visual(review):
+    value=effective_aesthetic(review)
+    return value if value in ('passed','failed') else 'pending'
+
+
+def split_review(issues,rendered,render_error):
+    errors=lambda items:[issue for issue in items if issue.get('severity','error')=='error']
+    integrity=[issue for issue in issues if issue.get('type') in INTEGRITY_TYPES]
+    technical=[issue for issue in issues if issue.get('type') not in INTEGRITY_TYPES]
+    return (dict(status='failed' if errors(technical) else 'passed',**design_quality.summary(technical)),
+        dict(status='unavailable' if not rendered else 'failed' if errors(integrity) else 'passed',rendered=rendered,render_error=render_error,
+            errors=[issue.get('element_id') or issue.get('type') for issue in errors(integrity)]))
+
+
+def check(store,slide_id,content_notes,intent=None,constraints=None):
     if not isinstance(content_notes,str) or not content_notes.strip():raise ValueError('Read slide content and provide concrete content-review notes')
+    if intent is not None and (not isinstance(intent,str) or len(intent)>500):raise ValueError('intent is one short description of the page purpose (<=500 characters)')
+    constraints=[item.strip() for item in (constraints or []) if isinstance(item,str) and item.strip()]
+    if len(constraints)>6 or any(len(item)>200 for item in constraints):raise ValueError('At most 6 user layout constraints of <=200 characters each')
     with store.locked() as(c,state):
         store.assert_current(state)
         revision=state['revision']; data=store.snapshot_unlocked(c,revision)
@@ -95,7 +132,7 @@ def check(store,slide_id,content_notes):
             page=doc[index]; image_name=f'slide-{index+1:03d}.png'
             text=''.join(page.get_text().split())
             for element in selected['elements']:
-                if element['type']=='text':
+                if element['type']=='text' or (element['type']=='shape' and element.get('text')):
                     for paragraph in element['text'].split('\n'):
                         if paragraph.strip() and ''.join(paragraph.split()) not in text:issues.append(dict(type='rendered_text_missing',severity='error',element_id=element['id']))
             fingerprint=hashlib.sha256(page.get_pixmap(alpha=False).samples).hexdigest(); rendered=True
@@ -107,11 +144,22 @@ def check(store,slide_id,content_notes):
         if errors:state['repair_attempts'][slide_id]=state['repair_attempts'].get(slide_id,0)+1
         else:state['repair_attempts'][slide_id]=0
         old=state['reviews'].get(slide_id,state.get('last_reviews',{}).get(slide_id,{}))
-        visual=old.get('visual_review','pending') if old.get('fingerprint')==fingerprint else 'pending'
-        review=dict(slide_id=slide_id,revision=revision,status='blocked' if errors or visual=='failed' else 'passed' if visual=='passed' else 'pending',
-            automatic_passed=not errors,rendered=rendered,layout_issues=issues,content_notes=content_notes,visual_review=visual,
+        previous_intent=old.get('intent') if old else None
+        intent=intent if intent is not None else previous_intent
+        constraints=constraints or (old.get('constraints') if old else None) or []
+        technical,integrity=split_review(issues,rendered,render_error)
+        aesthetic=dict(status='pending',reason='awaiting_vision_review' if not errors else 'blocked_by_automatic_checks')
+        carried=old.get('aesthetic_review') or {}
+        # Same pixels, same intent: the earlier model/human verdict still describes this page.
+        if (not errors and fingerprint and old.get('fingerprint')==fingerprint and carried.get('status') in CARRIED_AESTHETIC
+                and old.get('intent')==intent and (old.get('constraints') or [])==constraints):
+            aesthetic=dict(carried,carried_from_revision=carried.get('revision',old.get('revision')))
+        review=dict(slide_id=slide_id,revision=revision,automatic_passed=not errors,rendered=rendered,layout_issues=issues,content_notes=content_notes,
             render_error=render_error,fingerprint=fingerprint,repair_attempts=state['repair_attempts'][slide_id],
-            design=design_quality.summary(issues))
+            design=design_quality.summary(issues),technical_review=technical,visual_integrity=integrity,aesthetic_review=aesthetic,
+            intent=intent,constraints=constraints)
+        if old.get('agent_inspection') and old.get('fingerprint')==fingerprint:review['agent_inspection']=old['agent_inspection']
+        review['status']=derive_status(review);review['visual_review']=compat_visual(review)
         state['reviews'][slide_id]=review
         if rendered:state['renders'][slide_id]=dict(revision=revision,image=image_name)
         event=dict(type='presentation_review',presentation_id=state['presentation_id'],revision=revision,slide_id=slide_id,review=review,

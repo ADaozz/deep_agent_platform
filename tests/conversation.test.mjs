@@ -126,3 +126,26 @@ test('task and step duration use persisted event timestamps, no fabricated old t
  assert.equal(process.durationMs,8000);assert.equal(process.steps[0].durationMs,3000)
  assert.equal(processOf([{seq:1,type:'tool_completed',tool_call_id:'old',name:'read_file'}],'completed').steps[0].durationMs,null)
 })
+
+test('steering moves from the end of the turn to the point where the run read it', () => {
+  const base = [
+    { seq: 1, type: 'operation', operation: 'message', text: '做一份 PPT' },
+    { seq: 2, type: 'tool_started', tool_call_id: 'a', name: 'execute' },
+    { seq: 3, type: 'steering_queued', content: '第3页改成蓝色\n[Presentation feedback: presentation_id=x]', result: { id: 's1', mode: 'steer' } },
+    { seq: 4, type: 'steer', content: '第3页改成蓝色', status: 'accepted_pending_boundary' },
+    { seq: 5, type: 'tool_completed', tool_call_id: 'a', name: 'execute', content: 'ok' },
+  ]
+  let blocks = conversationTimeline(base, 'running')
+  assert.equal(blocks.at(-1).kind, 'note')
+  assert.ok(!processOf(base).steps.some(step => step.kind === 'steer'))
+  const applied = [...base,
+    { seq: 6, type: 'steering_applied', result: { id: 's1', content: '第3页改成蓝色\n[Presentation feedback: presentation_id=x]' } },
+    { seq: 7, type: 'tool_started', tool_call_id: 'b', name: 'execute' },
+    { seq: 8, type: 'tool_completed', tool_call_id: 'b', name: 'execute', content: 'ok' }]
+  blocks = conversationTimeline(applied, 'running')
+  assert.ok(!blocks.some(block => block.kind === 'note'))
+  const steps = processOf(applied).steps
+  assert.deepEqual(steps.map(step => step.kind), ['tool', 'steer', 'tool'])
+  assert.equal(steps[1].content, '第3页改成蓝色')
+  assert.equal(processOf(applied).stepCount, 2)
+})

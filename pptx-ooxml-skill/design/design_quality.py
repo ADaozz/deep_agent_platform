@@ -172,6 +172,16 @@ def review(slide, profile=None, components=None, slots=None, width_points=960, h
                 issues.append(_issue('chart_duplicate_categories', WARNING, 'chart categories contain duplicates', element.get('id')))
             if chart.get('type') in ('bar', 'line') and not str(chart.get('unit', '')).strip():
                 issues.append(_issue('chart_unit_missing', ADVISORY, 'quantitative chart has no unit (for example 亿元, %, 人)', element.get('id')))
+            chart_backdrop = _backdrop(element, elements, background)
+            # Reviewed profile palettes are only flagged when marks nearly vanish; explicit colours need 3:1.
+            limit = 3.0 if (element.get('style_overrides') or {}).get('series_colors') else 1.6
+            for color in (element.get('chart_style') or {}).get('series_colors') or []:
+                ratio = contrast(color, chart_backdrop)
+                if ratio is not None and ratio < limit:
+                    issues.append(_issue('chart_series_low_contrast', ERROR if ratio < 1.6 else WARNING,
+                        f'series colour #{color} has {ratio:.2f}:1 contrast against #{chart_backdrop}; graphical marks need 3:1', element.get('id'),
+                        ratio=ratio))
+                    break
         elif kind == 'table':
             rows = element.get('rows') or []
             if rows and any(len(str(cell)) > 40 for row in rows for cell in row):
@@ -196,7 +206,132 @@ def review(slide, profile=None, components=None, slots=None, width_points=960, h
 
     issues.extend(_alignment_issues(elements))
     issues.extend(_spacing_issues(elements))
+    issues.extend(connector_issues(elements, slide_width_in, slide_height_in))
     return sorted(issues, key=lambda item: (RANK[item['severity']], item['type'], item.get('element_id') or ''))
+
+
+def _line_points(element):
+    connector = element.get('connector') or {}
+    if element.get('route'):
+        return [tuple(point) for point in element['route']]
+    if connector.get('begin') and connector.get('end'):
+        return [tuple(connector['begin']), tuple(connector['end'])]
+    rect = _rect(element)
+    if rect is None:
+        return None
+    x, y, w, h = rect
+    return [(x, y + h / 2), (x + w, y + h / 2)] if w >= h else [(x + w / 2, y), (x + w / 2, y + h)]
+
+
+def _distance_to_rect(point, rect):
+    x, y, w, h = rect
+    dx = max(x - point[0], 0, point[0] - (x + w))
+    dy = max(y - point[1], 0, point[1] - (y + h))
+    return (dx * dx + dy * dy) ** .5
+
+
+def _crosses(a, b, rect, inset=.004):
+    x, y, w, h = rect
+    left, top, right, bottom = x + inset, y + inset, x + w - inset, y + h - inset
+    if right <= left or bottom <= top:
+        return False
+    t0, t1 = 0.0, 1.0
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    for p, q in ((-dx, a[0] - left), (dx, right - a[0]), (-dy, a[1] - top), (dy, bottom - a[1])):
+        if abs(p) < 1e-12:
+            if q <= 0:
+                return False
+            continue
+        t = q / p
+        if p < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 >= t1:
+            return False
+    return True
+
+
+def connector_issues(elements, slide_width_in=DEFAULT_SLIDE_WIDTH_IN, slide_height_in=DEFAULT_SLIDE_WIDTH_IN * 9 / 16):
+    """Connections must say what they connect and in which direction.
+
+    Flags short lines bridging two objects without being bound, arrows with no
+    declared relation, connectors with a missing endpoint, arrowheads that
+    contradict the declared relation and routes that cut through text.
+    """
+    try:
+        from design.diagram_presets import RELATIONS
+    except ImportError:  # loaded as a plain module next to diagram_presets
+        from diagram_presets import RELATIONS
+    issues = []
+    by_id = {element.get('id'): element for element in elements}
+    # Blocks a line could plausibly be meant to connect: cards, charts, tables, images, components.
+    # Text boxes and tiny marker dots are excluded so rails, ticks and underlines are not misread.
+    targets = [element for element in elements if _rect(element) and (element.get('type') in ('component', 'chart', 'table', 'image') or
+               (element.get('type') == 'shape' and element.get('shape') not in ('line', 'arrow') and _rect(element)[2] * _rect(element)[3] >= .002))]
+    texts = [element for element in elements if (element.get('type') == 'text' and element.get('text')) or
+             (element.get('type') == 'shape' and element.get('text') and element.get('shape') not in ('line', 'arrow'))]
+    for element in elements:
+        if element.get('source') == 'template' and element.get('type') == 'complex':
+            continue
+        is_line = element.get('type') == 'connector' or (element.get('type') == 'shape' and element.get('shape') == 'line')
+        if element.get('type') == 'shape' and element.get('shape') == 'arrow' and not element.get('diagram_id'):
+            issues.append(_issue('arrow_without_relation', WARNING,
+                'decorative arrow implies a direction but declares no source, target or relation; use a diagram edge or remove it',
+                element.get('id')))
+            continue
+        if not is_line:
+            continue
+        points = _line_points(element)
+        if not points:
+            continue
+        connector = element.get('connector') or {}
+        start, finish = connector.get('start'), connector.get('finish')
+        length_in = sum((((b[0] - a[0]) * slide_width_in) ** 2 + ((b[1] - a[1]) * slide_height_in) ** 2) ** .5 for a, b in zip(points, points[1:]))
+        if element.get('diagram_role') == 'edge':
+            expected = {element.get('source_element'), element.get('target_element')}
+            bound = {item.get('element_id') for item in (start, finish) if item}
+            if not start or not finish or (start or {}).get('missing') or (finish or {}).get('missing') or bound != expected:
+                issues.append(_issue('connector_endpoint_missing', ERROR,
+                    f'edge is not bound to both of its declared nodes ({", ".join(sorted(str(x) for x in expected))})', element.get('id')))
+            relation = RELATIONS.get(element.get('relation'))
+            if relation is None:
+                issues.append(_issue('connector_relation_missing', ERROR, 'edge has no valid relation', element.get('id')))
+            else:
+                arrows = (bool(connector.get('arrow_start')), bool(connector.get('arrow_end')))
+                wanted = {'end': (False, True), 'both': (True, True), 'none': (False, False)}[relation['arrow']]
+                if connector and arrows != wanted:
+                    issues.append(_issue('arrow_direction_mismatch', ERROR,
+                        f'arrowheads do not match relation {element.get("relation")}', element.get('id')))
+        else:
+            bound = [item for item in (start, finish) if item and item.get('element_id')]
+            if len(bound) == 1:
+                issues.append(_issue('connector_dangling', ERROR, 'connector is bound at one end only; the other end points at nothing', element.get('id')))
+            elif not bound:
+                near = []
+                for point in (points[0], points[-1]):
+                    candidates = sorted(((_distance_to_rect(point, _rect(target)), target.get('id')) for target in targets), key=lambda item: item[0])
+                    near.append(candidates[0][1] if candidates and candidates[0][0] <= .02 else None)
+                if near[0] and near[1] and near[0] != near[1] and length_in < 1.2:
+                    issues.append(_issue('connector_unbound', ERROR,
+                        f'line visually links {near[0]} and {near[1]} but is not bound and declares no relation; use diagram.add edges or remove it',
+                        element.get('id'), related=near))
+                elif length_in < .5:
+                    issues.append(_issue('connector_meaningless_short', ERROR if element.get('layer') == 'content' else WARNING,
+                        f'{length_in:.2f} in line connects nothing identifiable', element.get('id')))
+            elif element.get('type') == 'connector' or connector.get('arrow_end') or connector.get('arrow_start'):
+                issues.append(_issue('connector_relation_missing', WARNING, 'bound connector declares no relation type', element.get('id')))
+        ends = {item.get('element_id') for item in (start, finish) if item} | {element.get('source_element'), element.get('target_element')}
+        for text in texts:
+            if text.get('id') in ends or text.get('id') == element.get('id'):
+                continue
+            if text.get('diagram_role') == 'edge_label' and text.get('edge_id') == element.get('edge_id'):
+                continue
+            rect = _rect(text)
+            if rect and any(_crosses(a, b, rect) for a, b in zip(points, points[1:])):
+                issues.append(_issue('connector_crosses_text', ERROR, f'connector runs through text of {text.get("id")}', element.get('id'), related=text.get('id')))
+                break
+    return issues
 
 
 def _component_issues(element, geometry, components, slide_width_in, slide_height_in):

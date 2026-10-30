@@ -23,8 +23,12 @@ export function shortResult(value) {
 }
 function timeSpan(start, end) { return start != null && end != null ? Math.max(0, end - start) : null }
 
+// Steering notes wait at the end of the turn until the run reads them; the
+// read point (steering_applied) is where they belong in the timeline.
+function steeringText(value) { return rawText(value).split('\n[Presentation feedback:')[0].split('\n[Document feedback:')[0] }
+
 export function conversationTimeline(events, sessionStatus = 'idle') {
-  const turns = [], seen = new Set()
+  const turns = [], seen = new Set(), queued = [], waiting = new Map()
   let turn, model
   const ensureTurn = (event, index) => {
     if (!turn) {
@@ -133,8 +137,22 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
       turn.endedAt = eventTime(event)
     } else if (event.type === 'task_progress' && event.content) {
       ensureTurn(event, index).steps.push({ key: `progress-${event.seq ?? index}`, kind: 'progress', name: 'progress', order: index, content: rawText(event.content), status: 'completed', startedAt: eventTime(event), endedAt: eventTime(event) })
+    } else if (event.type === 'steering_queued') {
+      if (event.result?.id) queued.push(event.result.id)
     } else if (event.type === 'steer' || event.type === 'follow_up') {
-      ensureTurn(event, index).notes.push({ kind: 'note', key: event.seq ?? index, type: event.type, content: event.content })
+      const note = { kind: 'note', key: event.seq ?? index, type: event.type, content: event.content }
+      ensureTurn(event, index).notes.push(note)
+      const id = queued.shift()
+      if (id) waiting.set(id, { note, turn })
+    } else if (event.type === 'steering_applied') {
+      const entry = waiting.get(event.result?.id)
+      if (entry) waiting.delete(event.result.id)
+      const owner = entry?.turn || ensureTurn(event, index)
+      if (entry) owner.notes.splice(owner.notes.indexOf(entry.note), 1)
+      model = null
+      owner.steps.push({ key: `steer-${event.seq ?? index}`, kind: 'steer', name: entry?.note.type || 'steer', order: index,
+        content: entry?.note.content ?? steeringText(event.result?.content ?? event.content), status: 'completed',
+        startedAt: eventTime(event), endedAt: eventTime(event), durationMs: 0 })
     }
   }
   return turns.flatMap((item, index) => {
@@ -155,7 +173,7 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
     if (steps.length || liveStatuses.has(currentStatus)) blocks.push({
       kind: 'process', key: `process-${item.key}`, steps, status: currentStatus,
       active: liveStatuses.has(currentStatus), finished: ended && steps.every(step => terminalStatuses.has(step.status)),
-      stepCount: steps.length, actionCount: steps.filter(step => step.kind === 'tool').length,
+      stepCount: steps.filter(step => step.kind !== 'steer').length, actionCount: steps.filter(step => step.kind === 'tool').length,
       startedAt: item.startedAt, endedAt: item.endedAt, durationMs: timeSpan(item.startedAt, item.endedAt),
     })
     const answers = item.models.filter(chunk => !chunk.hasTools && chunk.content)

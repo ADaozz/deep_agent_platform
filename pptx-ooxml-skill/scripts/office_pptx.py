@@ -32,7 +32,7 @@ from lxml import etree
 
 SKILL_ROOT=Path(__file__).resolve().parents[1]
 if str(SKILL_ROOT) not in sys.path:sys.path.insert(0,str(SKILL_ROOT))
-from design import design_quality, layout_registry, layout_resolver, profile_registry
+from design import design_quality, diagram_presets, layout_registry, layout_resolver, profile_registry
 
 
 def load(name):
@@ -41,6 +41,7 @@ def load(name):
     spec=importlib.util.spec_from_file_location(name,path); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
 
 shared=load('artifact_runtime'); renderer=load('slide_renderer'); validator=load('slide_validator'); component_renderer=load('component_renderer')
+native_style=load('native_style'); native_diagram=load('native_diagram')
 
 DEFAULT_PROFILE='corporate_blue'
 SVG_BLIP_URI='{96DAC541-7B7A-43D3-8B79-37D633B846F1}'
@@ -199,6 +200,7 @@ def apply_text(shape,text,style):
         if align is not None:p.alignment=align
         for run in p.runs:
             run.font.name=style['font_family']; run.font.size=Pt(style['font_size']); run.font.bold=style['bold']; run.font.color.rgb=RGBColor.from_string(style['color'])
+            if style.get('italic') is not None:run.font.italic=style['italic']
             rpr=run._r.get_or_add_rPr(); east=OxmlElement('a:ea'); east.set('typeface',style['font_family']); rpr.append(east)
             if style.get('letter_spacing'):rpr.set('spc',str(int(round(float(style['letter_spacing'])*100))))
 
@@ -378,57 +380,69 @@ def sync_component_children(slide,instance_id,g,state,prs,record):
         if element_id not in keep:shape._element.getparent().remove(shape._element)
 
 
-def apply_table_style(shape,state):
-    profile=profile_of(state);tables=profile['tables'];palette=state['theme']
-    for r,row in enumerate(shape.table.rows):
+def apply_table_style(shape,state,meta=None):
+    meta=meta if meta is not None else renderer.metadata(shape)
+    native_style.apply_table(shape,meta,state,profile_of(state)['tables'])
+    for row in shape.table.rows:
         for cell in row.cells:
-            if r==0:fill_token=tables['header_fill_token']
-            elif tables['zebra'] and r%2==0:fill_token='surface'
-            else:fill_token='background'
-            cell.fill.solid();cell.fill.fore_color.rgb=RGBColor.from_string(palette.get(fill_token,profile['colors'][fill_token]))
             for paragraph in cell.text_frame.paragraphs:
-                for run in paragraph.runs:
-                    run.font.name=state['font_family'];run.font.size=Pt(tables['font_size'])
-                    token=tables['header_text_token'] if r==0 else 'text'
-                    run.font.color.rgb=RGBColor.from_string(palette.get(token,profile['colors'][token]))
+                for run in paragraph.runs:run.font.name=state['font_family']
 
 
-def apply_chart_style(shape,state,unit=None):
-    profile=profile_of(state);series_colors=profile['colors']['chart_series'];charts=profile['charts']
-    palette=state['theme'];chart=shape.chart
-    muted=RGBColor.from_string(palette['muted']);border=RGBColor.from_string(palette['border'])
-    for index,series in enumerate(chart.series):
-        color=RGBColor.from_string(series_colors[index%len(series_colors)])
-        try:series.format.fill.solid();series.format.fill.fore_color.rgb=color
-        except (ValueError,AttributeError):pass
-        try:series.format.line.color.rgb=color
-        except (ValueError,AttributeError):pass
-    try:chart.has_title=False
-    except (ValueError,AttributeError):pass
-    try:
-        single_series=len(chart.series)==1
-        chart.has_legend=(charts['legend_position']!='none') and not single_series
-        if chart.has_legend:
-            chart.legend.position={'bottom':XL_LEGEND_POSITION.BOTTOM,'right':XL_LEGEND_POSITION.RIGHT,'top':XL_LEGEND_POSITION.TOP}[charts['legend_position']]
-            chart.legend.include_in_layout=False
-            chart.legend.font.name=state['font_family'];chart.legend.font.size=Pt(charts['label_size']);chart.legend.font.color.rgb=muted
-        for axis in (chart.category_axis,chart.value_axis):
-            axis.has_major_gridlines=charts['gridlines']
-            axis.tick_labels.font.name=state['font_family'];axis.tick_labels.font.size=Pt(charts['label_size'])
-            axis.tick_labels.font.color.rgb=muted
-            try:axis.format.line.color.rgb=border
-            except (ValueError,AttributeError):pass
-            if charts['gridlines']:
-                try:axis.major_gridlines.format.line.color.rgb=border
-                except (ValueError,AttributeError):pass
-        if unit:
-            chart.value_axis.has_title=True
-            chart.value_axis.axis_title.text_frame.text=str(unit)
-            for paragraph in chart.value_axis.axis_title.text_frame.paragraphs:
-                for run in paragraph.runs:
-                    run.font.name=state['font_family'];run.font.size=Pt(charts['label_size']);run.font.color.rgb=muted
-        else:chart.value_axis.has_title=False
-    except (ValueError,KeyError,AttributeError):pass
+def apply_chart_style(shape,state,unit=None,meta=None):
+    if meta is None:
+        meta=renderer.metadata(shape)
+        if 'chart' not in meta:meta=dict(chart=dict(type='bar',categories=[],series=[dict(name='',values=[])]))
+    if unit is not None:meta.setdefault('chart',{})['unit']=unit
+    native_style.apply_chart(shape,meta,state,profile_of(state))
+
+
+def apply_element_style(shape,meta,state,views=None):
+    """Re-apply profile defaults, then preset and explicit overrides, for one element."""
+    kind=meta.get('kind')
+    if kind=='text':
+        meta['resolved_style']=resolve_style(state,meta,views)
+        if meta.get('align'):meta['resolved_style']['align']=meta['align']
+        meta['resolved_style']=native_style.text_style(meta,state)
+        apply_text(shape,meta.get('text') or shape.text,meta['resolved_style'])
+    elif kind=='shape':
+        if meta.get('fill_token'):
+            meta['fill']=state['theme'].get(meta['fill_token'],meta.get('fill'))
+            if meta.get('shape')=='line':shape.line.color.rgb=RGBColor.from_string(meta['fill'])
+            else:shape.fill.solid();shape.fill.fore_color.rgb=RGBColor.from_string(meta['fill'])
+        native_style.apply_shape(shape,meta,state)
+    elif kind=='table':apply_table_style(shape,state,meta)
+    elif kind=='chart':apply_chart_style(shape,state,meta=meta)
+    renderer.set_metadata(shape,meta)
+
+
+def current_geometry(shape,prs):
+    return (shape.left/prs.slide_width,shape.top/prs.slide_height,shape.width/prs.slide_width,shape.height/prs.slide_height)
+
+
+def adjust_element(slide,element,state,prs,anchors):
+    """Relative move/scale/rotate from the element's current geometry; the rest of the page is untouched."""
+    if not isinstance(element,dict) or 'id' not in element:raise ValueError('element.adjust requires element.id')
+    shape=find_element(slide,element['id']);meta=renderer.metadata(shape)
+    if not meta.get('kind'):raise ValueError('Template objects are preserved as-is; adjust generated elements only')
+    if meta.get('component_instance'):raise ValueError('Component text moves with its component; adjust the component instead')
+    if meta.get('diagram_role')=='edge':raise ValueError('Connectors follow their nodes; adjust a node or use diagram.update')
+    request={key:value for key,value in element.items() if key!='id'}
+    delta=request.pop('rotate',None)
+    kind=meta['kind']
+    keep_aspect=kind in ('component','image') or bool(meta.get('icon'))
+    if request:
+        g=native_style.adjusted_geometry(current_geometry(shape,prs),request,prs.slide_width,prs.slide_height,keep_aspect)
+        if kind=='component':check_component_geometry(component_validator_get(meta['component']['component_id']),g,prs)
+        set_geometry(shape,g,prs)
+        if kind=='component':sync_component_children(slide,element['id'],g,state,prs,meta['component'])
+    if delta is not None:
+        if kind in ('chart','table','component') or meta.get('shape')=='line' or meta.get('diagram_id'):
+            raise ValueError(f'{kind} elements are not rotated; rotation is limited to text, images and simple shapes')
+        meta['rotation']=native_style.rotation(shape.rotation,delta);shape.rotation=meta['rotation']
+    if meta.get('anchor'):meta['manual_geometry']=True
+    renderer.set_metadata(shape,meta)
+    if meta.get('diagram_id'):native_diagram.reroute(slide,meta['diagram_id'],state,prs)
 
 
 def restyle_presentation(prs,state):
@@ -446,27 +460,23 @@ def restyle_presentation(prs,state):
         slide.background.fill.solid();slide.background.fill.fore_color.rgb=RGBColor.from_string(background)
         state.setdefault('backgrounds',{})[sid]=background
         components_to_rebuild=[]
+        diagrams=set()
         for shape in list(slide.shapes):
             meta=renderer.metadata(shape)
             if not meta.get('kind'):continue
-            if meta['kind']=='text':
-                meta['resolved_style']=resolve_style(state,meta,views)
-                if meta.get('align'):meta['resolved_style']['align']=meta['align']
-                apply_text(shape,meta.get('text') or shape.text,meta['resolved_style'])
-                renderer.set_metadata(shape,meta)
-            elif meta['kind']=='shape':
-                if meta.get('fill_token'):
-                    meta['fill']=state['theme'].get(meta['fill_token'],meta['fill'])
-                    if meta.get('shape')=='line':shape.line.color.rgb=RGBColor.from_string(meta['fill'])
-                    else:shape.fill.solid();shape.fill.fore_color.rgb=RGBColor.from_string(meta['fill'])
-                renderer.set_metadata(shape,meta)
-            elif meta['kind']=='table':apply_table_style(shape,state)
-            elif meta['kind']=='chart':apply_chart_style(shape,state,(meta.get('chart') or {}).get('unit'))
+            if meta.get('diagram_id'):
+                diagrams.add(meta['diagram_id']);continue
+            if meta['kind'] in ('text','shape','table','chart'):apply_element_style(shape,meta,state,views)
             elif meta['kind']=='component':components_to_rebuild.append(shape)
-            if meta.get('anchor') and meta['anchor'] in anchors:set_geometry(shape,geometry(meta,anchors),prs)
+            if meta.get('anchor') and meta['anchor'] in anchors and not meta.get('manual_geometry'):set_geometry(shape,geometry(meta,anchors),prs)
+        for diagram_id in sorted(diagrams):native_diagram.rebuild(slide,diagram_id,state,prs,anchors)
         for shape in components_to_rebuild:
             meta=renderer.metadata(shape);replacement,g=rebuild_component(slide,shape,state,prs)
             sync_component_children(slide,renderer.element_identity(replacement),g,state,prs,renderer.metadata(replacement)['component'])
+
+
+native_diagram.configure(renderer=renderer,native_style=native_style,style_for=style_for,apply_text=apply_text,
+    geometry=geometry,identifier=identifier,anchors=anchors_for,slide_id=renderer.slide_identity)
 
 
 class PresentationStore(shared.ArtifactStore):
@@ -536,7 +546,7 @@ class PresentationStore(shared.ArtifactStore):
         data=c.execute('SELECT docx FROM revisions WHERE revision=?',(state['revision'],)).fetchone()[0]
         return dict(presentation_id=state['presentation_id'],revision=state['revision'],sha256=state['sha256'],path=self.path.name,
             manifest=renderer.manifest(Presentation(io.BytesIO(data)),state),active_slide=state.get('active_slide'),finalized=state.get('finalized',False),
-            mode=state['mode'],theme=state['theme'],profile_id=state.get('profile_id'),
+            mode=state['mode'],theme=state['theme'],profile_id=state.get('profile_id'),deck_review=state.get('deck_review'),
             history=[{key:value for key,value in json.loads(r[0]).items() if key in ('revision','operation_id','sha256','slide_id','status')} for r in c.execute('SELECT result FROM revisions ORDER BY revision')])
     def status(self):
         with self.locked() as (c,state):return self.view(c,state)
@@ -632,10 +642,13 @@ class PresentationStore(shared.ArtifactStore):
                     anchors=anchors_for(state,sid)
                     for shape in slide.shapes:
                         meta=renderer.metadata(shape)
-                        if meta.get('anchor') and meta['anchor'] in anchors:set_geometry(shape,geometry(meta,anchors),prs)
+                        if meta.get('anchor') and meta['anchor'] in anchors:
+                            set_geometry(shape,geometry(meta,anchors),prs)
+                            if meta.pop('manual_geometry',None):renderer.set_metadata(shape,meta)
                     views=target_views
                 elif op=='element.remove':
                     shape=find_element(slide,request['element']['id'])
+                    if renderer.metadata(shape).get('diagram_id'):raise ValueError('Diagram nodes and edges are changed through diagram.update so relations stay consistent')
                     if renderer.metadata(shape).get('kind')=='component':
                         for child in component_children(slide,request['element']['id']):child._element.getparent().remove(child._element)
                         vector=svg_rel_id(shape)
@@ -647,6 +660,7 @@ class PresentationStore(shared.ArtifactStore):
                 elif op=='element.update':
                     element=request['element']; shape=find_element(slide,element['id']); meta=renderer.metadata(shape)
                     if set(element)-{'id','text','geometry','anchor','fill','style','layer','overlap_group','rows','chart','params','texts','component_version'}:raise ValueError('Unsupported element update field')
+                    if meta.get('diagram_id'):raise ValueError('Diagram nodes and edges are changed through diagram.update so relations stay consistent')
                     target_anchor=element.get('anchor') or meta.get('anchor')
                     if 'text' in element:check_anchor_content(state,sid,target_anchor,{'type':'text','text':element['text']})
                     if 'rows' in element:check_anchor_content(state,sid,target_anchor,{'type':'table'})
@@ -675,21 +689,23 @@ class PresentationStore(shared.ArtifactStore):
                                 cell=shape.table.cell(r,col);cell.text=text
                                 for paragraph in cell.text_frame.paragraphs:
                                     for run in paragraph.runs:run.font.name=state['font_family'];run.font.size=Pt(profile_of(state)['tables']['font_size'])
-                        apply_table_style(shape,state);meta['rows']=rows
+                        meta['rows']=rows;apply_table_style(shape,state,meta)
                     if 'chart' in element:
                         if not shape.has_chart:raise ValueError('Chart data update requires a native chart')
-                        if element['chart'].get('type','bar')!=meta.get('chart',{}).get('type','bar'):raise ValueError('Changing chart type requires replacing the chart object')
-                        shape.chart.replace_data(chart_data(element['chart']));meta['chart']=element['chart'];apply_chart_style(shape,state,element['chart'].get('unit'))
+                        if element['chart'].get('type','bar')!=meta.get('chart',{}).get('type','bar'):raise ValueError('Changing chart type uses chart.change_type, which replaces the chart object and keeps its data')
+                        shape.chart.replace_data(chart_data(element['chart']));meta['chart']=element['chart'];apply_chart_style(shape,state,meta=meta)
                     if element.get('geometry') or element.get('anchor'):
                         if meta.get('kind')=='component':check_component_geometry(component_validator_get(meta['component']['component_id']),geometry(element,anchors),prs)
                         set_geometry(shape,geometry(element,anchors),prs)
+                        if element.get('anchor'):meta.pop('manual_geometry',None)
+                        elif meta.get('anchor'):meta['manual_geometry']=True
                         if meta.get('kind')=='component':
                             g=geometry(element,anchors);sync_component_children(slide,element['id'],g,state,prs,meta['component'])
                     if 'text'in element:
                         if not shape.has_text_frame:raise ValueError('Text update requires a text element')
                         if not meta:meta=dict(kind='text',style=element.get('style','body'))
                         meta.update(text=element['text'],style=element.get('style',meta.get('style','body')))
-                        meta['resolved_style']=resolve_style(state,meta,views);apply_text(shape,meta['text'],meta['resolved_style'])
+                        meta['resolved_style']=native_style.text_style(dict(meta,resolved_style=resolve_style(state,meta,views)),state);apply_text(shape,meta['text'],meta['resolved_style'])
                         if meta.get('component_instance'):
                             record=renderer.metadata(find_element(slide,meta['component_instance'])).get('component',{})
                             entry=registry()['components'].get(record.get('component_id'))
@@ -704,8 +720,47 @@ class PresentationStore(shared.ArtifactStore):
                         else:shape.line.color.rgb=RGBColor.from_string(color)
                         meta['fill']=color
                     if 'style'in element and shape.has_text_frame:
-                        meta['style']=element['style']; meta['resolved_style']=resolve_style(state,meta,views); apply_text(shape,shape.text,meta['resolved_style'])
+                        meta['style']=element['style']; meta['resolved_style']=native_style.text_style(dict(meta,resolved_style=resolve_style(state,meta,views)),state); apply_text(shape,shape.text,meta['resolved_style'])
                     meta.update({k:element[k] for k in ('anchor','layer','overlap_group') if k in element}); renderer.set_metadata(shape,meta)
+                elif op=='element.adjust':
+                    adjust_element(slide,request['element'],state,prs,anchors)
+                elif op in ('element.set_style','element.apply_preset'):
+                    element=request['element']; shape=find_element(slide,element['id']); meta=renderer.metadata(shape)
+                    kind=native_style.style_kind(meta)
+                    if meta.get('diagram_id'):
+                        native_diagram.style_element(slide,shape,meta,element,op,state,prs,anchors)
+                    else:
+                        if op=='element.set_style':
+                            if set(element)-{'id','style'}:raise ValueError('element.set_style accepts id and style only')
+                            removals={key for key,value in (element.get('style') or {}).items() if value is None}
+                            additions={key:value for key,value in (element.get('style') or {}).items() if value is not None}
+                            overrides=dict(meta.get('style_overrides') or {})
+                            if additions:overrides.update(native_style.validate_style(kind,additions,state))
+                            elif not removals:raise ValueError('style must change at least one field')
+                            for key in removals:overrides.pop(key,None)
+                            if overrides:meta['style_overrides']=overrides
+                            else:meta.pop('style_overrides',None)
+                        else:
+                            if set(element)-{'id','preset'}:raise ValueError('element.apply_preset accepts id and preset only')
+                            if element.get('preset') is None:meta.pop('preset',None)
+                            else:
+                                preset=native_style.preset_style(element['preset'],kind)
+                                meta['preset']=element['preset']
+                                overrides={key:value for key,value in (meta.get('style_overrides') or {}).items() if key not in preset}
+                                if overrides:meta['style_overrides']=overrides
+                                else:meta.pop('style_overrides',None)
+                        if kind not in ('text','shape','connector','table','chart'):raise ValueError(f'{kind} elements do not support native style changes')
+                        apply_element_style(shape,meta,state,views)
+                elif op=='chart.change_type':
+                    element=request['element']
+                    if set(element)-{'id','type'}:raise ValueError('chart.change_type accepts id and type only')
+                    shape=find_element(slide,element['id']); meta=renderer.metadata(shape)
+                    if meta.get('kind')!='chart' or not shape.has_chart:raise ValueError('chart.change_type requires a native chart')
+                    replacement,meta=native_style.replace_chart(slide,shape,element['type'],meta)
+                    renderer.set_metadata(replacement,meta);apply_element_style(replacement,meta,state,views)
+                    native_style.verify_workbook(replacement,meta['chart'])
+                elif op in ('diagram.add','diagram.update'):
+                    native_diagram.apply(slide,op,request.get('diagram') or {},state,prs,anchors,profile_of(state))
                 elif op.startswith('element.add_'):
                     element=request['element']; identifier(element['id'])
                     if any(renderer.element_identity(s)==element['id'] for s in slide.shapes):raise ValueError('Duplicate stable element ID')
@@ -717,6 +772,7 @@ class PresentationStore(shared.ArtifactStore):
                     g=geometry(element,anchors); pos=positions(g,prs)
                     meta=dict(element,kind=kind,resolved_style=resolve_style(state,element,views))
                     if meta.get('layer','content') not in ('content','background','decoration'):raise ValueError('Unknown layer intent')
+                    if 'preset' in element:native_style.preset_style(element['preset'],native_style.style_kind(meta))
                     if kind=='text':
                         shape=slide.shapes.add_textbox(*pos); apply_text(shape,element['text'],meta['resolved_style'])
                     elif kind=='shape' and element.get('shape')=='line':
@@ -731,7 +787,7 @@ class PresentationStore(shared.ArtifactStore):
                         meta['fill_token']=element.get('fill_token','card')
                         if meta['fill_token'] not in state['theme']:raise ValueError('Unknown fill token')
                         meta['fill']=state['theme'][meta['fill_token']]
-                        shape.fill.solid(); shape.fill.fore_color.rgb=RGBColor.from_string(meta['fill']); shape.line.fill.background()
+                        shape.fill.solid(); shape.fill.fore_color.rgb=RGBColor.from_string(meta['fill']); shape.line.fill.background(); native_style.flat(shape)
                     elif kind=='image':
                         asset=(Path(asset_root or self.path.parent)/element['path']).resolve(); assets=Path(asset_root or self.path.parent).resolve()
                         if not asset.is_relative_to(assets) or not asset.is_file() or asset.stat().st_size>12*1024*1024:raise ValueError('Unsafe or oversized image')
@@ -749,15 +805,18 @@ class PresentationStore(shared.ArtifactStore):
                                 cell=shape.table.cell(r,col); cell.text=text
                                 for paragraph in cell.text_frame.paragraphs:
                                     for run in paragraph.runs:run.font.name=state['font_family']; run.font.size=Pt(profile_of(state)['tables']['font_size'])
-                        apply_table_style(shape,state)
+                        apply_table_style(shape,state,meta)
                     elif kind=='chart':
                         chart=element['chart']; categories=chart['categories']; series=chart['series']
                         if not 1<=len(categories)<=12 or any(not isinstance(label,str) or len(label)>80 for label in categories) or not 1<=len(series)<=4 or any(not isinstance(item.get('name'),str) or len(item['name'])>80 for item in series) or any(len(s['values'])!=len(categories) or any(type(n)not in (int,float) or not math.isfinite(n) for n in s['values']) for s in series):raise ValueError('Bounded finite editable chart data required')
-                        chart_type={'bar':XL_CHART_TYPE.COLUMN_CLUSTERED,'line':XL_CHART_TYPE.LINE,'pie':XL_CHART_TYPE.PIE}.get(chart.get('type','bar'))
+                        chart_type=native_style.CHART_TYPES.get(chart.get('type','bar'))
                         if chart_type is None:raise ValueError('Unsupported native chart')
-                        shape=slide.shapes.add_chart(chart_type,*pos,chart_data(chart)); apply_chart_style(shape,state,chart.get('unit'))
+                        if chart.get('type')=='pie' and (len(series)!=1 or any(v<0 for v in series[0]['values'])):raise ValueError('A pie chart shows one non-negative series')
+                        shape=slide.shapes.add_chart(chart_type,*pos,chart_data(chart)); apply_chart_style(shape,state,meta=meta)
                     else:raise ValueError('Unsupported native element type')
-                    shape.name='da:'+element['id']; renderer.set_metadata(shape,meta)
+                    shape.name='da:'+element['id']
+                    if meta.get('preset'):apply_element_style(shape,meta,state,views)
+                    renderer.set_metadata(shape,meta)
                 else:raise ValueError('Unsupported atomic presentation operation')
             return self.commit(c,state,serialize(prs),request['operation_id'],request,changed)
     def prepare_restore(self,c,state,revision):
@@ -787,30 +846,209 @@ class PresentationStore(shared.ArtifactStore):
     def snapshot_unlocked(self,c,revision):return c.execute('SELECT docx FROM revisions WHERE revision=?',(revision,)).fetchone()[0]
     def emit_state(self,c,state,event):
         self.save_state(c,state); c.execute('INSERT INTO events(data) VALUES (?)',(json.dumps(event),)); c.commit(); return event
-    def check_slide(self,slide_id,content_notes):
-        reviewer=load('slide_reviewer'); return reviewer.check(self,slide_id,content_notes)
-    def review(self,slide_id,revision,passed,notes,reviewer='vision_model'):
-        if reviewer not in ('vision_model','human') or type(passed)is not bool or not notes.strip():raise ValueError('Actual visual inspection and evidence required')
+    def check_slide(self,slide_id,content_notes,intent=None,constraints=None):
+        return reviewer().check(self,slide_id,content_notes,intent,constraints)
+    def current_manifest(self,c,state):
+        return renderer.manifest(Presentation(io.BytesIO(self.snapshot_unlocked(c,state['revision']))),state)
+    def review_event(self,c,state,kind,slide_id=None,**extra):
+        event=dict(type=kind,presentation_id=state['presentation_id'],revision=state['revision'],path=self.path.name,
+            manifest=self.current_manifest(c,state),deck_review=state.get('deck_review'),**extra)
+        if slide_id:event.update(slide_id=slide_id,review=state['reviews'].get(slide_id))
+        return self.emit_state(c,state,event)
+    def record_aesthetic_review(self,slide_id,check_revision,fingerprint,result):
+        """Host only: apply a model review if it still describes the current check of this slide."""
         with self.locked() as(c,state):
-            self.assert_current(state,revision); review=state['reviews'].get(slide_id)
+            if state is None:return dict(applied=False,reason='uninitialized')
+            review=state.get('reviews',{}).get(slide_id)
+            if not review or review.get('revision')!=check_revision or review.get('fingerprint')!=fingerprint or not review.get('automatic_passed'):
+                return dict(applied=False,reason='stale')
+            current=review.get('aesthetic_review') or {}
+            if current.get('review_id')==result.get('review_id'):return dict(applied=True,reason='duplicate')
+            if current.get('status') not in ('pending',None) and current.get('reviewed_at',0)>result.get('reviewed_at',0):
+                return dict(applied=False,reason='newer_review_present')
+            aesthetic=dict(result,revision=check_revision)
+            # A person's decision on this same check outranks a model answer that arrives later.
+            for key in ('human','dismissals'):
+                if current.get(key):aesthetic[key]=current[key]
+            attempts=state.setdefault('aesthetic_attempts',{}).setdefault(slide_id,{})
+            if aesthetic['status']=='failed':
+                escalated=[]
+                for issue in aesthetic.get('issues',[]):
+                    if issue['severity'] in ('critical','major') and issue['confidence'] in ('high','medium') and not issue.get('needs_verification'):
+                        key=issue.get('fingerprint') or issue['category']
+                        attempts[key]=attempts.get(key,0)+1;issue['attempt']=attempts[key]
+                        if attempts[key]>MAX_AUTO_REPAIR_ROUNDS:escalated.append(issue['id'])
+                aesthetic['escalated_issues']=escalated;aesthetic['auto_repair']=not escalated
+            elif aesthetic['status']=='passed':state['aesthetic_attempts'][slide_id]={}
+            review['aesthetic_review']=aesthetic
+            review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
+            self.review_event(c,state,'presentation_aesthetic_review',slide_id)
+            return dict(applied=True)
+    def request_review(self,slide_id):
+        """Agent: re-request a model review after a transient failure (not to fish for a pass)."""
+        with self.locked() as(c,state):
+            self.assert_current(state);review=state.get('reviews',{}).get(slide_id)
+            if not review or not review.get('automatic_passed') or not review.get('rendered'):raise ValueError('Run check-slide successfully before requesting a vision review')
+            aesthetic=review.get('aesthetic_review') or {}
+            if aesthetic.get('status') not in ('unavailable',):
+                raise ValueError(f'Vision review is {aesthetic.get("status","pending")}; only an unavailable review may be re-requested. Fix reported issues and run check-slide, or ask the user')
+            requests=aesthetic.get('requests',0)+1
+            if requests>3:raise ValueError('Vision review re-request limit reached for this check; request human visual review in the UI')
+            review['aesthetic_review']=dict(status='pending',reason='re_requested',requests=requests,previous_error=aesthetic.get('error'))
+            review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
+            return self.review_event(c,state,'presentation_review_requested',slide_id,requested_by='agent')
+    def host_request_review(self,slide_id,revision):
+        """User-initiated re-review from the UI; allowed in any state of a current, passed check."""
+        with self.locked() as(c,state):
+            self.assert_current(state,revision);review=state.get('reviews',{}).get(slide_id)
+            if not review or not review.get('automatic_passed') or not review.get('rendered'):raise ValueError('The slide needs a successful formal check first')
+            previous=review.get('aesthetic_review') or {}
+            review['aesthetic_review']=dict(status='pending',reason='user_requested',requests=previous.get('requests',0))
+            review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
+            return self.review_event(c,state,'presentation_review_requested',slide_id,requested_by='human')
+    def review_status(self,slide_id=None,wait=0):
+        """Agent: read (optionally wait for) aesthetic results and the next permitted action."""
+        if type(wait) not in (int,float) or not 0<=wait<=180:raise ValueError('wait must be 0 to 180 seconds')
+        deadline=time.time()+wait
+        while True:
+            with self.locked() as(c,state):
+                if state is None:raise ValueError('Presentation not initialized')
+                ids=[slide_id] if slide_id else [s['slide_id'] for s in self.current_manifest(c,state)['slides']]
+                rows={sid:state.get('reviews',{}).get(sid) for sid in ids}
+                deck=state.get('deck_review')
+            pending=[sid for sid,review in rows.items() if review and (review.get('aesthetic_review') or {}).get('status')=='pending' and review.get('automatic_passed')]
+            if not pending or time.time()>=deadline:break
+            time.sleep(1.5)
+        return dict(presentation_id=state['presentation_id'],revision=state['revision'],slides=[review_summary(sid,review) for sid,review in rows.items()],
+            deck_review=deck_summary(deck) if deck else None)
+    def request_deck_review(self,base_revision):
+        with self.locked() as(c,state):
+            self.assert_current(state,base_revision);slides=self.current_manifest(c,state)['slides']
+            if len(slides)<2:raise ValueError('Deck review compares at least two slides')
+            missing=[s['slide_id'] for s in slides if not (state['reviews'].get(s['slide_id']) or {}).get('automatic_passed')]
+            if missing:raise ValueError('Run check-slide successfully for every slide first: '+', '.join(missing))
+            previous=state.get('deck_review') or {}
+            if previous.get('status')=='pending' and previous.get('revision')==base_revision:return dict(previous,status='pending')
+            state['deck_review']=dict(status='pending',revision=base_revision,request_id=hashlib.sha256(f'{state["presentation_id"]}:{base_revision}:{time.time()}'.encode()).hexdigest()[:16],
+                requested_at=time.time(),slide_fingerprints={s['slide_id']:state['reviews'][s['slide_id']].get('fingerprint') for s in slides})
+            return self.review_event(c,state,'presentation_deck_review_requested')
+    def record_deck_review(self,request_id,result):
+        with self.locked() as(c,state):
+            deck=state.get('deck_review') or {}
+            if deck.get('request_id')!=request_id or deck.get('status')!='pending':return dict(applied=False,reason='stale')
+            state['deck_review']=dict(deck,**result)
+            self.review_event(c,state,'presentation_deck_review')
+            return dict(applied=True)
+    def record_human_decision(self,revision,decision,notes,decision_id,slide_id=None,issue_ids=()):
+        """Host only: an explicit, recorded human acceptance, rejection or issue dismissal."""
+        if decision not in ('accept','reject','dismiss_issues'):raise ValueError('Unknown human decision')
+        notes=notes if isinstance(notes,str) else ''
+        if decision=='reject' and not notes.strip():raise ValueError('判定不通过时请填写修改意见')
+        with self.locked() as(c,state):
+            self.assert_current(state,revision)
+            record=dict(decision=decision,notes=notes.strip()[:2000],decision_id=decision_id,decided_at=time.time(),reviewer='human',issue_ids=list(issue_ids))
+            if slide_id is None:
+                deck=state.get('deck_review')
+                if not deck or deck.get('status')=='pending' and decision=='dismiss_issues':raise ValueError('No deck review to decide on')
+                target=deck
+            else:
+                review=state.get('reviews',{}).get(slide_id)
+                if not review or not review.get('automatic_passed'):raise ValueError('Human visual acceptance requires a successful formal check')
+                formal=state.get('renders',{}).get(slide_id)
+                if not formal or formal.get('revision',-1)<review.get('revision',0):raise ValueError('Formal screenshot of the checked revision is missing')
+                target=review.setdefault('aesthetic_review',dict(status='pending'))
+            if decision=='dismiss_issues':
+                known={issue['id'] for issue in target.get('issues',[])}
+                if not issue_ids or set(issue_ids)-known:raise ValueError('Dismiss existing issue ids only')
+                for issue in target.get('issues',[]):
+                    if issue['id'] in issue_ids:issue.update(dismissed=True,dismissed_by=decision_id)
+                remaining=[issue for issue in target.get('issues',[]) if issue['severity'] in ('critical','major') and not issue.get('dismissed')]
+                target.setdefault('dismissals',[]).append(record)
+                if not remaining and target.get('status') in ('failed','uncertain'):target['human']=dict(record,decision='accept',via='dismissal')
+            else:
+                target['human']=record
+            if slide_id is not None:
+                review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
+                review['visual_evidence']=dict(reviewer='human',notes=record['notes'])
+            return self.review_event(c,state,'presentation_review' if slide_id else 'presentation_deck_review',slide_id,decision=record)
+    def review(self,slide_id,revision,passed,notes,reviewer_kind='vision_model'):
+        """Legacy entry point. Human: recorded decision. Agent: self-inspection notes only, never acceptance."""
+        if type(passed)is not bool or not isinstance(notes,str) or not notes.strip():raise ValueError('Actual visual inspection and evidence required')
+        if reviewer_kind=='human':
+            return self.record_human_decision(revision,'accept' if passed else 'reject',notes,'legacy-'+hashlib.sha256(f'{slide_id}:{revision}:{time.time()}'.encode()).hexdigest()[:12],slide_id)
+        if reviewer_kind!='vision_model':raise ValueError('Unknown reviewer')
+        with self.locked() as(c,state):
+            self.assert_current(state,revision);review=state['reviews'].get(slide_id)
             if not review or not review['automatic_passed'] or review['revision']>revision:raise ValueError('Exact-revision successful formal check required')
-            formal=state.get('renders',{}).get(slide_id)
-            if not formal or not (self.render_directory(formal['revision'])/formal['image']).is_file():raise ValueError('Formal screenshot is missing')
-            review.update(visual_review='passed' if passed else 'failed',status='passed' if passed else 'blocked',visual_evidence=dict(reviewer=reviewer,notes=notes))
-            return self.emit_state(c,state,dict(type='presentation_review',presentation_id=state['presentation_id'],revision=revision,slide_id=slide_id,manifest=renderer.manifest(Presentation(io.BytesIO(self.snapshot_unlocked(c,revision))),state),path=self.path.name))
+            review['agent_inspection']=dict(passed=passed,notes=notes.strip()[:2000],recorded_at=time.time(),
+                note='Agent self-inspection is advisory; acceptance comes from the host vision review or a human decision')
+            return self.review_event(c,state,'presentation_review',slide_id)
     def finalize(self,base_revision):
         with self.locked() as(c,state):
             self.assert_current(state,base_revision); prs=Presentation(io.BytesIO(self.snapshot_unlocked(c,base_revision)))
             if not len(prs.slides):raise ValueError('Empty presentation')
+            problems=[];accepted={}
             for slide in prs.slides:
-                review=state['reviews'].get(renderer.slide_identity(slide),{})
-                if review.get('status')!='passed' or not review.get('automatic_passed') or review.get('visual_review')!='passed' or not review.get('content_notes'):raise ValueError('Every slide requires actual content and visual acceptance')
+                sid=renderer.slide_identity(slide);review=state['reviews'].get(sid,{})
+                if not review.get('automatic_passed') or not review.get('content_notes'):problems.append(f'{sid}: automatic and content checks required');continue
+                aesthetic=review.get('aesthetic_review') or {}
+                verdict=reviewer().effective_aesthetic(review)
+                if verdict!='passed':
+                    problems.append(f'{sid}: aesthetic review is {verdict}'+(' (human acceptance in the UI required)' if verdict in ('uncertain','unavailable') else ''));continue
+                accepted[sid]=dict(review_id=aesthetic.get('review_id'),decision_id=(aesthetic.get('human') or {}).get('decision_id'),fingerprint=review.get('fingerprint'))
+            if len(prs.slides)>=3:
+                deck=state.get('deck_review') or {}
+                fingerprints={sid:state['reviews'].get(sid,{}).get('fingerprint') for sid in accepted}
+                verdict='passed' if (deck.get('human') or {}).get('decision')=='accept' else deck.get('status','missing')
+                if verdict!='passed':problems.append(f'deck review is {verdict}; run request-deck-review after all slides pass')
+                elif deck.get('slide_fingerprints')!=fingerprints:problems.append('deck review is stale; slides changed after it, request a new deck review')
+            if problems:raise ValueError('Finalize blocked: '+'; '.join(problems))
             validator.validate_package(self.snapshot_unlocked(c,base_revision)); state['finalized']=True
-            return self.emit_state(c,state,dict(type='presentation_finalized',presentation_id=state['presentation_id'],revision=base_revision,finalized=True,path=self.path.name))
+            return self.emit_state(c,state,dict(type='presentation_finalized',presentation_id=state['presentation_id'],revision=base_revision,finalized=True,
+                path=self.path.name,acceptance=accepted,deck_review_id=(state.get('deck_review') or {}).get('review_id')))
+
+
+MAX_AUTO_REPAIR_ROUNDS=2
+_REVIEWER=None
+
+
+def reviewer():
+    global _REVIEWER
+    if _REVIEWER is None:_REVIEWER=load('slide_reviewer')
+    return _REVIEWER
+
+
+def next_action(review):
+    if not review:return 'Run check-slide for this slide.'
+    if not review.get('automatic_passed'):return 'Fix the automatic check errors with atomic operations, then run check-slide again.'
+    aesthetic=review.get('aesthetic_review') or {}
+    status=reviewer().effective_aesthetic(review)
+    if status=='pending':return 'Vision review is running on the host; wait with review-status --wait or continue with the next slide.'
+    if status=='passed':return 'Accepted. Minor suggestions are optional polish; do not loop on them.'
+    if status=='unavailable':
+        return 'No usable vision review ('+str((aesthetic.get('error') or {}).get('code','no_vision_model'))+'). Never claim visual acceptance; re-request once if transient, otherwise ask the user to inspect the slide in the preview.'
+    if status=='uncertain':return 'The model could not confirm the page. Ask the user to review it in the preview; do not mark it accepted yourself.'
+    if not aesthetic.get('auto_repair',True):
+        return 'The same issue persisted after '+str(MAX_AUTO_REPAIR_ROUNDS)+' repair rounds: stop auto-fixing, keep the issue and ask the user how to proceed.'
+    return 'Repair the confirmed critical/major issues locally with element.adjust/set_style/diagram.update etc., then run check-slide again.'
+
+
+def review_summary(slide_id,review):
+    if not review:return dict(slide_id=slide_id,status='writing',next_action=next_action(None))
+    aesthetic=review.get('aesthetic_review') or {}
+    return dict(slide_id=slide_id,revision=review.get('revision'),status=review.get('status'),automatic_passed=review.get('automatic_passed'),
+        technical_review=review.get('technical_review'),visual_integrity=review.get('visual_integrity'),
+        aesthetic_review={key:aesthetic.get(key) for key in ('status','summary','issues','model_id','prompt_version','error','auto_repair','escalated_issues','human','review_id','reason') if key in aesthetic},
+        effective_aesthetic=reviewer().effective_aesthetic(review),next_action=next_action(review))
+
+
+def deck_summary(deck):
+    return {key:deck.get(key) for key in ('status','revision','summary','issues','rejected_issues','model_id','prompt_version','error','human','review_id') if key in deck}
 
 
 def catalog():
-    return dict(profiles=profiles().summary(),layouts=layouts().summary(),components=component_renderer.catalog(registry()))
+    return dict(profiles=profiles().summary(),layouts=layouts().summary(),components=component_renderer.catalog(registry()),
+        style_presets=native_style.catalog(),diagrams=diagram_presets.catalog())
 
 
 def plan_request(store,request):
@@ -819,7 +1057,7 @@ def plan_request(store,request):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','finalize','profiles','layouts','components','catalog','plan']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','plan']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
     if args.command in ('profiles','layouts','components','catalog'):
         result=catalog() if args.command=='catalog' else {args.command:catalog()[args.command]}
         print(json.dumps(result,ensure_ascii=False)); return
@@ -830,8 +1068,14 @@ def main():
     elif args.command=='apply-one':result=store.apply_one(json.loads(Path(args.request).read_text()),Path(args.pptx).parent)
     elif args.command=='status':result=store.status()
     elif args.command=='restore':result=store.restore(args.revision,args.base_revision,args.operation_id)
-    elif args.command=='check-slide':result=store.check_slide(args.slide_id,args.notes)
-    elif args.command=='review-slide':result=store.review(args.slide_id,args.revision,args.passed,args.notes,args.reviewer)
+    elif args.command=='check-slide':result=store.check_slide(args.slide_id,args.notes,args.intent,args.constraint)
+    elif args.command=='review-slide':
+        # Human decisions are recorded by the platform UI, never by a script in the sandbox.
+        if args.reviewer=='human':raise ValueError('Human visual decisions are recorded in the platform preview, not from the sandbox')
+        result=store.review(args.slide_id,args.revision,args.passed,args.notes,'vision_model')
+    elif args.command=='review-status':result=store.review_status(args.slide_id,args.wait)
+    elif args.command=='request-review':result=store.request_review(args.slide_id)
+    elif args.command=='request-deck-review':result=store.request_deck_review(args.base_revision)
     else:result=store.finalize(args.base_revision)
     print(json.dumps(result,ensure_ascii=False))
 

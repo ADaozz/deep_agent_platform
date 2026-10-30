@@ -1295,6 +1295,182 @@
     "zh": "建议",
     "en": "Advisories"
   },
+  "pptx.needs_attention": {
+    "zh": "视觉审查发现问题 · 待修复或人工确认",
+    "en": "Visual review found issues · fix or confirm"
+  },
+  "pptx.technical": {
+    "zh": "确定性检查",
+    "en": "Deterministic checks"
+  },
+  "pptx.integrity": {
+    "zh": "渲染完整性",
+    "en": "Render integrity"
+  },
+  "pptx.aesthetic": {
+    "zh": "模型视觉审查",
+    "en": "Model visual review"
+  },
+  "pptx.aesthetic.pending": {
+    "zh": "审查中",
+    "en": "Reviewing"
+  },
+  "pptx.aesthetic.passed": {
+    "zh": "通过",
+    "en": "Passed"
+  },
+  "pptx.aesthetic.failed": {
+    "zh": "未通过",
+    "en": "Failed"
+  },
+  "pptx.aesthetic.uncertain": {
+    "zh": "无法确认 · 需人工判断",
+    "en": "Uncertain · human judgement needed"
+  },
+  "pptx.aesthetic.unavailable": {
+    "zh": "不可用 · 未进行模型审查",
+    "en": "Unavailable · no model review"
+  },
+  "pptx.check.passed": {
+    "zh": "通过",
+    "en": "Passed"
+  },
+  "pptx.check.failed": {
+    "zh": "未通过",
+    "en": "Failed"
+  },
+  "pptx.check.unavailable": {
+    "zh": "未渲染",
+    "en": "Not rendered"
+  },
+  "pptx.severity.critical": {
+    "zh": "严重",
+    "en": "Critical"
+  },
+  "pptx.severity.major": {
+    "zh": "重大",
+    "en": "Major"
+  },
+  "pptx.severity.minor": {
+    "zh": "优化建议",
+    "en": "Minor"
+  },
+  "pptx.reason": {
+    "zh": "依据",
+    "en": "Reason"
+  },
+  "pptx.suggestion": {
+    "zh": "建议修改",
+    "en": "Suggestion"
+  },
+  "pptx.confidence": {
+    "zh": "置信度 {value}",
+    "en": "Confidence {value}"
+  },
+  "pptx.elementsRef": {
+    "zh": "元素 {ids}",
+    "en": "Elements {ids}"
+  },
+  "pptx.unmapped": {
+    "zh": "模型给出的元素 ID 不存在：{ids}",
+    "en": "Model referenced unknown element IDs: {ids}"
+  },
+  "pptx.needsVerification": {
+    "zh": "待验证",
+    "en": "Needs verification"
+  },
+  "pptx.dismissed": {
+    "zh": "已人工驳回",
+    "en": "Dismissed by reviewer"
+  },
+  "pptx.dismiss": {
+    "zh": "驳回此问题",
+    "en": "Dismiss issue"
+  },
+  "pptx.rerun": {
+    "zh": "重新审查",
+    "en": "Review again"
+  },
+  "pptx.humanAccept": {
+    "zh": "人工确认通过",
+    "en": "Accept as reviewer"
+  },
+  "pptx.humanReject": {
+    "zh": "人工判定不通过",
+    "en": "Reject as reviewer"
+  },
+  "pptx.humanDecision": {
+    "zh": "人工决定：{decision}",
+    "en": "Human decision: {decision}"
+  },
+  "pptx.decision.accept": {
+    "zh": "确认通过",
+    "en": "accepted"
+  },
+  "pptx.decision.reject": {
+    "zh": "不通过",
+    "en": "rejected"
+  },
+  "pptx.decisionNotesOptional": {
+    "zh": "备注（可选）",
+    "en": "Notes (optional)"
+  },
+  "pptx.rejectNotes": {
+    "zh": "请填写修改意见（必填），Agent 会据此修改",
+    "en": "Describe what should change (required); the Agent will act on it"
+  },
+  "pptx.model": {
+    "zh": "模型 {model} · 提示词 {prompt}",
+    "en": "Model {model} · prompt {prompt}"
+  },
+  "pptx.reviewError": {
+    "zh": "原因：{code}",
+    "en": "Reason: {code}"
+  },
+  "pptx.autoRepairStopped": {
+    "zh": "同一问题已自动修复两轮仍存在，已停止自动修复，等待你的判断。",
+    "en": "The same issue survived two repair rounds; auto-repair stopped and awaits your decision."
+  },
+  "pptx.noIssues": {
+    "zh": "模型未发现问题",
+    "en": "No issues reported by the model"
+  },
+  "pptx.constraints": {
+    "zh": "用户版式约束：{items}",
+    "en": "User layout constraints: {items}"
+  },
+  "pptx.deckReview": {
+    "zh": "整套视觉一致性审查",
+    "en": "Deck visual consistency review"
+  },
+  "pptx.requestDeck": {
+    "zh": "审查整套一致性",
+    "en": "Review deck consistency"
+  },
+  "pptx.deckNotRequested": {
+    "zh": "尚未进行整套审查",
+    "en": "Deck review not requested yet"
+  },
+  "pptx.pages": {
+    "zh": "第 {pages} 页",
+    "en": "Slides {pages}"
+  },
+  "pptx.rejectedIssues": {
+    "zh": "{count} 条笼统或越界的意见已被拒收",
+    "en": "{count} vague or out-of-range findings were rejected"
+  },
+  "pptx.verified": {
+    "zh": "定稿已核验",
+    "en": "Finalization verified"
+  },
+  "pptx.unverified": {
+    "zh": "定稿未通过宿主核验",
+    "en": "Finalization failed host verification"
+  },
+  "pptx.agentNote": {
+    "zh": "Agent 自查（不作为验收依据）：{notes}",
+    "en": "Agent self-check (not acceptance): {notes}"
+  },
   "Features": {
     "zh": "扩展功能",
     "en": "Features"

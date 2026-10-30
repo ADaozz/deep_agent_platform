@@ -200,12 +200,50 @@ class Runtime:
             if self.artifact_services:
                 return self.artifact_services
             record=find(self.id)
-            root=resolve(self.id).files_root
+            context=resolve(self.id)
+            root=context.files_root
             root.mkdir(parents=True,exist_ok=True)
-            self.artifact_services=format_plugins.build_services(root,self.event,temporary_root=resolve(self.id).workspace_root / 'tmp' / 'office-renders')
+            # session_root is outside every sandbox mount: review ledgers and host renders live there.
+            host=dict(private_root=context.session_root / 'artifact-review', vision=self.vision_model)
+            self.artifact_services=format_plugins.build_services(root,self.event,temporary_root=context.workspace_root / 'tmp' / 'office-renders',host=host)
             for feature,service in self.artifact_services.items():
                 service.bind_state(record)
             return self.artifact_services
+
+    def vision_model(self):
+        """(model_id, chat model) for host-side visual review, or (None, reason).
+
+        The session's current model is used when it declares image input;
+        otherwise an explicitly configured ``llm.vision_model`` (or
+        PLATFORM_VISION_MODEL). Nothing else is guessed.
+        """
+        import os
+        from platform_app.agent_core.config import Settings
+        from platform_app.agent_core.llm import build_chat_model
+        record = find(self.id)
+        snapshot = record.get('model_snapshot')
+        if not snapshot:
+            return None, 'no model is configured for this session'
+        try:
+            config = m.unseal(snapshot['encrypted'])
+            settings = Settings.from_mapping({'llm': config})
+            current = settings.get_profile(record['model_id'])
+        except (KeyError, ValueError):
+            return None, 'session model configuration is unavailable'
+        if current.supports_input('image'):
+            profile = current
+        else:
+            explicit = config.get('vision_model') or os.environ.get('PLATFORM_VISION_MODEL')
+            if not explicit:
+                return None, f'model {current.id} has no image input and no vision model is configured'
+            try:
+                profile = settings.get_profile(explicit)
+            except KeyError:
+                return None, 'configured vision model is not defined'
+            if not profile.supports_input('image'):
+                return None, f'configured vision model {profile.id} does not declare image input'
+        model = build_chat_model(profile, streaming=False, trust_env=True, timeout=max(90.0, settings.request_timeout))
+        return profile.id, model
 
     def core_event(self,event):
         data=asdict(event)

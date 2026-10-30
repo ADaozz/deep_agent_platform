@@ -47,24 +47,32 @@ def layout_issues(slide, width_points=960, height_points=540):
     issues=[]; elements=slide['elements']
     for element in elements:
         g=element['geometry']; x,y,w,h=(g[k] for k in ('x','y','w','h'))
-        if min(x,y)<-.001 or min(w,h)<=0 or x+w>1.001 or y+h>1.001:
+        line=element['type']=='connector' or 'connector' in element
+        if min(x,y)<-.001 or (max(w,h)<=0 if line else min(w,h)<=0) or x+w>1.001 or y+h>1.001:
             if element.get('layer') not in ('background','decoration'):issues.append({'type':'out_of_bounds','severity':'error','element_id':element['id']})
-        if element['type']=='text' and element.get('text'):
-            style=element['style']; size=style['font_size']; font_name=style['font_family']
+        blocks=element.get('text_blocks') if element['type']=='shape' else None
+        if (element['type']=='text' and element.get('text')) or blocks:
+            style=element['style']; font_name=style['font_family']
+            measured=blocks or [dict(text=element['text'],font_size=style['font_size'],line_height=style.get('line_height',1.22))]
             try:
                 from PIL import ImageFont
                 result=subprocess.run(['fc-match','-f','%{file}\n%{family}',font_name],capture_output=True,text=True,timeout=5)
-                lines=result.stdout.splitlines(); font=ImageFont.truetype(lines[0],max(1,round(size*2)))
+                lines=result.stdout.splitlines()
                 if font_name.casefold() not in [f.strip().casefold() for f in lines[1].split(',')]:issues.append({'type':'missing_font','severity':'error','element_id':element['id'],'font':font_name})
-                usable=max(1,w*width_points*2-12)
-                count=sum(max(1,math.ceil(font.getlength(line)/usable)) for line in element['text'].split('\n'))
-                line_height=float(style.get('line_height',1.22) or 1.22)
-                if count*size*line_height>h*height_points-4:issues.append({'type':'text_overflow','severity':'error','element_id':element['id']})
+                # Shape text sits inside 0.08 in side and 0.04 in vertical insets.
+                inset_x,inset_y=(12,6) if blocks else (0,0)
+                usable=max(1,w*width_points*2-12-inset_x*4)
+                needed=0
+                for block in measured:
+                    size=block['font_size'];font=ImageFont.truetype(lines[0],max(1,round(size*2)))
+                    count=sum(max(1,math.ceil(font.getlength(part)/usable)) for part in block['text'].split('\n'))
+                    needed+=count*size*float(block.get('line_height',1.22) or 1.22)
+                if needed>h*height_points-4-inset_y*2:issues.append({'type':'text_overflow','severity':'error','element_id':element['id']})
             except (OSError,IndexError,ValueError):issues.append({'type':'font_measurement_unavailable','severity':'error','element_id':element['id']})
     for i,a in enumerate(elements):
-        if a.get('layer') in ('background','decoration') or a['type']=='complex':continue
+        if a.get('layer') in ('background','decoration') or a['type'] in ('complex','connector'):continue
         for b in elements[i+1:]:
-            if b.get('layer') in ('background','decoration') or b['type']=='complex':continue
+            if b.get('layer') in ('background','decoration') or b['type'] in ('complex','connector'):continue
             if a.get('overlap_group') and a.get('overlap_group')==b.get('overlap_group'):continue
             x,y,w,h=(a['geometry'][k] for k in ('x','y','w','h')); X,Y,W,H=(b['geometry'][k] for k in ('x','y','w','h'))
             area=max(0,min(x+w,X+W)-max(x,X))*max(0,min(y+h,Y+H)-max(y,Y))
