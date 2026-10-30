@@ -63,8 +63,11 @@ python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.ppt
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.pptx --request ../tmp/fill-page-1.json
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id page-1 --notes "Checked title and values" --intent "开篇"
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.pptx --request ../tmp/clone-page-2.json
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.pptx --request ../tmp/fill-page-2.json
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id page-2 --notes "Checked chart title and values" --intent "数据"
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.pptx --request ../tmp/discard.json
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id page-1 --notes "Rechecked after prototypes were discarded"
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id page-2 --notes "Rechecked after prototypes were discarded"
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py request-deck-review deck.pptx --base-revision 12
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py finalize deck.pptx --base-revision 12
 ```
