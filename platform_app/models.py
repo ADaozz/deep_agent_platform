@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 import yaml
 from cryptography.fernet import Fernet
-from agent.config import Settings
+from platform_app.agent_core.config import Settings
 from . import domain as d
 
 MASK = '__UNCHANGED_SECRET__'

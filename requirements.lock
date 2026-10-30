@@ -16,7 +16,6 @@ charset-normalizer==3.5.2
 click==8.5.0
 cryptography==50.0.2
 cyclopts==5.3.2
-deep-agent-cli @ git+https://github.com/ADaozz/deep_agent_cli.git@7faddcb00220bbe169a781d14efab42cbd5be720
 deepagents==0.7.32
 distro==1.9.0
 dnspython==2.9.0
@@ -70,7 +69,6 @@ ormsgpack==1.13.0
 packaging==26.3
 pathable==0.6.0
 platformdirs==4.14.0
-prompt-toolkit==3.0.53
 py-key-value-aio==0.4.6
 pyasn1==0.6.5
 pyasn1-modules==0.4.2
@@ -108,7 +106,6 @@ uuid-utils==0.19.0
 uvicorn==0.54.0
 watchfiles==1.3.0
 wcmatch==11.2
-wcwidth==0.9.4
 websockets==17.3
 xxhash==4.0.2
 zstandard==0.25.0

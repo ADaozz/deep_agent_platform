@@ -88,7 +88,7 @@ def init():
 
 
 def native_skills():
-    from agent.config import default_skills_dir
+    from platform_app.agent_core.config import default_skills_dir
     root = default_skills_dir()
     result = []
     if root.is_dir():
@@ -97,7 +97,7 @@ def native_skills():
                 text = path.read_text(encoding='utf-8')
                 front = yaml.safe_load(text.split('---', 2)[1]) if text.startswith('---') else {}
                 front = front if isinstance(front, dict) else {}
-                result.append({'id': path.parent.name, 'name': str(front.get('name') or path.parent.name), 'description': str(front.get('description') or ''), 'source': 'deep_agent_cli'})
+                result.append({'id': path.parent.name, 'name': str(front.get('name') or path.parent.name), 'description': str(front.get('description') or ''), 'source': 'platform'})
             except (OSError, ValueError, yaml.YAMLError):
                 continue
     return result
@@ -131,7 +131,7 @@ def validate_config(value):
     mcp = value.get('mcp', {'enabled': False, 'servers': {}})
     if not isinstance(mcp, dict) or type(mcp.get('enabled', False)) is not bool or not isinstance(mcp.get('servers', {}), dict):
         raise ValueError('MCP 配置需要 enabled 和 servers')
-    from agent.mcp.config import parse_server
+    from platform_app.agent_core.mcp.config import parse_server
     for name, config in mcp.get('servers', {}).items():
         parse_server(name, config)
     seen = set()

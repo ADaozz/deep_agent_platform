@@ -263,9 +263,9 @@
     "zh": "内核工具",
     "en": "Core tools"
   },
-  "使用 deep_agent_cli 的原生工具，具有副作用的操作交由内核请求审批。": {
-    "zh": "使用 deep_agent_cli 的原生工具，具有副作用的操作交由内核请求审批。",
-    "en": "Use native deep_agent_cli tools. The core requests approval for actions that make changes."
+  "使用平台内置工具，具有副作用的操作交由内核请求审批。": {
+    "zh": "使用平台内置工具，具有副作用的操作交由内核请求审批。",
+    "en": "Use built-in platform tools. The core requests approval for actions that make changes."
   },
   "编辑已注册工具的描述与 JSON Schema。参数名称和必填项需保留。": {
     "zh": "编辑已注册工具的描述与 JSON Schema。参数名称和必填项需保留。",
@@ -359,9 +359,9 @@
     "zh": "添加模型",
     "en": "Add a model"
   },
-  "兼容 deep_agent_cli 配置，支持 Chat Completions 和 Responses。": {
-    "zh": "兼容 deep_agent_cli 配置，支持 Chat Completions 和 Responses。",
-    "en": "Compatible with deep_agent_cli settings. Supports Chat Completions and Responses."
+  "支持 Chat Completions 和 Responses 模型配置。": {
+    "zh": "支持 Chat Completions 和 Responses 模型配置。",
+    "en": "Supports Chat Completions and Responses model configuration."
   },
   "来源名称": {
     "zh": "来源名称",
@@ -835,9 +835,9 @@
     "zh": "记录不存在",
     "en": "Record not found."
   },
-  "模型配置无效：请检查来源、默认模型、API 协议和参数；格式与 deep_agent_cli 的 llm 配置一致。": {
-    "zh": "模型配置无效：请检查来源、默认模型、API 协议和参数；格式与 deep_agent_cli 的 llm 配置一致。",
-    "en": "Invalid model configuration. Check the provider, default model, API protocol and parameters against the deep_agent_cli llm format."
+  "模型配置无效：请检查来源、默认模型、API 协议和 llm 参数。": {
+    "zh": "模型配置无效：请检查来源、默认模型、API 协议和 llm 参数。",
+    "en": "Invalid model configuration. Check the provider, default model, API protocol and llm parameters."
   },
   "模型、思考强度或密钥环境变量无效，请检查模型配置。": {
     "zh": "模型、思考强度或密钥环境变量无效，请检查模型配置。",
@@ -1076,8 +1076,8 @@
     "en": "Enable skill {name}"
   },
   "skills.installed": {
-    "zh": "已安装 · deep_agent_cli",
-    "en": "Installed · deep_agent_cli"
+    "zh": "已安装 · 平台",
+    "en": "Installed · Platform"
   },
   "artifacts.title": {
     "zh": "输出文件",

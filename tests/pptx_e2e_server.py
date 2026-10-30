@@ -12,7 +12,7 @@ from platform_app.main import app
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage,HumanMessage
 from langchain_core.outputs import ChatResult,ChatGeneration
-import agent.llm,agent.runner
+import platform_app.agent_core.llm,platform_app.agent_core.runner
 if not m.public()['profiles']:
  m.save({'default':'test/model','models':{'test':{'base_url':'https://example.com/v1','api_key':'scripted-local-test','api':'chat_completions','models':{'model':{}}}}},0)
 engine=format_plugins.load_plugin('pptx').engine
@@ -51,8 +51,8 @@ class Model(BaseChatModel):
                     else:return ChatResult(generations=[ChatGeneration(message=AIMessage(content='12 页可编辑汇报已完成自动和内容检查；视觉审查仍待实际查看截图。'))])
             if operation:name,args='pptx_apply_one',dict(presentation_id='project-report',operation_id=opid,base_revision=rev,**operation)
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content='',tool_calls=[dict(name=name,args=args,id=str(time.time_ns()),type='tool_call')]))])
-agent.llm.build_chat_model=lambda *a,**k:Model()
-agent.runner.build_chat_model=lambda *a,**k:Model()
+platform_app.agent_core.llm.build_chat_model=lambda *a,**k:Model()
+platform_app.agent_core.runner.build_chat_model=lambda *a,**k:Model()
 if __name__=='__main__':
     import uvicorn
     print('PPTX_E2E_DATA='+str(d.DATA),flush=True);uvicorn.run(app,host='127.0.0.1',port=int(os.environ.get('PPTX_E2E_PORT','8084')),log_level='warning')

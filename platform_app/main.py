@@ -50,7 +50,7 @@ def index():
 
 @app.get('/api/status')
 def status():
-    return {'model_configured': any(p['configured'] for p in m.public()['profiles']), 'mode': 'single-user', 'core': 'deep-agent-cli@7faddcb'}
+    return {'model_configured': any(p['configured'] for p in m.public()['profiles']), 'mode': 'single-user', 'core': 'platform_app.agent_core'}
 
 
 class ModelConfig(BaseModel):
@@ -70,7 +70,7 @@ def update_models(value: ModelConfig):
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     except Exception:
-        raise HTTPException(422, '模型配置无效：请检查来源、默认模型、API 协议和参数；格式与 deep_agent_cli 的 llm 配置一致。')
+        raise HTTPException(422, '模型配置无效：请检查来源、默认模型、API 协议和 llm 参数。')
 
 
 @app.get('/api/settings')

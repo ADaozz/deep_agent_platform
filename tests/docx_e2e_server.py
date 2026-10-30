@@ -15,8 +15,8 @@ from platform_app.documents import DocumentStore
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
-import agent.llm
-import agent.runner
+import platform_app.agent_core.llm
+import platform_app.agent_core.runner
 
 m.save({'default':'test/model','models':{'test':{'base_url':'https://example.com/v1','api_key':'scripted-local-test','api':'chat_completions','models':{'model':{}}}}},0)
 
@@ -60,8 +60,8 @@ class FormattingModel(BaseChatModel):
                 name,args='docx_apply_one',dict(document_id='report',operation_id=operation_id,base_revision=revision,operation=operation)
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content='',tool_calls=[dict(name=name,args=args,id=str(time.time_ns()),type='tool_call')]))])
 
-agent.llm.build_chat_model=lambda *a,**k:FormattingModel()
-agent.runner.build_chat_model=lambda *a,**k:FormattingModel()
+platform_app.agent_core.llm.build_chat_model=lambda *a,**k:FormattingModel()
+platform_app.agent_core.runner.build_chat_model=lambda *a,**k:FormattingModel()
 if __name__=='__main__':
     import uvicorn
     print('DOCX_E2E_DATA='+str(d.DATA),flush=True)

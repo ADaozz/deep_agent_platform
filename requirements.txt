@@ -3,4 +3,14 @@ uvicorn>=0.30,<1
 python-multipart>=0.0.20,<1
 jsonschema>=4.23,<5
 openpyxl>=3.1,<4
-deep-agent-cli @ git+https://github.com/ADaozz/deep_agent_cli.git@7faddcb00220bbe169a781d14efab42cbd5be720
+ripgrep-bin>=15.2.0,<16
+deepagents>=0.7.17,<0.8.0
+langchain[mcp]>=1.4.2,<2.0
+langchain-core>=1.0,<2.0
+langchain-openai>=1.6.2,<1.7.0
+langgraph>=1.0,<2.0
+langgraph-checkpoint-sqlite>=3.1.1,<4
+httpx[socks]>=0.27,<1
+cryptography>=43,<51
+py-key-value-aio[filetree]>=0.4.4,<0.5
+pyyaml>=6.0,<7.0

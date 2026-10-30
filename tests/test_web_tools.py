@@ -3,7 +3,7 @@ import json
 
 import httpx
 import pytest
-from agent.config import Settings
+from platform_app.agent_core.config import Settings
 from pydantic import ValidationError
 
 from platform_app import web_tools as web

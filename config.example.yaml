@@ -1,4 +1,4 @@
-# Native deep_agent_cli grouped model format.
+# Platform grouped model configuration.
 # Copy to .platform/config.yaml or set PLATFORM_CONFIG before the first start.
 # Once saved in the UI, the encrypted database configuration takes precedence.
 llm:
@@ -9,7 +9,7 @@ llm:
       base_url: https://api.deepseek.com/v1
       api_key: ${DEEPSEEK_API_KEY}
       api: chat_completions
-      # As in the CLI, the first supported reasoning effort is the default.
+      # The first supported reasoning effort is the default.
       reasoning_efforts: [high, low, max]
       models:
         deepseek-flash:

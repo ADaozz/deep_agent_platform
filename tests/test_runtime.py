@@ -111,8 +111,8 @@ def client(tmp_path, monkeypatch):
         model = CoreModel(target=str(files_root() / 'hello.txt'))
         object.__setattr__(model, '_deep_agent_model_id', profile.id)
         return model
-    monkeypatch.setattr('agent.llm.build_chat_model', build_model)
-    monkeypatch.setattr('agent.runner.build_chat_model', build_model)
+    monkeypatch.setattr('platform_app.agent_core.llm.build_chat_model', build_model)
+    monkeypatch.setattr('platform_app.agent_core.runner.build_chat_model', build_model)
     monkeypatch.setattr(rt.POOL, 'submit', lambda fn, *args: fn(*args))
     yield TestClient(app)
     for runtime in rt.RUNTIMES.values():
@@ -394,8 +394,8 @@ def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch):
         model = DelegationModel(target=str(target))
         object.__setattr__(model, '_deep_agent_model_id', profile.id)
         return model
-    monkeypatch.setattr('agent.llm.build_chat_model', build_model)
-    monkeypatch.setattr('agent.runner.build_chat_model', build_model)
+    monkeypatch.setattr('platform_app.agent_core.llm.build_chat_model', build_model)
+    monkeypatch.setattr('platform_app.agent_core.runner.build_chat_model', build_model)
     assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'Delegate an independent file task.'}).status_code == 202
     record = client.get('/api/agent/sessions/' + session_id).json()
     assert record['status'] == 'completed', record
@@ -406,12 +406,12 @@ def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch):
 
 
 def test_global_config_freezes_session_snapshot(client, monkeypatch, tmp_path):
-    import agent.config
+    import platform_app.agent_core.config
     cli = tmp_path / 'cli-skills' / 'example'
     cli.mkdir(parents=True)
     (cli / 'SKILL.md').write_text('---\nname: cli-example\ndescription: CLI skill example\n---\nInstructions')
-    monkeypatch.setattr(agent.config, 'default_skills_dir', lambda: cli.parent)
-    monkeypatch.setattr('agent.sandbox.default_skills_dir', lambda: cli.parent)
+    monkeypatch.setattr(platform_app.agent_core.config, 'default_skills_dir', lambda: cli.parent)
+    monkeypatch.setattr('platform_app.agent_core.sandbox.default_skills_dir', lambda: cli.parent)
     config = client.get('/api/settings').json()
     assert {t['name'] for t in config['tools']} == set(d.TOOL_SCHEMAS)
     assert any(s['name'] == 'cli-example' and s['enabled'] for s in config['native_skills'])
@@ -457,15 +457,15 @@ def test_deepseek_tools_replace_tavily_and_follow_permissions(client, monkeypatc
 
 
 def test_installed_skill_bindings_reach_native_discovery_and_freeze_resources(client, monkeypatch, tmp_path):
-    import agent.config
+    import platform_app.agent_core.config
     root = tmp_path / 'installed-skills'
     for name in ('docx-author', 'other-skill'):
         path = root / name
         (path / 'scripts').mkdir(parents=True)
         (path / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: {name} description\n---\nOriginal instructions')
         (path / 'scripts' / 'helper.py').write_text('print("original helper")')
-    monkeypatch.setattr(agent.config, 'default_skills_dir', lambda: root)
-    monkeypatch.setattr('agent.sandbox.default_skills_dir', lambda: root)
+    monkeypatch.setattr(platform_app.agent_core.config, 'default_skills_dir', lambda: root)
+    monkeypatch.setattr('platform_app.agent_core.sandbox.default_skills_dir', lambda: root)
     writing = client.get('/api/settings').json()
     assert {s['id'] for s in writing['native_skills']} == {'docx-author', 'other-skill'}
     assert all(s['enabled'] for s in writing['native_skills'])
@@ -537,8 +537,8 @@ def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monk
         doc = fitz.open(); page = doc.new_page(); page.insert_text((72,72), 'Paragraph body')
         doc.save(output / 'preview.pdf'); page.get_pixmap().save(output / 'page-001.png'); doc.close()
     monkeypatch.setattr(engine.o, 'run_render', render)
-    monkeypatch.setattr('agent.llm.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
-    monkeypatch.setattr('agent.runner.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
+    monkeypatch.setattr('platform_app.agent_core.llm.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
+    monkeypatch.setattr('platform_app.agent_core.runner.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
     session_id = new_session(client)
     response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'Write a report incrementally'})
     assert response.status_code == 202, response.text

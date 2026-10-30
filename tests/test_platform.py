@@ -87,8 +87,8 @@ def test_model_config_redaction_revision_and_persistence(client):
 
 @pytest.mark.parametrize('api', ['responses','chat_completions'])
 def test_core_model_protocol_and_effort(client, api):
-    from agent.llm import build_chat_model
-    from agent.config import Settings
+    from platform_app.agent_core.llm import build_chat_model
+    from platform_app.agent_core.config import Settings
     config = model_configuration(api)
     parsed = Settings.from_mapping({'llm':config})
     model = build_chat_model(parsed.active_profile, reasoning_effort='high', streaming=False)

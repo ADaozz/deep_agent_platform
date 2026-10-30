@@ -211,12 +211,12 @@ class Runtime:
     def build(self):
         if self.runner is not None:
             return self.runner
-        from agent import AgentRunner
+        from platform_app.agent_core import AgentRunner
         from .agent_factory import prepare_agent
-        from agent.config import Settings, SubAgentConfig
-        from agent.llm import build_chat_model
-        from agent.session import SessionStore
-        from agent.mcp.manager import MCPManager
+        from platform_app.agent_core.config import Settings, SubAgentConfig
+        from platform_app.agent_core.llm import build_chat_model
+        from platform_app.agent_core.session import SessionStore
+        from platform_app.agent_core.mcp.manager import MCPManager
 
         record = find(self.id)
         config = record['config']
@@ -237,7 +237,7 @@ class Runtime:
                 (path / 'SKILL.md').write_text(f'---\nname: {slug}\ndescription: {json.dumps(skill.get("description") or title, ensure_ascii=False)}\n---\n\n# {title}\n\n{skill["content"]}', encoding='utf-8')
         # Copy complete installed skills, including scripts/references, into
         # the session's read-only snapshot. Only enabled bindings are discovered.
-        from agent.config import default_skills_dir
+        from platform_app.agent_core.config import default_skills_dir
         installed = skills / 'installed'
         installed.mkdir(exist_ok=True)
         for skill in config.get('native_skills', []):
@@ -264,7 +264,7 @@ class Runtime:
         settings = replace(settings, trust_env=True, llm_default=record['model_id'],
             subagents=SubAgentConfig(enabled='task' not in hidden), hidden_tools=hidden,
             sandbox=SandboxPolicyBuilder().build(context, record.get('sandbox_mode', 'restricted')),
-            config_dir=d.DATA / 'configuration', agent_instructions=config['system_prompt'])
+            config_dir=context.session_root, agent_instructions=config['system_prompt'])
         model = build_chat_model(settings.active_profile, reasoning_effort=record['reasoning_effort'], trust_env=True, timeout=settings.request_timeout)
         store = SessionStore.for_workspace(context.workspace_root, override=root / 'checkpoint.sqlite')
         # MCP runs on the host. Generic servers have no enforceable Thread
@@ -313,7 +313,7 @@ class Runtime:
             files_root = resolve(self.id).files_root
             before = file_snapshot(files_root)
             if operation == 'message':
-                from agent import ImageAttachment
+                from platform_app.agent_core import ImageAttachment
                 images = []
                 for item in payload.get('images', []):
                     data = base64.b64decode(item['data'], validate=True)
@@ -362,7 +362,7 @@ class Runtime:
             self.event({'type': 'result', **{**asdict(result), 'error': record['error'] or ''}})
         except Exception as exc:
             # Provider errors may contain credentials; only publish known safe diagnoses.
-            from agent.sandbox import SandboxUnavailableError
+            from platform_app.agent_core.sandbox import SandboxUnavailableError
             message = 'Bubblewrap 沙箱不可用，请检查主机 user namespace 与 bwrap 配置。' if isinstance(exc, SandboxUnavailableError) else 'Agent 执行失败，请检查模型配置与服务端日志。'
             LOG.error('Agent operation failed: session=%s exception=%s', self.id, type(exc).__name__)
             with self.lock:
@@ -403,7 +403,7 @@ def schedule(session_id, operation, payload):
             if len(decisions) != len(expected) or {v.get('tool_call_id') for v in decisions} != expected or any(v.get('decision') not in ('approve', 'reject') for v in decisions):
                 raise HTTPException(422, '请对每一个待审批工具作出决定')
         if operation == 'answer':
-            from agent.tools.human_interaction import validate_human_input_values
+            from platform_app.agent_core.tools.human_interaction import validate_human_input_values
             try:
                 validate_human_input_values(payload.get('values'), record['human_input'])
             except ValueError as exc:
@@ -429,7 +429,7 @@ class NewSession(BaseModel):
 
 @router.get('/capabilities')
 def capabilities():
-    return {'core': 'ADaozz/deep_agent_cli', 'commit': '7faddcb00220bbe169a781d14efab42cbd5be720',
+    return {'core': 'platform_app.agent_core', 'source': 'in-tree',
         'tools': list(d.CORE_TOOLS), 'streaming': True, 'sessions': True, 'approvals': True,
         'workspace_isolation': 'thread', 'sandbox_default': 'restricted',
         'subagents': True, 'images': True, 'mcp': False, 'mcp_requires_scoped_adapter': True}

@@ -1,6 +1,6 @@
 # Deep Agent Platform
 
-基于 Vue 3 + Vite 的 Agent 界面，视觉与交互参考用户提供的 `cursor-agents-replica.zip`。FastAPI 托管构建产物和 API，所有新会话由 [ADaozz/deep_agent_cli](https://github.com/ADaozz/deep_agent_cli) 的 `AgentSpec` / `build_agent` / `AgentRunner` 执行，固定提交 `7faddcb00220bbe169a781d14efab42cbd5be720`，没有复制推理循环。
+基于 Vue 3 + Vite 与 FastAPI 的独立 Agent 平台。执行引擎位于仓库内的 `platform_app/agent_core`，复用 [ADaozz/deep_agent_cli](https://github.com/ADaozz/deep_agent_cli) 的 MIT 许可运行时源码，由平台独立维护。安装、运行和部署不需要安装 CLI、克隆其仓库或依赖其提交。源码来源与本地调整见 [内置运行时](docs/agent-core.md)。
 
 这是本机单用户服务，监听 `127.0.0.1:8080`，尚无账号认证和多人租户隔离。
 
@@ -34,9 +34,9 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 - 切换模型和思考强度，支持 Chat Completions 与 Responses。运行中的修改交给内核在安全边界应用。会话创建后新增的模型需新建会话使用。
 - 持久化多轮会话与 SSE 流式执行时间线：思考摘要、工具调用和执行结果按实际发生顺序纵向展示，各个调用独立保留。运行内容最多显示五行，内部滚动并自动跟随最新内容；向上浏览时暂停跟随。步骤结束自动收成一行，Agent 本轮真正结束后再收成一行任务概要。点击可展开完整输入、输出与历史，刷新重连后仍可恢复。
 - 输入框底部显示最近一次模型请求的输入 Token 和缓存命中率（缓存读取的输入 Token / 总输入 Token），支持 DeepSeek 和兼容接口的真实统计。未返回统计时显示 `—`，明确返回零命中时显示 `0%`；悬停可查看命中与输入 Token。使用当前布局持久化记录中的真实统计值。
-- 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话启用原生 `task` / `read_subagent_log`，按 CLI 默认策略委派子 Agent，并保留并发控制、取消传播与结果返回。
+- 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话启用原生 `task` / `read_subagent_log`，按内置运行时策略委派子 Agent，并保留并发控制、取消传播与结果返回。
 - 输入框加号直接上传文件，每条消息最多 10 个文件、每个 20MB。文件存入当前 Thread 的私有文件库，随消息传入可供 Agent 读取的路径；若模型支持图片输入，则最多 4 张符合条件的图片同时通过内核图片附件接口发送。
-- 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认，与 CLI 一致。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具，不改变文件系统隔离模式；restricted 下 execute 始终隔离宿主网络。未提供 Thread 作用域适配的宿主 MCP 服务不会启动。
+- 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具，不改变文件系统隔离模式；restricted 下 execute 始终隔离宿主网络。未提供 Thread 作用域适配的宿主 MCP 服务不会启动。
 - 文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的文件以文件块展示，点击直接下载。
 
 ## 工具、Skill 和 MCP
@@ -47,7 +47,7 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 
 **Additional tools** 保留已注册的 XLSX Python 处理器，DOCX/PPTX 由独立扩展提供。可编辑启用状态、description 和 JSON Schema；参数名与必填字段必须兼容处理器，调用时验证两层 schema，不能通过 JSON 注入任意处理器。
 
-**Skills** 展示 CLI 已安装技能及已有配置中的技能，可全局启用或停用。每个会话生成独立的标准 `SKILL.md` 快照，以只读 `/agent-skills/` 目录挂载，由原生 Skills 中间件按需加载。Skill 不会作为全文重复注入系统提示词。
+**Skills** 展示平台数据目录 `skills/` 下已安装技能及配置中的技能，可全局启用或停用。每个会话生成独立的标准 `SKILL.md` 快照，以只读 `/agent-skills/` 目录挂载，由原生 Skills 中间件按需加载。Skill 不会作为全文重复注入系统提示词。
 
 **MCP servers** 可在工具设置中保留原生 MCP JSON 配置。尚未提供 Thread 作用域适配的服务不会启动；原生 `MCPManager` 不会被当作文件隔离边界。例如：
 
@@ -64,7 +64,7 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 }
 ```
 
-支持 `stdio` 和 `streamable_http`，凭据使用 `token_env` / `env_passthrough` 引用。MCP 的 OAuth 浏览器登录、全局 CLI 快捷键及终端专属显示未移植到网页。
+支持 `stdio` 和 `streamable_http`，凭据使用 `token_env` / `env_passthrough` 引用。MCP 的 OAuth 浏览器登录、终端快捷键及终端专属显示未移植到网页。
 
 配置变更用于新会话；已有会话保留提示词、规则、工具及 Skill 快照。文件上传、下载、Office 服务与 checkpoint 均按 Thread 解析。界面不恢复旧版工作区管理功能，内部通过持久化关联为 Thread 自动分配 Workspace。
 
@@ -72,11 +72,11 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 
 ## 模型配置
 
-当前部署从本机 `~/.deep-agent/config.yaml` 复用 DeepSeek 凭据，仅保留真实配置的 DeepSeek Flash。平台默认模型为 `deepseek/deepseek-flash`，默认思考强度为 `high`。CLI 全局配置保持不变；凭据保存在平台加密配置中。
+平台独立管理模型配置和加密凭据，不自动读取 CLI 的配置、Skills 或会话目录。首次部署请在网页配置模型，或显式提供 `PLATFORM_CONFIG`。
 
-新部署可参考 `config.example.yaml`，将 CLI 同格式的 YAML 放到 `.platform/config.yaml`，或用 `PLATFORM_CONFIG=/path/to/config.yaml` 指定文件。读取其中的 `llm` 部分，使用原生 `Settings.from_mapping` 校验。已有网页保存的加密配置优先于文件；文件优先于兼容的 `PLATFORM_*` 模型环境变量。可直接指定 CLI 配置文件作为初始来源，随后在网页调整平台自己的默认值。
+新部署可参考 `config.example.yaml`，将 平台模型 YAML 放到 `.platform/config.yaml`，或用 `PLATFORM_CONFIG=/path/to/config.yaml` 指定文件。读取其中的 `llm` 部分，使用原生 `Settings.from_mapping` 校验。已有网页保存的加密配置优先于文件；文件优先于兼容的 `PLATFORM_*` 模型环境变量。文件只在显式指定时作为配置来源。
 
-与 CLI 一致，`reasoning_efforts` 的第一项是模型默认强度；DeepSeek Flash 配置为 `[high, low, max]`。网页初始选择、新建对话和 API 省略强度参数时都会使用这一默认值。显式选择 Default 或 API 传入 `null` 仍表示不发送强度参数。
+`reasoning_efforts` 的第一项是模型默认强度；DeepSeek Flash 配置为 `[high, low, max]`。网页初始选择、新建对话和 API 省略强度参数时都会使用这一默认值。显式选择 Default 或 API 传入 `null` 仍表示不发送强度参数。
 
 复用内核的 `Settings.from_mapping` 与 `build_chat_model`。高级 JSON 编辑器可管理完整 `llm` 配置，删除模型、修改默认模型、超时和模型参数：
 
@@ -105,7 +105,7 @@ Default 思考强度表示不向模型端点发送强度参数；其余选项来
 - `frontend/src/App.vue`：Vue 界面、会话事件展示、模型/Agent 配置。
 - `platform_app/runtime.py`：内核的 HTTP 展示适配器；原生 Runner 持久化 checkpoint、审批与执行，适配层不实现 Agent 推理循环。
 - `platform_app/domain.py`：SQLite 全局配置、历史记录及 Office 工具。
-- `platform_app/models.py`：CLI 兼容的模型配置、密钥加密与脱敏。
+- `platform_app/models.py`：平台模型配置、密钥加密与脱敏。
 - `platform_app/main.py`：FastAPI 入口、全局配置与扩展路由。
 
 `.platform/` 保存数据库、加密密钥、会话 checkpoint、事件日志、Skill 快照、文件库文件和 Office 产物。可用 `PLATFORM_DATA_DIR` 指定外部持久目录。请将 `.platform/model-config.key` 与数据库一起备份；它不替代生产密钥服务。服务重启不会自动重试未完成的写操作，原生 checkpoint 支持后续恢复。
@@ -125,6 +125,6 @@ npm --prefix frontend run build
 
 执行时间线的浏览器验收使用真实 SSE 与持久化 journal，由测试专用事件驱动器提供确定性事件（不调用外部模型，也不向生产应用注册测试路由）。先运行 `.venv/bin/python tests/process_e2e_server.py`，再运行 `npm --prefix frontend run test:e2e:process`；需要 Chromium，可通过 `CHROMIUM_PATH` 指定路径。覆盖五行限高、独立并行滚动、自动折叠、完整日志重新展开、刷新恢复、失败与取消，截图保存在 `frontend/test-results/process-*.png`。
 
-Agent 设置中的 Skills 页用于配置已安装技能的启用状态，不再手动新增或编辑 Markdown。平台从 `~/.deep-agent/skills/*/SKILL.md` 发现技能；通过 `skill_bindings` 按技能目录标识全局启用或停用。新会话将启用技能的完整目录（含脚本与参考资料）复制到只读快照，供原生技能加载器发现。已有配置技能只提供启用开关。
+Agent 设置中的 Skills 页用于配置已安装技能的启用状态，不再手动新增或编辑 Markdown。平台从 `$PLATFORM_DATA_DIR/skills/*/SKILL.md` 发现技能；通过 `skill_bindings` 按技能目录标识全局启用或停用。新会话将启用技能的完整目录（含脚本与参考资料）复制到只读快照，供原生技能加载器发现。已有配置技能只提供启用开关。
 
 完整 Office 浏览器验收建议串行执行，避免 LibreOffice 同时渲染争用资源；慢速测试机器可用 `OFFICE_E2E_TIMEOUT_SCALE=3` 放大轮询等待预算。此设置只影响测试，不改变生产质量门禁或性能指标。

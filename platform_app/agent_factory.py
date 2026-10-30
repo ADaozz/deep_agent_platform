@@ -1,6 +1,6 @@
 """Prepare the native core with explicitly registered platform tools."""
-from agent import AgentSpec, PermissionMode, RunController, build_agent
-from agent.permission import interrupt_on_for_mode
+from platform_app.agent_core import AgentSpec, PermissionMode, RunController, build_agent
+from platform_app.agent_core.permission import interrupt_on_for_mode
 
 from .web_tools import build_web_tools
 

@@ -113,8 +113,8 @@ class SandboxPolicyBuilder:
         self.resolver = resolver or WorkspaceResolver()
 
     def build(self, context, mode='restricted', *, read_only=(), read_write=(), env_set=None):
-        from agent.config import BindMount, SandboxConfig
-        from agent.sandbox import _validate_config
+        from platform_app.agent_core.config import BindMount, SandboxConfig
+        from platform_app.agent_core.sandbox import _validate_config
         if context != self.resolver.resolve(context.thread_id):
             raise ValueError('WorkspaceContext does not match its persistent Thread association')
         if mode not in ('restricted', 'full-access'):
@@ -124,7 +124,7 @@ class SandboxPolicyBuilder:
         policy = self.resolver.policy
         protected = (d.DATA / 'platform.sqlite', d.DATA / 'platform.sqlite-wal', d.DATA / 'platform.sqlite-shm', d.DATA / 'platform.sqlite-journal',
             d.DATA / 'model-config.key', d.DATA / 'configuration', policy.sessions_root, policy.state_root,
-            Path.home() / '.deep-agent')
+            d.DATA / 'skills')
         for path in protected:
             if context.workspace_root.is_relative_to(path.resolve()):
                 raise ValueError('A protected control directory cannot contain the workspace')

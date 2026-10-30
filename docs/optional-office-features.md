@@ -46,7 +46,7 @@ npm --prefix frontend run build
 
 PPTX 的 `pptx_init` 使用内核原有工具审批：ask 模式下一次授权当前演示文稿，后续受限元素修改只在这个会话/文件范围内执行。其他演示文稿、任意文件、命令和网络没有因此获得授权。全局 allow 仍由现有 Permission 菜单管理，扩展不会切换它。
 
-原 `create_docx` / `create_pptx` 批量处理器已移除，旧配置会迁移；XLSX 不变。兼容任务 API 也不能绕过 PPTX 初始化审批；需要交互审批的 PPTX 工作流应使用会话界面。
+`create_docx` / `create_pptx` 批量处理器和旧任务 API 已移除，不提供旧配置迁移。XLSX 不变；PPTX 初始化使用会话界面的文件作用域审批。
 
 ## 验证
 

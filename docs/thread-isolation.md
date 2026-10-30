@@ -28,7 +28,7 @@ Skill 快照保留在独立的 `skill-snapshots` 根目录，而非受保护的 
 
 ## 策略
 
-可通过服务端 `PLATFORM_POLICY` 指定 YAML；默认读取 `.platform/configuration/policy.yaml`。这不是 CLI 原生 YAML，也不是 Agent 可修改的会话参数。
+可通过服务端 `PLATFORM_POLICY` 指定 YAML；默认读取 `.platform/configuration/policy.yaml`。这不是 内置运行时的 YAML，也不是 Agent 可修改的会话参数。
 
 ```yaml
 workspace:
@@ -46,11 +46,11 @@ sandbox:
     require_confirmation: true
 ```
 
-相对根目录以数据目录的父目录解析。根目录必须互不包含，不得包含平台控制数据、别名链接或系统运行库。当前版本拒绝自定义挂载及环境变量覆盖；将来开放参考资料挂载时，必须先实现管理员白名单。Builder 验证传入 Context 与持久化关联一致，再调用 CLI 原生挂载校验。
+相对根目录以数据目录的父目录解析。根目录必须互不包含，不得包含平台控制数据、别名链接或系统运行库。当前版本拒绝自定义挂载及环境变量覆盖；将来开放参考资料挂载时，必须先实现管理员白名单。Builder 验证传入 Context 与持久化关联一致，再调用 内置运行时的挂载校验。
 
 restricted 是新 Thread 的默认模式，只挂载本 Workspace、私有 HOME/TMP、只读运行依赖和本 Thread 的 Skill。Bubblewrap 初始化失败直接失败，绝不改为宿主执行。
 
-full-access 不承诺 Thread 之间的文件隔离。用户必须在运行环境菜单输入 `FULL_ACCESS`，对应 `PUT /api/agent/sessions/<id>/sandbox` 的确认字段；运行中的变更由原生 Runner 在安全边界重建沙箱。重建失败保留原模式并清除待生效标记。会话重启沿用用户明确选择并持久化的模式。数据库、密钥、全局配置、会话控制数据、沙箱状态目录及 CLI 配置由原生保护规则遮蔽；不会遮蔽包含当前 Workspace 的整个 `.platform` 父目录。
+full-access 不承诺 Thread 之间的文件隔离。用户必须在运行环境菜单输入 `FULL_ACCESS`，对应 `PUT /api/agent/sessions/<id>/sandbox` 的确认字段；运行中的变更由原生 Runner 在安全边界重建沙箱。重建失败保留原模式并清除待生效标记。会话重启沿用用户明确选择并持久化的模式。数据库、密钥、全局配置、会话控制数据、沙箱状态目录及平台 Skills 源目录由原生保护规则遮蔽；不会遮蔽包含当前 Workspace 的整个 `.platform` 父目录。
 
 工具审批 `ask/allow` 与文件系统模式独立。输入 `ALLOW` 只确认自动批准工具，不会开启 full-access。restricted 下即使 execute 请求联网，也保留独立网络命名空间，不能通过宿主本地 HTTP 服务绕过文件隔离。联网检索使用受控宿主工具；full-access 下才允许原生工具审批开放命令网络。
 
@@ -80,10 +80,10 @@ PLATFORM_DATA_DIR=.platform-thread .venv/bin/uvicorn platform_app.main:app --hos
 
 ## 内核依赖与验证
 
-基线是平台 `76ae6a3`、CLI `f190baa`。最小内核扩展在 [CLI PR #31](https://github.com/ADaozz/deep_agent_cli/pull/31)，固定提交 `7faddcb00220bbe169a781d14efab42cbd5be720`：新增 `mount_skills`、`skills_dir` 和 `network_modes`，CLI 默认行为保持不变，原生模式重建保留这些字段。平台依赖直接锁定该 Git 提交，不修改已安装内核或 monkeypatch 生产运行时。
+执行引擎随平台源码保存在 `platform_app/agent_core`，不依赖 CLI 包、CLI 仓库或未合并 PR。只读 Skills 和命令联网策略在这份平台自有源码中维护；原生 Bubblewrap 隔离实现被复用，没有另造 Agent Loop。来源与许可见 [内置运行时](agent-core.md)。
 
 真实 Bubblewrap 回归覆盖 100 个并发解析的 Thread、原生读取/目录/搜索/execute 越界、软链接、HOME/TMP、只读 Skills、非法挂载、full-access 确认和原生模式切换、初始化失败，以及 Office 并发同名文档、当前 Thread 重启恢复和旧布局拒绝。浏览器覆盖私有上传/下载、跨 Thread 下载拒绝、模式确认和执行时间线。
 
-CLI 相关配置/沙箱 230 项测试通过。扩大到 CLI 全量检查时，5 项终端渲染断言在原始 `f190baa` 上也失败；全量负载下 PTY 启动另有间歇超时。终端代码不在本次内核补丁范围，不将该次全量检查报告为全部通过。
+
 
 本轮平台完整回归 101 项、前端状态测试 12 项和生产构建通过。Chromium 执行过程/隔离交互 16 个场景通过；带格式 DOCX 为 12 页、112 个版本，PPTX 为 12 页、88 个版本并处理三次运行中反馈，均无页面脚本错误。测试模型是确定性的，视觉审查仍保留 pending，不能将自动检查等同于最终视觉验收。DOCX 分页预览性能数据和未达标项见 [DOCX 实时生成](docx-streaming.md)。

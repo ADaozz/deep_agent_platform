@@ -1,6 +1,6 @@
 # DOCX 原子生成与分页预览
 
-基线：`2f49d4f`。复用 `deep_agent_cli@f190baa` 主 Agent、SteeringMiddleware、工具边界和 SSE journal；没有增加规划 Agent 或第二套执行循环。
+基线：`2f49d4f`。复用已纳入平台源码的主 Agent、SteeringMiddleware、工具边界和 SSE journal（来源见 [内置运行时](agent-core.md)）；没有增加规划 Agent 或第二套执行循环。
 
 ## 实现与边界
 

@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from platform_app import domain as d, models as m, runtime, format_plugins
 from platform_app.workspace import WorkspaceResolver, SandboxPolicyBuilder, PlatformPolicy, resolve
 from platform_app.main import app
-from agent.sandbox import select_backend, SandboxUnavailableError
-from agent.config import BindMount
+from platform_app.agent_core.sandbox import select_backend, SandboxUnavailableError
+from platform_app.agent_core.config import BindMount
 
 
 @pytest.fixture
@@ -205,7 +205,7 @@ def test_legacy_task_and_global_file_api_are_absent(store):
 def test_restricted_network_cannot_call_host_control_services_even_when_requested(store):
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from agent.network import set_execute_network, reset_execute_network
+    from platform_app.agent_core.network import set_execute_network, reset_execute_network
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200);self.end_headers();self.wfile.write(b'HOST_PRIVATE_API')
