@@ -1,90 +1,33 @@
-# Operations contract v0.1
+# Atomic operations
 
-Every plan is JSON:
-
-```json
-{"source_sha256":"64-character sha256 from inspect", "operations":[{"op":"..."}]}
-```
-
-All indices are **zero based**, interpreted at the time the operation runs. For edits to template, include `expected_paragraph` or `expected_text` safeguards. If earlier operations insert paragraphs, indices of later operations can shift. Prefer one batch of stable replacements followed by append/insert operations. Re-inspect after each version for major edits.
-
-## `replace_text`
+Every Agent edit is one `apply-one` request:
 
 ```json
-{"op":"replace_text", "paragraph_index":0,
- "expected_paragraph":"项目名称：{{NAME}}", "old":"{{NAME}}", "new":"AI Agent"}
+{"document_id":"report","operation_id":"op-0007","base_revision":6,"operation":{"type":"slot.fill","tag":"project_title","text":"季度业务报告"}}
 ```
 
-Matches exactly one occurrence of `old` in visible `w:t` text of that paragraph, even across multiple `w:r`/`w:t` nodes. Preserves formatting of unchanged text; replacement inherits formatting of its first matched text node. Does not support field codes, drawings in paragraph.
+`operation_id` is idempotent. `base_revision` must be the current revision. A failed operation does not publish a new revision. The offline batch plan is documented in `legacy-operations.md` and is not the default workflow.
 
-## `insert_blocks`
+## Template operations
 
-```json
-{"op":"insert_blocks", "after_body_index":-1, "blocks":[
- "<w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>项目背景</w:t></w:r></w:p>"
-]}
-```
+- `section.clone`: `source_block_id` is a Heading paragraph. Copies that heading and the following blocks until the next heading of the same or higher level. Optional `heading` and `paragraphs` replace those cloned paragraphs and must match the section's body paragraph count. Optional `tables` rewrites cloned tables. Limit: 40 blocks and 20000 characters. Mixed character styles, merged cells, nested tables, images, fields and hyperlinks are copied only when the operation does not rewrite their text; a rewrite of those structures is rejected.
+- `block.clone`: one top-level paragraph or table. `rows` on a table keeps the column count and header-row properties, replaces every paragraph in each cell, and rejects merged cells, nested tables, images, fields and hyperlinks.
+- `slot.fill`: `tag` of one plain content control, or `block_id` of one paragraph, plus `text` of at most 3000 characters and no newline. The first run's properties are kept. Mixed character styles, images, fields, hyperlinks and nested content controls are rejected. Other content controls are left untouched.
+- `part.replace_text`: `part` is `header` or `footer`, with exactly one `old` occurrence and bounded `new` text.
+- `document.recolor`: `palette` requires `accent`, `background` and `text`, and may include `muted`. Theme colors and named styles change. Direct text color, highlight, and paragraph or cell shading that belong to the theme are remapped. Pictures are preserved. Anything else is returned in `unhandled` with `status` `unmapped` or `unsupported` and a `location`. `recolor_complete` is true only when that list is empty.
 
-`after_body_index` refers to `body_blocks` from `inspect`; `-1` inserts at start. Each fragment must be a complete `w:p` or `w:tbl` using the canonical WordprocessingML namespace. Referenced styles must exist in the template or in the bundled blank style pack; missing `w:pStyle` inside fragments is not yet checked, so be careful to use the `styles` list from inspect. `w:sectPr`, `w:drawing`, `w:object`, field codes, external relationship attributes, altChunk are disallowed in generic fragments.
+## Fallback content operations
 
-### Example table fragment
+Use these when the template has no suitable block.
 
-```xml
-<w:tbl xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>
-  <w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>
-  <w:tr>
-    <w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>项目</w:t></w:r></w:p></w:tc>
-    <w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>进度</w:t></w:r></w:p></w:tc>
-  </w:tr>
-</w:tbl>
-```
+- `append_paragraph`: `block_id`, `text` (≤3000 characters, no newline), optional existing `style`, `after_block_id`.
+- `append_table`: uniform `rows`, at most 10×8, cell text ≤300 characters.
+- `insert_image`: workspace PNG/JPEG, optional `width_cm` and `alt`.
+- `insert_block`: one bounded paragraph XML fragment. Not the default way to add content.
+- `replace_text`, `delete_block`, `set_paragraph_style`, `set_paragraph_format`, `set_table_format`, `set_page`: repairs. See the property names below.
 
-For complex tables, explicitly set table width, grid columns, cell widths, borders, row split policy, and column spans. Never assume all rows are fixed height or all merged cells fit.
+`set_page` applies to the final section only. Values are twips (1 inch = 1440). `alignment` is `left`, `center` or `right`.
 
-## `replace_sdt_text`
+## Unsupported without an explicit error
 
-```json
-{"op":"replace_sdt_text","tag":"project_name","new":"下一代 Agent 工作台"}
-```
-
-For **plain-text** content controls (`w:sdt`) with a unique `w:tag`. This preserves the first text Run's properties; does not handle rich-text/table/empty SDTs or all SDT variants. Preferred to fragile positional replacements when preparing templates yourself.
-
-## `set_paragraph_format`
-
-```json
-{"op":"set_paragraph_format","paragraph_index":0,"expected_text":"项目概述",
- "alignment":"center","space_before_twips":240,"space_after_twips":180,
- "line_twips":360,"keep_next":true,"page_break_before":false}
-```
-
-All keys optional except `op` and `paragraph_index`. `line_twips` creates **exact** line spacing; adjust with care to avoid glyph clipping. This operation is designed for the iterative render-adjust cycle.
-
-## `set_paragraph_style`
-
-```json
-{"op":"set_paragraph_style","paragraph_index":0,"expected_text":"Overview","style":"Heading1"}
-```
-
-Style must be declared in `word/styles.xml`.
-
-## `set_page`
-
-```json
-{"op":"set_page","width_twips":11906,"height_twips":16838,
- "top_twips":1440,"bottom_twips":1440,"left_twips":1500,"right_twips":1500}
-```
-
-Applies to final section only. 1 inch = 1440 twips. Does not reconfigure intermediate sections or page-numbering fields.
-
-## `insert_image`
-
-```json
-{"op":"insert_image","after_body_index":0,"path":"architecture.png","width_cm":13.5,"alt":"系统架构"}
-```
-
-`path` must remain inside `--asset-root`; supports PNG/JPEG with engine-created image part, relationship and inline drawing. SVG, GIF, chart OLE, floating wraps and precise text wrapping are intentionally not supported yet.
-
-## Security and package limits
-
-Rejects relative traversal, duplicate ZIP entries, XML DTD/ENTITY, oversized archive entries, arbitrary relationship attributes in generated fragments and source overwrites. An untrusted template may still contain external links or macros/ActiveX not understood by this subset: quarantine such files and do not invoke Office macros.
+SmartArt, OLE, fields, hyperlinks, merged or nested table cells, mixed run formatting and rich-text content controls are not silently flattened. The operation raises and the previous revision stays in place.

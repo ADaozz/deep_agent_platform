@@ -1,0 +1,328 @@
+{
+  "schema": "deep-agent-template/v1",
+  "kind": "pptx",
+  "template_id": "consulting-brief",
+  "source": "/workspace/pptx-ooxml-skill/templates/consulting-brief/template.pptx",
+  "license": {
+    "status": "recorded",
+    "redistributable": true,
+    "note": "Original project template created for technical verification. Not a third-party design."
+  },
+  "tokens": {
+    "dk1": "1B2430",
+    "lt1": "FFFFFF",
+    "dk2": "5C6B7A",
+    "lt2": "EEECE1",
+    "accent1": "0B2545",
+    "accent2": "5C6B7A",
+    "accent3": "9BBB59",
+    "accent4": "8064A2",
+    "accent5": "4BACC6",
+    "accent6": "F79646",
+    "hlink": "0000FF",
+    "folHlink": "800080"
+  },
+  "precheck": {
+    "slides": 4,
+    "charts": 1,
+    "images": 1,
+    "tables": 0,
+    "fonts": [
+      "Calibri"
+    ],
+    "missing_fonts": [
+      "Calibri"
+    ],
+    "warnings": [
+      "missing fonts: Calibri"
+    ]
+  },
+  "slides": [
+    {
+      "slide_id": "tpl-001",
+      "index": 0,
+      "role": "cover",
+      "layout": "Blank",
+      "slots": {
+        "title": "title",
+        "subtitle": "subtitle"
+      },
+      "elements": [
+        {
+          "id": "logo",
+          "index": 0,
+          "kind": "shape",
+          "name": "da:logo",
+          "text": "",
+          "x": 0.8700000713582736,
+          "y": 0.04666666666666667,
+          "w": 0.052500004306102716,
+          "h": 0.09333333333333334
+        },
+        {
+          "id": "title",
+          "index": 1,
+          "kind": "text",
+          "name": "da:title",
+          "text": "业务概览",
+          "x": 0.060000004921260244,
+          "y": 0.24,
+          "w": 0.6375000522883901,
+          "h": 0.14666666666666667
+        },
+        {
+          "id": "subtitle",
+          "index": 2,
+          "kind": "text",
+          "name": "da:subtitle",
+          "text": "咨询简报 保留",
+          "x": 0.060000004921260244,
+          "y": 0.41333333333333333,
+          "w": 0.6000000492126024,
+          "h": 0.08
+        }
+      ],
+      "preserve": [
+        "logo"
+      ],
+      "preview": "previews/tpl-001.png",
+      "slide_size": {
+        "width": 12191999,
+        "height": 6858000
+      },
+      "native_objects": {
+        "shape": 1,
+        "text": 2
+      }
+    },
+    {
+      "slide_id": "tpl-002",
+      "index": 1,
+      "role": "section",
+      "layout": "Blank",
+      "slots": {
+        "title": "title"
+      },
+      "elements": [
+        {
+          "id": "title",
+          "index": 0,
+          "kind": "text",
+          "name": "da:title",
+          "text": "章节",
+          "x": 0.060000004921260244,
+          "y": 0.3466666666666667,
+          "w": 0.750000061515753,
+          "h": 0.16
+        }
+      ],
+      "preserve": [],
+      "preview": "previews/tpl-002.png",
+      "slide_size": {
+        "width": 12191999,
+        "height": 6858000
+      },
+      "native_objects": {
+        "text": 1
+      }
+    },
+    {
+      "slide_id": "tpl-003",
+      "index": 2,
+      "role": "comparison",
+      "layout": "Blank",
+      "slots": {
+        "title": "title",
+        "left_title": "left_title",
+        "left_body": "left_body",
+        "right_title": "right_title",
+        "right_body": "right_body"
+      },
+      "elements": [
+        {
+          "id": "title",
+          "index": 0,
+          "kind": "text",
+          "name": "da:title",
+          "text": "方案对比",
+          "x": 0.04500000369094519,
+          "y": 0.05333333333333334,
+          "w": 0.750000061515753,
+          "h": 0.10666666666666667
+        },
+        {
+          "id": "left_title",
+          "index": 1,
+          "kind": "text",
+          "name": "da:left_title",
+          "text": "现状",
+          "x": 0.04500000369094519,
+          "y": 0.21333333333333335,
+          "w": 0.3900000319881916,
+          "h": 0.08
+        },
+        {
+          "id": "left_body",
+          "index": 2,
+          "kind": "text",
+          "name": "da:left_body",
+          "text": "分散的执行记录",
+          "x": 0.04500000369094519,
+          "y": 0.30666666666666664,
+          "w": 0.3900000319881916,
+          "h": 0.21333333333333335
+        },
+        {
+          "id": "right_title",
+          "index": 3,
+          "kind": "text",
+          "name": "da:right_title",
+          "text": "目标",
+          "x": 0.5100000418307121,
+          "y": 0.21333333333333335,
+          "w": 0.3900000319881916,
+          "h": 0.08
+        },
+        {
+          "id": "right_body",
+          "index": 4,
+          "kind": "text",
+          "name": "da:right_body",
+          "text": "沿用同一套版式",
+          "x": 0.5100000418307121,
+          "y": 0.30666666666666664,
+          "w": 0.3900000319881916,
+          "h": 0.21333333333333335
+        }
+      ],
+      "preserve": [],
+      "preview": "previews/tpl-003.png",
+      "slide_size": {
+        "width": 12191999,
+        "height": 6858000
+      },
+      "native_objects": {
+        "text": 5
+      }
+    },
+    {
+      "slide_id": "tpl-004",
+      "index": 3,
+      "role": "data",
+      "layout": "Blank",
+      "slots": {
+        "title": "title",
+        "chart": "chart",
+        "picture": "photo",
+        "footnote": "footnote"
+      },
+      "elements": [
+        {
+          "id": "title",
+          "index": 0,
+          "kind": "text",
+          "name": "da:title",
+          "text": "业绩",
+          "x": 0.04500000369094519,
+          "y": 0.04666666666666667,
+          "w": 0.6000000492126024,
+          "h": 0.09333333333333334
+        },
+        {
+          "id": "band",
+          "index": 1,
+          "kind": "shape",
+          "name": "da:band",
+          "text": "",
+          "x": 0.04500000369094519,
+          "y": 0.16,
+          "w": 0.013500001107283555,
+          "h": 0.64
+        },
+        {
+          "id": "chart",
+          "index": 2,
+          "kind": "chart",
+          "name": "da:chart",
+          "text": "",
+          "x": 0.08250000676673284,
+          "y": 0.18666666666666668,
+          "w": 0.4650000381397669,
+          "h": 0.5866666666666667
+        },
+        {
+          "id": "photo",
+          "index": 3,
+          "kind": "image",
+          "name": "da:photo",
+          "text": "",
+          "x": 0.6000000492126024,
+          "y": 0.21333333333333335,
+          "w": 0.3000000246063012,
+          "h": 0.26666666666666666
+        },
+        {
+          "id": "note",
+          "index": 4,
+          "kind": "shape",
+          "name": "da:note",
+          "text": "",
+          "x": 0.6000000492126024,
+          "y": 0.5333333333333333,
+          "w": 0.09000000738189037,
+          "h": 0.05333333333333334
+        },
+        {
+          "id": "footnote",
+          "index": 5,
+          "kind": "text",
+          "name": "da:footnote",
+          "text": "注",
+          "x": 0.6000000492126024,
+          "y": 0.6266666666666667,
+          "w": 0.0975000079970479,
+          "h": 0.037333333333333336
+        }
+      ],
+      "preserve": [],
+      "preview": "previews/tpl-004.png",
+      "slide_size": {
+        "width": 12191999,
+        "height": 6858000
+      },
+      "native_objects": {
+        "text": 2,
+        "shape": 2,
+        "chart": 1,
+        "image": 1
+      }
+    }
+  ],
+  "slots_by_slide": {
+    "tpl-001": {
+      "title": "title",
+      "subtitle": "subtitle"
+    },
+    "tpl-002": {
+      "title": "title"
+    },
+    "tpl-003": {
+      "title": "title",
+      "left_title": "left_title",
+      "left_body": "left_body",
+      "right_title": "right_title",
+      "right_body": "right_body"
+    },
+    "tpl-004": {
+      "title": "title",
+      "chart": "chart",
+      "picture": "photo",
+      "footnote": "footnote"
+    }
+  },
+  "source_sha256": "8df102b00fba96b5bb8757a5d2be55da78f32ffeef9ca4bb8dd3c31f644787d0",
+  "slide_size": {
+    "width": 12191999,
+    "height": 6858000
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "renderer": "LibreOffice Writer",
+  "source": "templates/business-report",
+  "pages_after_fill": 8,
+  "recolor_complete": false,
+  "images": {
+    "before.png": {
+      "sha256": "aea6728a3ae47f622ea72399b352f766955f4baa991b9cc9b4f5945bfb5c8c62",
+      "bytes": 124983
+    },
+    "filled.png": {
+      "sha256": "94e24d300a7ba9428a5662b0adc1d45398f1e73fe345d75e6e1a1291c008927b",
+      "bytes": 101626
+    },
+    "recolored.png": {
+      "sha256": "57470c09abb2245549c404130cd1292f09cc2582b8800bd0820eff799fba68f8",
+      "bytes": 101524
+    },
+    "comparison.png": {
+      "sha256": "df6fc471f493931f4f915565e2ab7c2945db1323e654454ed2b5f6a36b61a1fe",
+      "bytes": 284144
+    },
+    "final-sheet.png": {
+      "sha256": "c220a31e96975a9d82f9209f70f14a203ee34a8b5e49aafedbad5f95772c55f0",
+      "bytes": 168031
+    }
+  },
+  "note": "Screenshots are LibreOffice PDF exports of the DOCX. Pagination is engine-driven, not inserted page breaks."
+}

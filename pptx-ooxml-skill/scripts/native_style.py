@@ -417,7 +417,13 @@ def apply_chart(shape, meta, state, profile):
     categories = len(chart_data.get('categories') or [])
     single = len(chart_data.get('series') or []) == 1
     labels = style.get('data_labels', kind == 'pie' or (gridlines == 'none' and single and categories <= 8))
-    series_colors = [resolve_color(c, state) for c in style.get('series_colors') or []] or list(profile['colors']['chart_series'])
+    if style.get('series_colors'):
+        series_colors = [resolve_color(c, state) for c in style['series_colors']]
+    elif state.get('effective_palette'):
+        accent, muted = palette.get('accent', '246BCE'), palette.get('muted', '536B82')
+        series_colors = [accent, muted, blend(accent, muted, 0.45), blend(accent, palette.get('background', 'FFFFFF'), 0.35)]
+    else:
+        series_colors = list(profile['colors']['chart_series'])
     font_size = style.get('font_size', charts.get('label_size', 12))
     font_family = state.get('font_family')
     muted = palette.get('muted', profile['colors']['muted'])

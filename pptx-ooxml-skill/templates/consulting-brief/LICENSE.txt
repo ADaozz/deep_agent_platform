@@ -1,0 +1,3 @@
+consulting-brief is original content of this repository.
+It may be stored and reused inside this project.
+Third-party templates still need their own redistribution license before they are added here.

@@ -1,0 +1,42 @@
+{
+  "styles": [
+    {
+      "style_id": "Normal",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Title",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Heading1",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Heading2",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Header",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Footer",
+      "type": "paragraph"
+    }
+  ],
+  "tokens": {
+    "dk1": "20242A",
+    "lt1": "FFFFFF",
+    "dk2": "5C6B7A",
+    "lt2": "F4F6F8",
+    "accent1": "1F4E79",
+    "accent2": "5C6B7A",
+    "accent3": "1F4E79",
+    "accent4": "1F4E79",
+    "accent5": "1F4E79",
+    "accent6": "1F4E79",
+    "hlink": "1F4E79",
+    "folHlink": "5C6B7A"
+  }
+}

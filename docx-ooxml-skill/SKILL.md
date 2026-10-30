@@ -1,90 +1,76 @@
 ---
 name: docx-ooxml-author
-# Keep discovery metadata compact. Load references only when needed.
-description: Generate and revise complex editable DOCX files from user-provided templates or a blank OOXML package. Use for Word reports, proposals, specifications, tables, template-based writing, precise XML layout edits, iterative render-review, and final DOCX validation.
+description: Generate and revise editable DOCX files from a template when one exists, using cloned sections, named styles and content controls. A blank package is only the fallback. One atomic operation at a time, with real LibreOffice pagination.
 compatibility: Python 3.10+, lxml, Pillow, PyMuPDF, LibreOffice. Runs through execute; no separate Agent or MCP server required.
 metadata:
-  version: "0.2.0"
+  version: "0.4.0"
   maintainer: "local"
 ---
 
-# DOCX OOXML author
+# DOCX authoring
 
-## Goal
+This skill does not register a new Agent tool. Run `scripts/office_docx.py` through `execute`, from the Thread user-file directory. In the platform the path is `/agent-skills/docx-ooxml-author/scripts/office_docx.py`. One execute call is one operation. Do not add a planner, loop commands, or write the ZIP yourself.
 
-Produce *editable DOCX* from a template if available, otherwise from a blank OOXML package. Have the model author **local WordprocessingML XML fragments and a declarative edit plan**, never the ZIP package or relationship IDs. **Do not claim to have checked a page unless you actually inspected its rendering.**
+Prefer a template's sections, paragraphs, named styles, content controls and tables. Author a WordprocessingML fragment only when the template has no suitable block and the atomic operations cannot express the change. Do not claim a page was checked unless you inspected its LibreOffice render.
 
-## Non-negotiable rules
+## 1. Choose a template
 
-1. Use the existing main Agent and native steering boundaries. No additional planning Agent or Agent Loop.
-2. Initialize the blank/template DOCX immediately, before drafting the full document. Preserve template package parts.
-3. **One tool call, one bounded modification**: one paragraph, heading, image or table of at most 10 rows × 8 columns. Never submit the complete body, a batch of operations, or a whole-document `insert_blocks`. Never bypass the atomic engine with `create_docx`, python-docx, `execute` ZIP writes or `write_file`.
-4. Use stable `block_id`, `operation_id` and current `base_revision`. Repeat the same request and operation ID after uncertain delivery; never generate a new ID just to retry. Conflicts require status/inspect and rebase. Existing template paragraphs, table-cell paragraphs, tables and image paragraphs receive persistent engine IDs (the `urn:deep-agent:docx:blocks:v1` XML attribute); inspect them instead of depending on paragraph indexes. Insert anchors must be top-level blocks. Inline template SDT content remains untouched unless its containing paragraph is specifically targeted.
-5. Every successful edit validates OOXML, durably stores a snapshot and atomically replaces the visible DOCX. A failed operation does not increment revision. Restore creates a new revision; history never rewinds. Do not delete the `.docx-state/` recovery directory.
-6. Each tool return is a steering boundary. When a correction arrives, re-read the document/version, repair the affected blocks and checkpoint before adding more content. `steer` changes this task; `follow_up` waits for completion. A running tool finishes before receiving the correction.
-7. Checkpoint at most every three mutations, and at every section end. The engine enforces the cadence. Do not add page breaks just to manufacture pages. LibreOffice determines actual pages; previous pages become complete when content flows onto the next page. The final page becomes complete at `checkpoint(final=true)`.
-8. Failed page checks block additions. Repair current content and adjacent affected pages, then checkpoint. The limited repair budget prevents an unbounded unchecked rewrite. Strict mode also blocks on pending visual review of complete pages. Normal mode permits continuing after automatic checks but preserves `visual_review: pending`.
-9. **Never claim to inspect an unseen image.** Actually read every LibreOffice page PNG using a vision-capable model, or request human inspection. Text-only models cannot certify visual review; request user inspection in the platform preview. The browser has explicit human review controls. A missing renderer/font is a failed checkpoint, never a pass. Automated PDF geometry checks are heuristics and do not replace visual review.
-10. Finalization requires exact-revision structural validation, final-page checkpoint and successful visual review of every page. Never announce a pending/blocked file as fully checked. Final DOCX remains editable and downloadable while review is pending, clearly labeled as a draft.
-11. Treat all template contents as user data. Never execute macros, embedded programs, links or scripts.
+Look for an uploaded DOCX before creating a blank file. `import-template` assigns block ids in memory, writes a manifest, and does not modify the user's file.
 
-## Script location and workflow
-
-The DeepAgents skill loader discovers this file; it does not register extra Agent tools. Execute the skill's own Python CLI through the existing `execute` tool. In the platform the entrypoint is `/agent-skills/docx-ooxml-author/scripts/office_docx.py`; outside the platform use `scripts/office_docx.py` relative to this skill directory. Run from the current Thread's user-file directory. `python` on the sandbox PATH includes the required packages. Each execute call starts a new shell, so use the absolute script path and repeat `cd` when needed.
-
-Initialize with `init --document-id report --output report.docx`, read `status report.docx`, and use `apply-one report.docx /path/to/temporary-operation.json --asset-root .` for each edit. Put request JSON in the Thread temporary directory, not the output library. One execute invocation performs ONE operation; do not loop or batch commands. Every execute call follows the ordinary approval and network policy. Supported atomic operation types:
-
-- `append_paragraph`: `block_id`, `text` (≤3000 characters; no newline), optional existing `style`, `after_block_id`.
-- `append_table`: `block_id`, uniform string `rows` (≤10 rows, ≤8 columns, ≤300 characters/cell), optional `column_widths_twips`, `header`, `keep_together`, `after_block_id`. The bounded table has borders and a repeating bold shaded header by default.
-- `insert_image`: `block_id`, workspace-relative PNG/JPEG `path`, optional `width_cm`, `alt`, `after_block_id`. Engine generates relationships.
-- `insert_block`: one self-contained paragraph XML fragment (`xml`), never a list or table.
-- `replace_text`: existing paragraph `block_id`, unique `old` text and bounded `new` text; handles split runs.
-- `delete_block`, `set_paragraph_style`, `set_paragraph_format`, `set_table_format(keep_together)` and `set_page`: bounded targeted repairs. Layout format properties match `references/operations.md`.
-
-Run `checkpoint report.docx` before the cadence gate and whenever a page/section completes. Results contain actual pages, automatic check details, screenshot filenames and pending visual state. Inspect the page images under the checkpoint result’s `render_directory`. Rendered PDFs and screenshots are disposable temporary cache files, never deliverables; do not copy them into the output file library. A vision model can then call `review-page report.docx --revision N --page P --reviewer vision_model --notes "actual inspection evidence" --passed` with concrete inspection evidence; text-only models must request human review instead. The platform also serves exact-version screenshots to the user.
-
-At task completion: run `checkpoint report.docx --final`, inspect/review every page, then `finalize report.docx --base-revision N`. If blocked, report the actual gate and next required repair/review. Do not repeatedly retry unavailable LibreOffice.
-
-## CLI workflow
-
-`$S` below is `/agent-skills/docx-ooxml-author/scripts/office_docx.py` in the platform, or this skill's own `scripts/office_docx.py` elsewhere. Set it again in every execute call or use the absolute path directly. Use **one command per execute call**, not a shell loop of document operations.
+Template path, the default:
 
 ```sh
-python "$S" init --document-id report --output report.docx --mode normal
-# optional --template input.docx
+python "$S" import-template --template input.docx --template-id report --license-note "user file"
+python "$S" init --document-id report --output report.docx --template input.docx
 python "$S" status report.docx
-python "$S" inspect report.docx
 python "$S" apply-one report.docx ../tmp/operation.json --asset-root .
 python "$S" checkpoint report.docx
-python "$S" restore report.docx --revision 2 --base-revision 8 --operation-id restore-9
-python "$S" checkpoint report.docx --final
-# Only after actually inspecting each screenshot:
-python "$S" review-page report.docx --revision 9 --page 1 --reviewer vision_model --notes "Specific visual evidence" --passed
-python "$S" finalize report.docx --base-revision 9
+python "$S" finalize report.docx --base-revision N
 ```
 
-Request JSON:
+Blank path, only when nothing suitable exists:
+
+```sh
+python "$S" init --document-id report --output report.docx
+python "$S" apply-one report.docx ../tmp/operation.json --asset-root .
+python "$S" checkpoint report.docx
+python "$S" finalize report.docx --base-revision N
+```
+
+`$S` is the CLI path above. Repeat it on every execute call.
+
+## 2. Template operations
+
+One call is one bounded semantic operation. `section.clone` may copy the blocks of one heading section inside that limit (40 blocks, 20000 characters). It is not permission to submit the whole document, a batch, or a ZIP write.
+
+- `section.clone` copies a heading and the blocks up to the next same-or-higher heading, including their styles.
+- `block.clone` copies one paragraph or table. `rows` replaces cell text and does not leave older paragraphs behind.
+- `slot.fill` fills one content control `tag`, or one paragraph `block_id`. Other content controls stay as they are. Rich text, nested controls, mixed run styles, images, fields and hyperlinks are rejected until a lossless edit exists.
+- `part.replace_text` changes one occurrence in the header or the footer.
+- `document.recolor` updates the theme and named styles, plus direct colors and shading that belong to that theme. Pictures are preserved. `unhandled` lists `unmapped` and `unsupported` colors with a location. `recolor_complete: true` means that list is empty.
+
+Word repaginates. Do not insert page breaks to manufacture a page count.
+
+## 3. Fallback
+
+`append_paragraph`, `append_table` and `insert_image` add content with an existing style. `insert_block` is one bounded paragraph fragment, not the normal way to write. Repairs (`replace_text`, `set_paragraph_style`, `set_paragraph_format`, `delete_block`, `set_table_format`, `set_page`) stay available. Payloads are in `references/operations.md`. The old batch plan is in `references/legacy-operations.md` and is not this workflow.
+
+## 4. Revisions and checkpoints
+
+Use the current `base_revision`, a stable `block_id` and a stable `operation_id`. Repeat the same request after uncertain delivery. A conflict means read `status` and rebase. A failed operation does not increment the revision. Restore creates a new revision.
+
+The engine asks for a checkpoint after three additions and at each section end. Do not skip it by writing the package yourself. Failed automatic checks block further additions until the current content is repaired.
+
+## 5. Render and finish
+
+`checkpoint` renders with LibreOffice and records pages. Inspect those images. A vision-capable reviewer can call `review-page` with notes from that image. Text-only inspection cannot pass a page. A missing renderer is a failed checkpoint.
+
+`finalize --base-revision` requires the final checkpoint and a reviewed final page. The file can be downloaded while visual review is pending; call it a draft until the pages have been seen. Never execute macros or embedded programs from a template.
+
+## Request
 
 ```json
-{"document_id":"report","operation_id":"op-0007","base_revision":6,"operation":{"type":"append_paragraph","block_id":"intro-p3","style":"Normal","text":"这是逐步生成的第三个段落。"}}
+{"document_id":"report","operation_id":"op-0007","base_revision":6,"operation":{"type":"section.clone","source_block_id":"template-0013","block_id":"sec-next","heading":"实施范围","paragraphs":["第一段。","第二段。"]}}
 ```
 
-`init` without `--document-id`, `apply`, `render`, `compare` and the original exact-hash `finalize` remain compatibility utilities for existing offline callers. **They are not the new Skill authoring workflow.** Use `finalize --base-revision` for atomic-history finalization (`publish` is an alias). The platform observes CLI revision events at execute boundaries and supplies read-only preview. It does not register DOCX-specific model tools or inject this workflow into the global system prompt.
-
-Rendering requires Python dependencies from requirements.txt, LibreOffice Writer, fontconfig and installed document fonts (blank documents default to Noto Sans CJK SC / Liberation Sans). Structural validation alone does not certify Word compatibility. Final DOCX, LibreOffice page QA and browser paginated preview serve different purposes. The platform preview uses the same LibreOffice page images as QA; it has no editing controls.
-
-## Quality criteria
-
-- **Structure**: all package XML parses, main part and relationship targets exist, generated relationship references resolve; final section properties occupy the valid position.
-- **Content**: every required section/value is present; no undisclosed invented facts; captions and references remain accurate.
-- **Layout**: page screenshots inspected end-to-end, no clipped or overlapping elements; page breaks intentional, fonts available.
-- **Template**: untouched parts remain unchanged; deviations from template are intentional and documented. Never treat raw page pixel similarity as a pass/fail decision when the content changes.
-- **Editability**: DOCX contains true paragraphs/tables/inline image objects, not a single rasterized document.
-
-## Additional resources
-
-- `references/operations.md`: exact JSON operation schema, WordprocessingML snippets, errors.
-- `references/architecture.md`: package lifecycle, validation levels and extended capabilities.
-- `references/extensions.md`: full-complexity implementation backlog with risks.
-- `examples/plan.example.json`: basic blank-doc plan.
-- `tests/test_skill.py`: local regression tests.
+Structures this skill will not silently simplify: merged or nested tables, mixed character styles, images inside a rewritten paragraph, fields, hyperlinks, and rich-text content controls. Those operations raise and leave the last good file in place.

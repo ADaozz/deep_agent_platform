@@ -373,6 +373,36 @@ def test_deck_review_returns_specific_pages_and_gates_finalize(harness):
     h.store.finalize(revision)
 
 
+def test_stale_async_deck_review_does_not_overwrite_new_revision(harness):
+    gate = threading.Event()
+
+    def two_page_deck(system, text):
+        if system != vision.DECK_SYSTEM_PROMPT:
+            return answer()
+        checks = {key: dict(verdict='ok', evidence=f'{label}：两页一致') for key, label in vision.DECK_CATEGORIES.items()}
+        return json.dumps(dict(status='pass', summary='过期整套审查', checks=checks, issues=[]), ensure_ascii=False)
+
+    model = FakeVision(two_page_deck, gate=gate)
+    h = harness(model)
+    for index in range(1, 3):
+        h.slide(f's{index}', title=f'第 {index} 页')
+        h.review(f's{index}')
+    requested = h.store.request_deck_review(h.store.status()['revision'])
+    request_id = requested['deck_review']['request_id']
+    h.service.sync()
+    deadline = time.time() + 30
+    while time.time() < deadline and not model.calls:
+        time.sleep(.1)
+    assert model.calls
+    h.op('element.adjust', sid='s1', element={'id': 'title', 'dx_in': 0.15})
+    assert h.store.status()['deck_review']['status'] == 'stale'
+    gate.set()
+    time.sleep(1)
+    assert h.store.record_deck_review(request_id, dict(status='passed', summary='late')) == dict(applied=False, reason='stale')
+    assert h.store.status()['deck_review']['status'] == 'stale'
+    assert h.store.status()['deck_review'].get('summary') != '过期整套审查'
+
+
 def test_feature_snapshot_keeps_vision_service_on_the_host(tmp_path):
     from platform_app import format_plugins
     format_plugins.snapshot_skills(tmp_path)
