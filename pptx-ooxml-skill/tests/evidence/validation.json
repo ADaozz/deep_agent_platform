@@ -2,10 +2,10 @@
   "renderer": "LibreOffice Impress",
   "source": "templates/consulting-brief",
   "operations": [
+    "init blank",
+    "slide.import x10",
     "slot.fill cover",
-    "presentation.recolor gray",
-    "slide.clone x10",
-    "presentation.discard_prototypes"
+    "presentation.recolor gray"
   ],
   "slides": [
     "page-1",
@@ -19,6 +19,22 @@
     "page-9",
     "page-10"
   ],
+  "performance": {
+    "import_s": [
+      0.08245391399941582,
+      0.06771766199926788,
+      0.06508845600001223,
+      0.09796133599957102,
+      0.08369010200112825,
+      0.08592628699989291,
+      0.07755179699961445,
+      0.08386282900028164,
+      0.08442215799914266,
+      0.07371975000023667
+    ],
+    "total_s": 4.6811378709990095,
+    "pptx_bytes": 72276
+  },
   "images": {
     "before.png": {
       "sha256": "735b50b168c2b2f43effa2eeee4a6df6caa9e119e58b64a1ba0053a17d13d5d3",
@@ -29,19 +45,19 @@
       "bytes": 10728
     },
     "recolored.png": {
-      "sha256": "6f0fd2aa45371581f6c963dd371dc66e93066fac31d95dd2430f6d8340f596fe",
-      "bytes": 16422
+      "sha256": "1531af146aa66d1af8011e83c1a484e36153ccb01e7dde036f5a4a1da8421ac0",
+      "bytes": 16436
     },
     "comparison.png": {
-      "sha256": "6fdbe5131f77580ca8f020632e4643c98a6a818b7acb944c8773a0c42a55cb0a",
-      "bytes": 29683
+      "sha256": "a1d9776d28c35895f35843cb47cafd03ba259c374f377a61caf7a6c1713c8dbb",
+      "bytes": 27485
     },
     "final-sheet.png": {
-      "sha256": "f78c66098d980700cb3a1109bbb45b5fc84efd973a77809c2c8dba3a9c297476",
-      "bytes": 21451
+      "sha256": "b7a60e37634da7996324c1be21c0c6b5d4c9e8a5280aa6eaaa3ae130c3159544",
+      "bytes": 23623
     }
   },
-  "deck_sha256": "296c1b1506c02e90dc11218791b5056ebd9ab495e853af87fde7c63ee5ea2793",
+  "deck_sha256": "8273b2bc7764b0978106e2db3cde2e8cdf5a056f0036ab08c9a37f8cd6ede78f",
   "recolor_complete": false,
-  "note": "before and recolored are the data slide (blue accent bar versus gray). filled is the cover after slot.fill. final-sheet is the ten generated pages after prototypes were discarded. Logo on the cover stays the original navy. All images are LibreOffice PDF exports."
+  "note": "before and recolored are the data slide (blue accent bar versus gray). filled is the imported cover after slot.fill. final-sheet is the ten generated pages. Logo on the cover stays the original navy. All images are LibreOffice PDF exports."
 }

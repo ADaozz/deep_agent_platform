@@ -43,6 +43,7 @@ def load(name):
 shared=load('artifact_runtime'); renderer=load('slide_renderer'); validator=load('slide_validator'); component_renderer=load('component_renderer')
 native_style=load('native_style'); native_diagram=load('native_diagram')
 template_importer=load('template_importer'); template_clone=load('template_clone')
+template_slide_import=load('template_slide_import')
 template_recolor=load('template_recolor'); template_fill=load('template_fill')
 
 DEFAULT_PROFILE='corporate_blue'
@@ -268,14 +269,71 @@ def serialize(prs):
 
 
 def _require_checked(state,prs):
-    """Content slides must pass check-slide before another one is added. Prototypes are layout sources, not delivery pages."""
-    prototypes=set(state.get('prototype_slides') or [])
+    """Content slides must pass check-slide before another one is added or imported."""
+    if state.get('prototype_slides') or state.get('template_use')=='template_reference':
+        raise ValueError('Legacy template_reference session is not supported; start a new deck and import pages with slide.import')
     for slide in prs.slides:
         sid=renderer.slide_identity(slide)
-        if sid in prototypes:continue
         review=state['reviews'].get(sid,{})
         if review.get('status')=='blocked' or not review.get('automatic_passed') or (state['mode']=='strict' and review.get('visual_review')!='passed'):
             raise ValueError('Check all affected slides before creating the next slide')
+
+
+def _place_slide(prs,dest,insert_after):
+    if not insert_after:
+        return
+    anchor=find_slide(prs,insert_after)
+    ids=[renderer.slide_identity(item) for item in prs.slides]
+    index=ids.index(renderer.slide_identity(anchor))+1
+    node=next(item for item in prs.slides._sldIdLst if int(item.get('id'))==dest.slide_id)
+    prs.slides._sldIdLst.remove(node); prs.slides._sldIdLst.insert(index,node)
+
+
+def _imported_targets(state,template_id):
+    buckets={}
+    for dest_id,info in (state.get('imported_slides') or {}).items():
+        if (info or {}).get('template_id')!=template_id:
+            continue
+        buckets.setdefault(info.get('source_slide_id'),[]).append(dest_id)
+    return buckets
+
+
+def _resolve_import_source(request,asset_root):
+    template_id=request.get('template_id')
+    identifier(template_id)
+    relative=request.get('template_path')
+    if relative:
+        root=Path(asset_root or Path.cwd()).resolve()
+        path=(root/relative).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise ValueError('Unsafe or missing template path')
+        return path,template_id,template_importer.file_sha256(path),None
+    path,entry,digest=template_importer.load_template(template_id)
+    return path,template_id,digest,entry
+
+
+def _adopt_imported_slide(state,sid,source_slide_id,template_id,digest,manifest,entry):
+    spec=next((slide for slide in (manifest.get('slides') or []) if slide.get('slide_id')==source_slide_id),None)
+    if spec is None and entry:
+        spec=next((slide for slide in entry.get('slides') or [] if slide.get('slide_id')==source_slide_id),None)
+    if spec:
+        slots=dict(spec.get('slots') or {})
+        if slots:state.setdefault('template_slots',{})[sid]=slots
+        preserve=list(spec.get('preserve') or [])
+        if preserve:state.setdefault('protected_elements',{})[sid]=preserve
+    if not state.get('template_tokens'):
+        tokens=dict((manifest or {}).get('tokens') or (entry or {}).get('tokens') or {})
+        if tokens:
+            state['template_tokens']=tokens
+            derived=semantic_palette(tokens)
+            if derived and not state.get('effective_palette'):
+                state['effective_palette']=derived
+                apply_effective_palette(state,derived)
+    state.setdefault('imported_slides',{})[sid]=dict(
+        template_id=template_id,source_slide_id=source_slide_id,source_sha256=digest)
+    state.setdefault('template_complex',{})[sid]=True
+    state['template']=True
+    state['active_slide']=sid
 
 
 def find_slide(prs,sid):
@@ -552,8 +610,8 @@ class PresentationStore(shared.ArtifactStore):
             conflicts=state.get('design_conflicts',[]),
             template_manifest=state.get('template_manifest'),template_slots=state.get('template_slots',{}),
             effective_palette=state.get('effective_palette'),template_tokens=state.get('template_tokens'),
-            protected_elements=state.get('protected_elements'),template_use=state.get('template_use'),
-            prototype_slides=state.get('prototype_slides'))
+            protected_elements=state.get('protected_elements'),
+            imported_slides=state.get('imported_slides'),imported_parts=state.get('imported_parts'))
     def commit(self,c,state,data,operation_id,request,changed,kind='presentation_revision',extra=None):
         validator.validate_package(data)
         state.update(revision=state['revision']+1,sha256=hashlib.sha256(data).hexdigest(),pending_publish=True,finalized=False)
@@ -573,11 +631,10 @@ class PresentationStore(shared.ArtifactStore):
         if extra:event.update(extra)
         self.persist_revision(c,state,data,event,request,operation_id,kind)
         return event
-    def init(self,presentation_id,template=None,mode='normal',theme=DEFAULT_PROFILE,profile=None,use='edit_existing'):
+    def init(self,presentation_id,template=None,mode='normal',theme=DEFAULT_PROFILE,profile=None):
         identifier(presentation_id)
         profile_id=profile or theme
         if mode not in ('normal','strict'):raise ValueError('Unknown review mode')
-        if use not in ('edit_existing','template_reference'):raise ValueError('use must be edit_existing or template_reference')
         profiles().get(profile_id)
         with self.locked() as (c,state):
             if state:
@@ -590,7 +647,7 @@ class PresentationStore(shared.ArtifactStore):
                 prs=Presentation(); prs.slide_width=Inches(13.333333); prs.slide_height=Inches(7.5)
             state=dict(presentation_id=presentation_id,revision=-1,mode=mode,slots={},layouts={},layout_variants={},layout_modules={},
                 layout_slots={},backgrounds={},reviews={},renders={},repair_attempts={},template=bool(template),template_complex={},
-                template_use=use if template else 'blank',prototype_slides=[],protected_elements={})
+                protected_elements={},imported_slides={},imported_parts={})
             apply_profile(state,profile_id)
             if template:
                 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -615,8 +672,6 @@ class PresentationStore(shared.ArtifactStore):
                     if derived:
                         state['effective_palette']=derived
                         apply_effective_palette(state,derived)
-                if use=='template_reference':
-                    state['prototype_slides']=[renderer.slide_identity(slide) for slide in prs.slides]
             for slide in prs.slides:
                 sid=renderer.slide_identity(slide)
                 state['template_complex'][sid]=bool(template)
@@ -628,7 +683,7 @@ class PresentationStore(shared.ArtifactStore):
         return dict(presentation_id=state['presentation_id'],revision=state['revision'],sha256=state['sha256'],path=self.path.name,
             manifest=renderer.manifest(Presentation(io.BytesIO(data)),state),active_slide=state.get('active_slide'),finalized=state.get('finalized',False),
             mode=state['mode'],theme=state['theme'],profile_id=state.get('profile_id'),deck_review=state.get('deck_review'),
-            template_index=_template_index(state),template_use=state.get('template_use'),prototype_slides=list(state.get('prototype_slides') or []),
+            template_index=_template_index(state),imported_slides=dict(state.get('imported_slides') or {}),
             history=[{key:value for key,value in json.loads(r[0]).items() if key in ('revision','operation_id','sha256','slide_id','status')} for r in c.execute('SELECT result FROM revisions ORDER BY revision')])
     def status(self):
         with self.locked() as (c,state):return self.view(c,state)
@@ -663,6 +718,7 @@ class PresentationStore(shared.ArtifactStore):
     def apply_one(self,request,asset_root=None):
         identifier(request['operation_id'])
         if len(json.dumps(request,ensure_ascii=False))>30000:raise ValueError('Bounded operation payload exceeded')
+        asset_root=asset_root or self.path.parent
         with self.locked() as (c,state):
             if not state or request['presentation_id']!=state['presentation_id']:raise ValueError('Presentation identity mismatch')
             old=c.execute('SELECT request,result FROM revisions WHERE operation_id=?',(request['operation_id'],)).fetchone()
@@ -670,7 +726,10 @@ class PresentationStore(shared.ArtifactStore):
                 if json.loads(old[0])!=request:raise ValueError('Operation ID reused with different request')
                 return json.loads(old[1])
             self.assert_current(state,request['base_revision']); prs=Presentation(io.BytesIO(self.snapshot_unlocked(c,state['revision'])))
-            state=copy.deepcopy(state); normalize_state(state); op=request['operation']; sid=request.get('slide_id'); changed=[sid] if sid else ['*']; extra=None
+            state=copy.deepcopy(state); normalize_state(state)
+            if state.get('prototype_slides') or state.get('template_use')=='template_reference':
+                raise ValueError('Legacy template_reference session is not supported; start a new deck and import pages with slide.import')
+            op=request['operation']; sid=request.get('slide_id'); changed=[sid] if sid else ['*']; extra=None
             if op=='slide.add':
                 _require_checked(state,prs)
                 identifier(sid)
@@ -702,41 +761,41 @@ class PresentationStore(shared.ArtifactStore):
             elif op=='slide.remove':
                 slide=find_slide(prs,sid)
                 template_clone.remove_slide(prs,slide)
-                for bucket in ('reviews','template_slots','protected_elements','layouts','layout_slots','backgrounds'):
+                for bucket in ('reviews','template_slots','protected_elements','layouts','layout_slots','backgrounds','imported_slides'):
                     state.get(bucket,{}).pop(sid,None)
-                prototypes=state.get('prototype_slides') or []
-                state['prototype_slides']=[item for item in prototypes if item!=sid]
                 changed=['*']
             elif op=='presentation.discard_prototypes':
-                if state.get('template_use')!='template_reference':raise ValueError('discard_prototypes applies to a template_reference deck')
-                redirects=request.get('redirects') or {}
-                if not isinstance(redirects,dict):raise ValueError('redirects must be a mapping of prototype slide_id to destination slide_id')
-                for source,dest in redirects.items():
-                    identifier(source);identifier(dest)
-                removed=list(state.get('prototype_slides') or [])
-                extra=dict(discard=template_clone.discard_prototypes(prs,removed,redirects,renderer.slide_identity))
-                extra['discarded_prototypes']=removed
-                for prototype in removed:
-                    for bucket in ('reviews','template_slots','protected_elements','layouts','layout_slots','backgrounds'):
-                        state.get(bucket,{}).pop(prototype,None)
-                state['prototype_slides']=[]
-                changed=['*']
+                raise ValueError('presentation.discard_prototypes is not supported; working PPTX no longer stores prototype slides')
+            elif op=='slide.import':
+                _require_checked(state,prs)
+                identifier(sid)
+                source_slide_id=request.get('source_slide_id')
+                identifier(source_slide_id)
+                if any(renderer.slide_identity(s)==sid for s in prs.slides):raise ValueError('Duplicate slide ID')
+                source_path,template_id,digest,entry=_resolve_import_source(request,asset_root)
+                source_prs=Presentation(str(source_path))
+                manifest=template_importer.index_loaded(source_prs,source_path)
+                source=find_slide(source_prs,source_slide_id)
+                dest,report=template_slide_import.import_slide(
+                    prs,source_prs,source,sid,template_id,_imported_targets(state,template_id),
+                    state.setdefault('imported_parts',{}),renderer.slide_identity)
+                _place_slide(prs,dest,request.get('insert_after'))
+                _adopt_imported_slide(state,sid,source_slide_id,template_id,digest,manifest,entry)
+                extra={'import':report,'source':dict(template_id=template_id,source_slide_id=source_slide_id,source_sha256=digest)}
+                changed=[sid]
             elif op=='slide.clone':
                 _require_checked(state,prs)
                 identifier(sid)
                 source=find_slide(prs,request['source_slide_id'])
                 if any(renderer.slide_identity(s)==sid for s in prs.slides):raise ValueError('Duplicate slide ID')
                 dest=template_clone.clone_slide(prs,source,sid)
-                if request.get('insert_after'):
-                    anchor=find_slide(prs,request['insert_after'])
-                    ids=[renderer.slide_identity(s) for s in prs.slides]
-                    index=ids.index(renderer.slide_identity(anchor))+1
-                    node=next(n for n in prs.slides._sldIdLst if int(n.get('id'))==dest.slide_id)
-                    prs.slides._sldIdLst.remove(node); prs.slides._sldIdLst.insert(index,node)
+                _place_slide(prs,dest,request.get('insert_after'))
                 copied=state.get('template_slots',{}).get(request['source_slide_id'])
                 if copied:state.setdefault('template_slots',{})[sid]=dict(copied)
                 protected=(state.get('protected_elements') or {}).get(request['source_slide_id'])
                 if protected:state.setdefault('protected_elements',{})[sid]=list(protected)
+                origin=state.get('imported_slides',{}).get(request['source_slide_id'])
+                if origin:state.setdefault('imported_slides',{})[sid]=dict(origin)
                 state.setdefault('template_complex',{})[sid]=state.get('template_complex',{}).get(request['source_slide_id'],True)
                 if getattr(template_clone,'last_clone_report',None):extra=dict(clone=template_clone.last_clone_report)
                 state['active_slide']=sid
@@ -969,7 +1028,7 @@ class PresentationStore(shared.ArtifactStore):
         prior=json.loads(c.execute('SELECT result FROM revisions WHERE revision=?',(revision,)).fetchone()[0])
         state=copy.deepcopy(state);design=prior.get('design') or {}
         if design:
-            for key in ('theme','font_family','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_font','template_accent','design_conflicts','template_manifest','template_slots','effective_palette','template_tokens','protected_elements','template_use','prototype_slides'):
+            for key in ('theme','font_family','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_font','template_accent','design_conflicts','template_manifest','template_slots','effective_palette','template_tokens','protected_elements','imported_slides','imported_parts'):
                 if key in design:state[key]=design[key]
             state['profile_id']=design.get('profile_id',state.get('profile_id',DEFAULT_PROFILE));state['theme_name']=state['profile_id']
             try:state['profile']=profiles().get(state['profile_id'])
@@ -1173,8 +1232,6 @@ class PresentationStore(shared.ArtifactStore):
         with self.locked() as(c,state):
             self.assert_current(state,base_revision); prs=Presentation(io.BytesIO(self.snapshot_unlocked(c,base_revision)))
             if not len(prs.slides):raise ValueError('Empty presentation')
-            if state.get('template_use')=='template_reference' and state.get('prototype_slides'):
-                raise ValueError('Discard prototype slides before finalize; template_reference delivery cannot include sample pages')
             # Delivery needs intact, content-checked slides. Visual review is advice and never holds it up.
             problems=[];aesthetics={}
             for slide in prs.slides:
@@ -1259,7 +1316,7 @@ def plan_request(store,request):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','plan','import-template','list-templates','match-template']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--template-id'); parser.add_argument('--output'); parser.add_argument('--license-note',default=''); parser.add_argument('--role'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--use',choices=['edit_existing','template_reference'],default='edit_existing'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','plan','import-template','list-templates','match-template']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--template-id'); parser.add_argument('--output'); parser.add_argument('--license-note',default=''); parser.add_argument('--role'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
     if args.command in ('profiles','layouts','components','catalog'):
         result=catalog() if args.command=='catalog' else {args.command:catalog()[args.command]}
         print(json.dumps(result,ensure_ascii=False)); return
@@ -1268,10 +1325,12 @@ def main():
     if args.command=='import-template':
         if not args.template:parser.error('--template is required')
         print(json.dumps(template_importer.import_template(args.template,args.template_id,args.output,args.license_note),ensure_ascii=False)); return
+    if args.command=='match-template':
+        print(json.dumps(template_importer.match_library(args.template_id,args.role),ensure_ascii=False)); return
     if not args.pptx:parser.error('a presentation path is required')
     store=PresentationStore(args.pptx)
     if args.command=='plan':result=plan_request(store,json.loads(Path(args.request).read_text()))
-    elif args.command=='init':result=store.init(args.presentation_id,args.template,theme=args.theme or args.profile or DEFAULT_PROFILE,profile=args.profile,use=args.use)
+    elif args.command=='init':result=store.init(args.presentation_id,args.template,theme=args.theme or args.profile or DEFAULT_PROFILE,profile=args.profile)
     elif args.command=='apply-one':result=store.apply_one(json.loads(Path(args.request).read_text()),Path(args.pptx).parent)
     elif args.command=='status':result=store.status()
     elif args.command=='restore':result=store.restore(args.revision,args.base_revision,args.operation_id)
@@ -1283,7 +1342,6 @@ def main():
     elif args.command=='review-status':result=store.review_status(args.slide_id,args.wait)
     elif args.command=='request-review':result=store.request_review(args.slide_id)
     elif args.command=='request-deck-review':result=store.request_deck_review(args.base_revision)
-    elif args.command=='match-template':result=template_importer.match(store.status(),args.role)
     else:result=store.finalize(args.base_revision)
     print(json.dumps(result,ensure_ascii=False))
 

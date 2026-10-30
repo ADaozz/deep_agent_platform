@@ -4,7 +4,11 @@ The importer does not download templates and does not copy an unlicensed file
 into this skill. A manifest records slide roles, fill slots, theme tokens and
 precheck warnings. ``index_loaded`` writes stable ``da-slide:`` / ``da:`` names
 so later operations do not depend on PowerPoint's numeric shape ids.
+
+The template library is independent of any working PPTX: pages are selected
+from ``templates/`` (or another root) and copied in with ``slide.import``.
 """
+import hashlib
 import json
 import re
 import shutil
@@ -21,6 +25,14 @@ ID = re.compile(r'^[\w.-]{1,80}$')
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def list_templates(root=None):
     base = Path(root) if root else SKILL_ROOT / 'templates'
     found = []
@@ -31,14 +43,52 @@ def list_templates(root=None):
             manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
         except (OSError, json.JSONDecodeError):
             continue
+        package = manifest_path.parent / 'template.pptx'
+        recorded = manifest.get('source_sha256')
+        actual = file_sha256(package) if package.is_file() else None
         found.append(dict(
             template_id=manifest.get('template_id') or manifest_path.parent.name,
-            path=str(manifest_path.parent / 'template.pptx'),
+            path=str(package),
             manifest=str(manifest_path),
             license=manifest.get('license'),
-            slides=[dict(slide_id=slide.get('slide_id'), role=slide.get('role')) for slide in manifest.get('slides', [])],
+            source_sha256=actual or recorded,
+            source_sha256_recorded=recorded,
+            slide_size=manifest.get('slide_size'),
+            tokens=manifest.get('tokens') or {},
+            slides=[_catalog_slide(slide, manifest.get('slide_size')) for slide in manifest.get('slides', [])],
         ))
     return found
+
+
+def _catalog_slide(slide, default_size=None):
+    slide_id = slide.get('slide_id')
+    return dict(
+        slide_id=slide_id,
+        role=slide.get('role'),
+        preview=slide.get('preview') or (f'previews/{slide_id}.png' if slide_id else None),
+        slots=dict(slide.get('slots') or {}),
+        native_objects=dict(slide.get('native_objects') or {}),
+        slide_size=slide.get('slide_size') or default_size,
+        preserve=list(slide.get('preserve') or []),
+    )
+
+
+def load_template(template_id, root=None):
+    """Return ``(pptx_path, catalog_entry, source_sha256)`` for a library template."""
+    if not ID.fullmatch(template_id or ''):
+        raise ValueError('Invalid template_id')
+    matches = [item for item in list_templates(root) if item['template_id'] == template_id]
+    if not matches:
+        raise ValueError('Unknown template_id ' + template_id)
+    entry = matches[0]
+    package = Path(entry['path'])
+    if not package.is_file():
+        raise ValueError('Template file not found: ' + str(package))
+    actual = file_sha256(package)
+    recorded = entry.get('source_sha256_recorded')
+    if recorded and recorded != actual:
+        raise ValueError('Template source_sha256 does not match the file; refusing to use a replaced template')
+    return package, entry, actual
 
 
 def import_template(path, template_id=None, output=None, license_note=''):
@@ -91,11 +141,18 @@ def analyze(prs, template_id, source='', license_note=''):
         warnings.append('SmartArt is preserved but not a fill slot')
     if shutil.which('soffice') is None and shutil.which('libreoffice') is None:
         warnings.append('LibreOffice is not available to verify render compatibility')
+    size = dict(width=int(prs.slide_width), height=int(prs.slide_height))
+    for slide in slides:
+        slide['preview'] = f'previews/{slide["slide_id"]}.png'
+        slide['slide_size'] = size
+        slide['native_objects'] = _native_objects(slide['elements'])
     return dict(
         schema='deep-agent-template/v1',
         kind='pptx',
         template_id=template_id,
         source=source,
+        source_sha256=file_sha256(source) if source and Path(source).is_file() else None,
+        slide_size=size,
         license=_license(source, license_note),
         tokens=tokens,
         precheck=dict(
@@ -155,12 +212,38 @@ def apply_stable_ids(prs, manifest):
             prs_slide_shapes[element['index']].name = 'da:' + element_id
 
 
-def match(status, role):
-    manifest = (status or {}).get('template_index') or {}
-    slides = manifest.get('slides') or []
-    if role:
-        slides = [slide for slide in slides if slide.get('role') == role]
-    return dict(template_id=manifest.get('template_id'), role=role, slides=slides)
+def match_library(template_id=None, role=None, root=None):
+    """Search the template library. A working PPTX is not required."""
+    templates = list_templates(root)
+    if template_id:
+        templates = [item for item in templates if item['template_id'] == template_id]
+        if not templates:
+            raise ValueError('Unknown template_id ' + str(template_id))
+    payload = []
+    for item in templates:
+        slides = list(item.get('slides') or [])
+        if role:
+            slides = [slide for slide in slides if slide.get('role') == role]
+        if not slides and role:
+            continue
+        payload.append(dict(
+            template_id=item['template_id'],
+            source_sha256=item.get('source_sha256'),
+            slide_size=item.get('slide_size'),
+            slides=slides,
+        ))
+    if template_id:
+        chosen = payload[0] if payload else dict(
+            template_id=template_id, source_sha256=templates[0].get('source_sha256'),
+            slide_size=templates[0].get('slide_size'), slides=[])
+        return dict(chosen, role=role)
+    return dict(role=role, templates=payload)
+
+
+def match(status, role, root=None):
+    """Library search. ``status`` is ignored; kept so older callers still work."""
+    del status
+    return match_library(role=role, root=root)
 
 
 def consistency_report(before, after):
@@ -225,6 +308,17 @@ def _describe_slide(slide, index, prs):
         elements=elements,
         preserve=[element['id'] for element in elements if element.get('preserve')],
     )
+
+
+def _native_objects(elements):
+    counts = dict(chart=0, table=0, image=0, shape=0, text=0)
+    for element in elements:
+        kind = element.get('kind')
+        if kind in counts:
+            counts[kind] += 1
+        else:
+            counts['shape'] += 1
+    return {kind: count for kind, count in counts.items() if count}
 
 
 def _kind(shape):

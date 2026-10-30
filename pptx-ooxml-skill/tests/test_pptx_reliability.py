@@ -138,7 +138,7 @@ def test_recolor_palette_applies_to_new_objects_and_restores(tmp_path):
 def test_company_logo_survives_rename_clone_and_recolor(tmp_path):
     path = tmp_path / 'brand.pptx'
     presentation = Presentation()
-    presentation.slide_width = Inches(13.333)
+    presentation.slide_width = Inches(13.333333)
     presentation.slide_height = Inches(7.5)
     slide = presentation.slides.add_slide(presentation.slide_layouts[6])
     logo = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.OVAL, Inches(11), Inches(0.4), Inches(0.8), Inches(0.8))
@@ -194,121 +194,167 @@ def test_internal_slide_link_is_not_copied_as_a_new_slide(tmp_path):
     office.validator.validate_package(store.path.read_bytes())
 
 
-def test_template_reference_delivers_only_generated_slides(tmp_path):
+def _import(store, slide_id, source_slide_id, template_id='consulting-brief', **kwargs):
+    return apply(store, 'slide.import', slide_id=slide_id, source_slide_id=source_slide_id,
+        template_id=template_id, **kwargs)
+
+
+def test_blank_init_has_no_template_pages(tmp_path):
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck')
+    status = store.status()
+    assert status['manifest']['slides'] == []
+    assert status.get('imported_slides') == {}
+    assert 'prototype_slides' not in status
+    assert 'template_use' not in status
+
+
+def test_import_from_public_library_does_not_touch_source(tmp_path):
+    library = Path(__file__).resolve().parents[1] / 'templates' / 'consulting-brief' / 'template.pptx'
+    before = library.read_bytes()
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck')
+    apply(store, 'slide.import', slide_id='page-1', source_slide_id='tpl-001', template_id='consulting-brief')
+    assert library.read_bytes() == before
+    source = store.status()['imported_slides']['page-1']
+    assert source['template_id'] == 'consulting-brief'
+    assert source['source_slide_id'] == 'tpl-001'
+    opened = Presentation(store.path)
+    assert any(shape.name == 'da:title' for shape in opened.slides[0].shapes)
+    office.validator.validate_package(store.path.read_bytes())
+
+
+def test_library_match_does_not_need_a_working_pptx():
+    importer = load('template_importer')
+    listed = importer.list_templates()
+    brief = next(item for item in listed if item['template_id'] == 'consulting-brief')
+    assert brief['source_sha256']
+    assert brief['slides'][0]['preview']
+    matched = importer.match_library('consulting-brief', 'data')
+    assert matched['template_id'] == 'consulting-brief'
+    assert matched['slides'][0]['slide_id'] == 'tpl-004'
+    assert matched['slides'][0]['slots']['chart'] == 'chart'
+
+
+def test_slide_import_delivers_only_generated_slides(tmp_path):
     sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', tmp_path / 'template.pptx', use='template_reference')
-    prototypes = set(store.status()['manifest']['slides'][index]['slide_id'] for index in range(4))
-    sources = [slide['slide_id'] for slide in store.status()['manifest']['slides']]
+    store.init('deck')
+    sources = ['tpl-001', 'tpl-002', 'tpl-003', 'tpl-004']
     for index in range(10):
         accept_all(store)
-        apply(store, 'slide.clone', slide_id=f'page-{index + 1}', source_slide_id=sources[index % 4])
-    apply(store, 'presentation.discard_prototypes')
+        _import(store, f'page-{index + 1}', sources[index % 4], template_path='template.pptx')
     final_ids = [slide['slide_id'] for slide in store.status()['manifest']['slides']]
     assert final_ids == [f'page-{index + 1}' for index in range(10)]
-    assert prototypes.isdisjoint(final_ids)
     office.validator.validate_package(store.path.read_bytes())
     accept_all(store)
     store.finalize(store.status()['revision'])
     assert store.status()['finalized'] is True
 
 
-def test_second_clone_requires_check_slide_of_generated_pages(tmp_path):
+def test_second_import_requires_check_slide_of_generated_pages(tmp_path):
     sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', tmp_path / 'template.pptx', use='template_reference')
-    apply(store, 'slide.clone', slide_id='page-1', source_slide_id='tpl-001')
+    store.init('deck')
+    _import(store, 'page-1', 'tpl-001', template_path='template.pptx')
     revision = store.status()['revision']
     before = store.path.read_bytes()
     with pytest.raises(ValueError, match='Check all affected slides before creating the next slide'):
-        apply(store, 'slide.clone', slide_id='page-2', source_slide_id='tpl-002')
+        _import(store, 'page-2', 'tpl-002', template_path='template.pptx')
     assert store.path.read_bytes() == before
     assert store.status()['revision'] == revision
     accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-2', source_slide_id='tpl-002')
-    assert [slide['slide_id'] for slide in store.status()['manifest']['slides'][-2:]] == ['page-1', 'page-2']
+    _import(store, 'page-2', 'tpl-002', template_path='template.pptx')
+    assert [slide['slide_id'] for slide in store.status()['manifest']['slides']] == ['page-1', 'page-2']
 
 
-def test_finalize_blocks_while_template_prototypes_remain(tmp_path):
+def test_import_failure_does_not_publish(tmp_path):
     sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', tmp_path / 'template.pptx', use='template_reference')
-    accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-1', source_slide_id='tpl-001')
-    accept_all(store)
-    revision = store.status()['revision']
+    store.init('deck')
     before = store.path.read_bytes()
-    with pytest.raises(ValueError, match='Discard prototype slides'):
-        store.finalize(revision)
+    revision = store.status()['revision']
+    with pytest.raises(ValueError, match='Unknown or ambiguous stable slide ID'):
+        _import(store, 'page-1', 'missing', template_path='template.pptx')
     assert store.path.read_bytes() == before
     assert store.status()['revision'] == revision
-    assert store.status()['prototype_slides']
+    _import(store, 'page-1', 'tpl-001', template_path='template.pptx')
+    with pytest.raises(ValueError, match='not supported'):
+        apply(store, 'presentation.discard_prototypes')
+    assert store.status()['revision'] == revision + 1
 
 
-def test_discard_prototypes_retargets_internal_jumps(tmp_path):
-    path = _linked_template(tmp_path / 'linked.pptx')
+def test_repeated_import_keeps_independent_charts(tmp_path):
+    sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', path, use='template_reference')
+    store.init('deck')
+    source_hash = (tmp_path / 'template.pptx').read_bytes()
     accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-001', source_slide_id='tpl-001')
+    _import(store, 'page-a', 'tpl-004', template_path='template.pptx')
     accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-002', source_slide_id='tpl-002')
-    result = apply(store, 'presentation.discard_prototypes', redirects={'tpl-002': 'page-002'})
-    ids = [slide['slide_id'] for slide in store.status()['manifest']['slides']]
-    assert ids == ['page-001', 'page-002']
-    assert store.status()['prototype_slides'] == []
+    _import(store, 'page-b', 'tpl-004', template_path='template.pptx')
+    apply(store, 'chart.replace_data', slide_id='page-b', element_id='chart',
+        chart={'categories': ['Q1', 'Q2', 'Q3'], 'series': [{'name': 'Revenue', 'values': [4, 5, 6]}]})
     opened = Presentation(store.path)
-    nav = next(slide for slide in opened.slides if slide._element.cSld.get('name') == 'da-slide:page-001')
-    assert _jump_ids(opened, nav) == ['page-002']
-    assert result['discarded_prototypes'] == ['tpl-001', 'tpl-002']
+    values = {}
+    parts = set()
+    for slide in opened.slides:
+        for shape in slide.shapes:
+            if shape.has_chart:
+                values[slide._element.cSld.get('name')] = tuple(shape.chart.series[0].values)
+                parts.add(str(shape.chart.part.partname))
+    assert values['da-slide:page-a'] == (10, 20, 30)
+    assert values['da-slide:page-b'] == (4, 5, 6)
+    assert len(parts) == 2
+    assert (tmp_path / 'template.pptx').read_bytes() == source_hash
     office.validator.validate_package(store.path.read_bytes())
 
 
-def test_discard_prototypes_rejects_missing_or_ambiguous_redirects(tmp_path):
+def test_internal_jump_import_rebinds_or_refuses(tmp_path):
     path = _linked_template(tmp_path / 'linked.pptx')
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', path, use='template_reference')
-    accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-001', source_slide_id='tpl-001')
-    accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-002', source_slide_id='tpl-002')
-    accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-003', source_slide_id='tpl-002')
+    store.init('deck')
     before = store.path.read_bytes()
     revision = store.status()['revision']
-    with pytest.raises(ValueError, match='does not exist'):
-        apply(store, 'presentation.discard_prototypes', redirects={'tpl-002': 'missing'})
-    with pytest.raises(ValueError, match='has no redirect'):
-        apply(store, 'presentation.discard_prototypes')
-    with pytest.raises(ValueError, match='being discarded'):
-        apply(store, 'presentation.discard_prototypes', redirects={'tpl-002': 'tpl-001'})
+    with pytest.raises(ValueError, match='unresolved_internal_link'):
+        apply(store, 'slide.import', slide_id='page-001', source_slide_id='tpl-001',
+            template_id='linked', template_path='linked.pptx')
     assert store.path.read_bytes() == before
     assert store.status()['revision'] == revision
-    apply(store, 'presentation.discard_prototypes', redirects={'tpl-002': 'page-002'})
+    _import(store, 'page-002', 'tpl-002', template_id='linked', template_path='linked.pptx')
+    accept_all(store)
+    _import(store, 'page-001', 'tpl-001', template_id='linked', template_path='linked.pptx')
     opened = Presentation(store.path)
     nav = next(slide for slide in opened.slides if slide._element.cSld.get('name') == 'da-slide:page-001')
     assert _jump_ids(opened, nav) == ['page-002']
-    assert [slide['slide_id'] for slide in store.status()['manifest']['slides']] == ['page-001', 'page-002', 'page-003']
+    office.validator.validate_package(store.path.read_bytes())
 
 
-def test_discard_without_internal_jumps_does_not_need_redirects(tmp_path):
+def test_restore_keeps_import_source_metadata(tmp_path):
     sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', tmp_path / 'template.pptx', use='template_reference')
-    accept_all(store)
-    apply(store, 'slide.clone', slide_id='page-1', source_slide_id='tpl-001')
-    apply(store, 'presentation.discard_prototypes')
-    assert [slide['slide_id'] for slide in store.status()['manifest']['slides']] == ['page-1']
+    store.init('deck')
+    _import(store, 'page-1', 'tpl-001', template_path='template.pptx')
+    imported_revision = store.status()['revision']
+    apply(store, 'slot.fill', slide_id='page-1', slots={'title': '稍后还原', 'subtitle': '来源仍在'})
+    store.restore(imported_revision, store.status()['revision'], 'restore-import')
+    source = store.status()['imported_slides']['page-1']
+    assert source['template_id'] == 'consulting-brief'
+    assert source['source_slide_id'] == 'tpl-001'
+    assert source['source_sha256']
+    opened = Presentation(store.path)
+    title = next(shape for shape in opened.slides[0].shapes if shape.name == 'da:title')
+    assert '稍后还原' not in title.text_frame.text
 
 
-def test_edit_existing_keeps_internal_jumps_and_refuses_discard(tmp_path):
+def test_edit_existing_keeps_internal_jumps(tmp_path):
     path = _linked_template(tmp_path / 'linked.pptx')
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    store.init('deck', path, use='edit_existing')
+    store.init('deck', path)
     opened = Presentation(store.path)
     origin = next(slide for slide in opened.slides if slide._element.cSld.get('name') == 'da-slide:tpl-001')
     assert _jump_ids(opened, origin) == ['tpl-002']
-    with pytest.raises(ValueError, match='template_reference'):
+    with pytest.raises(ValueError, match='not supported'):
         apply(store, 'presentation.discard_prototypes', redirects={'tpl-002': 'tpl-002'})
     assert [slide['slide_id'] for slide in store.status()['manifest']['slides']] == ['tpl-001', 'tpl-002']
 
@@ -374,7 +420,7 @@ def test_deck_review_fingerprint_and_hash_mismatch_are_stale(tmp_path):
 
 def _linked_template(path):
     presentation = Presentation()
-    presentation.slide_width = Inches(13.333)
+    presentation.slide_width = Inches(13.333333)
     presentation.slide_height = Inches(7.5)
     first = presentation.slides.add_slide(presentation.slide_layouts[6])
     second = presentation.slides.add_slide(presentation.slide_layouts[6])

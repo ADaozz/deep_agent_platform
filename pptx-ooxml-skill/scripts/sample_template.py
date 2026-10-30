@@ -60,6 +60,7 @@ def build(directory):
     )
     for slide, role in zip(manifest['slides'], ROLES):
         slide['role'] = role
+        slide['preview'] = f'previews/{slide["slide_id"]}.png'
     by_id = {slide['slide_id']: slide for slide in manifest['slides']}
     by_id['tpl-004']['slots'] = {'title': 'title', 'chart': 'chart', 'picture': 'photo', 'footnote': 'footnote'}
     manifest['slots_by_slide'] = {slide['slide_id']: slide.get('slots') or {} for slide in manifest['slides']}

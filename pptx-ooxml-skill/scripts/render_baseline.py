@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import pymupdf
@@ -99,27 +100,28 @@ def main():
         root = Path(temporary)
         sample.build(root)
         store = office.PresentationStore(root / 'deck.pptx')
-        store.init('deck', root / 'template.pptx', use='template_reference')
+        store.init('deck')
         before_pdf = render_pdf(root / 'template.pptx', root / 'before')
         save_page(before_pdf, evidence / 'before.png', index=3)
-        state = store.status()
-        store.apply_one(dict(presentation_id='deck', operation_id='fill', base_revision=state['revision'],
-            slide_id='tpl-001', operation='slot.fill', slots={'title': '项目汇报', 'subtitle': '沿用企业模板'}))
-        state = store.status()
+        sources = ['tpl-001', 'tpl-002', 'tpl-003', 'tpl-004']
+        import_times = []
+        started = time.perf_counter()
+        for index in range(10):
+            _accept(store)
+            mark = time.perf_counter()
+            store.apply_one(dict(presentation_id='deck', operation_id=f'import-{index}', base_revision=store.status()['revision'],
+                operation='slide.import', slide_id=f'page-{index + 1}', source_slide_id=sources[index % len(sources)],
+                template_id='consulting-brief', template_path='template.pptx'))
+            import_times.append(time.perf_counter() - mark)
+        store.apply_one(dict(presentation_id='deck', operation_id='fill', base_revision=store.status()['revision'],
+            slide_id='page-1', operation='slot.fill', slots={'title': '项目汇报', 'subtitle': '沿用企业模板'}))
         filled_pdf = render_pdf(store.path, root / 'filled')
         save_page(filled_pdf, evidence / 'filled.png', index=0)
-        store.apply_one(dict(presentation_id='deck', operation_id='color', base_revision=state['revision'],
+        store.apply_one(dict(presentation_id='deck', operation_id='color', base_revision=store.status()['revision'],
             operation='presentation.recolor', palette={'accent': '707780', 'background': 'FFFFFF', 'text': '20242A', 'muted': '79818A'}))
         colored_pdf = render_pdf(store.path, root / 'colored')
         save_page(colored_pdf, evidence / 'recolored.png', index=3)
         comparison(evidence / 'before.png', evidence / 'recolored.png', evidence / 'comparison.png')
-        sources = [slide['slide_id'] for slide in store.status()['manifest']['slides'] if slide['slide_id'].startswith('tpl-')]
-        for index in range(10):
-            _accept(store)
-            store.apply_one(dict(presentation_id='deck', operation_id=f'clone-{index}', base_revision=store.status()['revision'],
-                operation='slide.clone', slide_id=f'page-{index + 1}', source_slide_id=sources[index % len(sources)]))
-        store.apply_one(dict(presentation_id='deck', operation_id='discard', base_revision=store.status()['revision'],
-            operation='presentation.discard_prototypes'))
         delivery_pdf = render_pdf(store.path, root / 'delivery')
         pages = []
         thumbs = root / 'thumbs'
@@ -130,12 +132,14 @@ def main():
             pages.append(dest)
         _sheet(pages, evidence / 'final-sheet.png')
         report = dict(renderer='LibreOffice Impress', source='templates/consulting-brief',
-            operations=['slot.fill cover', 'presentation.recolor gray', 'slide.clone x10', 'presentation.discard_prototypes'],
+            operations=['init blank', 'slide.import x10', 'slot.fill cover', 'presentation.recolor gray'],
             slides=[slide['slide_id'] for slide in store.status()['manifest']['slides']],
+            performance=dict(import_s=import_times, total_s=time.perf_counter() - started,
+                pptx_bytes=store.path.stat().st_size),
             images={name: dict(sha256=sha(evidence / name), bytes=(evidence / name).stat().st_size)
                 for name in ('before.png', 'filled.png', 'recolored.png', 'comparison.png', 'final-sheet.png')},
             deck_sha256=sha(store.path), recolor_complete=False,
-            note='before and recolored are the data slide (blue accent bar versus gray). filled is the cover after slot.fill. final-sheet is the ten generated pages after prototypes were discarded. Logo on the cover stays the original navy. All images are LibreOffice PDF exports.')
+            note='before and recolored are the data slide (blue accent bar versus gray). filled is the imported cover after slot.fill. final-sheet is the ten generated pages. Logo on the cover stays the original navy. All images are LibreOffice PDF exports.')
         (evidence / 'validation.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         print(evidence)
 

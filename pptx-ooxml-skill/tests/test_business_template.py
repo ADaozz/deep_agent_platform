@@ -1,15 +1,13 @@
-"""Licensed project business template: clone, fill, recolor, discard, real Impress renders."""
+"""Licensed project business template: import, fill, recolor, real Impress renders."""
 import importlib.util
 import json
 import shutil
+import time
 from pathlib import Path
 
 import pytest
-from lxml import etree
 from pptx import Presentation
-from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE, MSO_SHAPE_TYPE
-from pptx.opc.constants import RELATIONSHIP_TYPE as RT
-from pptx.oxml.ns import qn
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
@@ -59,25 +57,6 @@ def apply(store, kind, **kwargs):
         base_revision=state['revision'], operation=kind, **kwargs))
 
 
-def add_cover_jump(path):
-    presentation = Presentation(path)
-    cover, data = presentation.slides[0], presentation.slides[3]
-    button = cover.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, 914400, 5486400, 1828800, 457200)
-    button.name = 'da:to-data'
-    rel_id = cover.part.relate_to(data.part, RT.SLIDE)
-    props = button._element.find('.//' + qn('p:cNvPr'))
-    link = etree.SubElement(props, qn('a:hlinkClick'))
-    link.set(qn('r:id'), rel_id)
-    link.set('action', 'ppaction://hlinksldjump')
-    presentation.save(path)
-
-
-def jump_ids(presentation, slide):
-    by_part = {item.part: office.renderer.slide_identity(item) for item in presentation.slides}
-    return [by_part[rel.target_part] for rel in slide.part.rels.values()
-            if rel.reltype == RT.SLIDE and not rel.is_external]
-
-
 def native_inventory(path):
     presentation = Presentation(path)
     counts = dict(charts=0, tables=0, pictures=0, shapes=0)
@@ -118,35 +97,44 @@ def contact_sheet(pages, dest, columns=5):
     sheet.save(dest)
 
 
-def build_report(tmp_path):
+def build_report(tmp_path, timings=None):
     sample.build(tmp_path)
-    add_cover_jump(tmp_path / 'template.pptx')
+    source_hash = (tmp_path / 'template.pptx').read_bytes()
     store = office.PresentationStore(tmp_path / 'deck.pptx')
     listed = importer.list_templates()
     assert any(item['template_id'] == 'consulting-brief' for item in listed)
-    store.init('deck', tmp_path / 'template.pptx', use='template_reference')
+    store.init('deck')
+    started = time.perf_counter()
     for slide_id, source, slots in PLAN:
         accept_all(store)
-        apply(store, 'slide.clone', slide_id=slide_id, source_slide_id=source)
+        mark = time.perf_counter()
+        apply(store, 'slide.import', slide_id=slide_id, source_slide_id=source,
+            template_id='consulting-brief', template_path='template.pptx')
+        if timings is not None:
+            timings.setdefault('import_s', []).append(time.perf_counter() - mark)
         apply(store, 'slot.fill', slide_id=slide_id, slots=slots)
     apply(store, 'presentation.recolor', palette=GRAY)
     apply(store, 'element.adjust', slide_id='page-4', element={'id': 'title', 'dx_in': 0.25})
     apply(store, 'chart.replace_data', slide_id='page-3', element_id='chart',
         chart={'categories': ['Q1', 'Q2', 'Q3'], 'series': [{'name': '进度', 'values': [4, 6, 9]}]})
-    apply(store, 'presentation.discard_prototypes', redirects={'tpl-004': 'page-3'})
+    if timings is not None:
+        timings['total_s'] = time.perf_counter() - started
+        timings['pptx_bytes'] = store.path.stat().st_size
+    assert (tmp_path / 'template.pptx').read_bytes() == source_hash
     return store
 
 
 def test_business_template_builds_ten_generated_pages(tmp_path):
-    store = build_report(tmp_path)
+    timings = {}
+    store = build_report(tmp_path, timings)
     ids = [slide['slide_id'] for slide in store.status()['manifest']['slides']]
     assert ids == [item[0] for item in PLAN]
-    assert store.status()['prototype_slides'] == []
     assert store.status()['theme']['accent'] == '707780'
     opened = Presentation(store.path)
     cover = opened.slides[0]
     assert _text(cover, 'da:title') == '企业项目汇报'
-    assert jump_ids(opened, cover) == ['page-3']
+    logo = next(shape for shape in cover.shapes if shape.name == 'da:logo')
+    assert '0B2545' in [node.get('val').upper() for node in logo._element.iter(A + 'srgbClr') if node.get('val')]
     fourth = opened.slides[3]
     title = next(shape for shape in fourth.shapes if shape.name == 'da:title')
     source = Presentation(tmp_path / 'template.pptx').slides[2]
@@ -164,9 +152,14 @@ def test_business_template_builds_ten_generated_pages(tmp_path):
     source_cmp = Presentation(tmp_path / 'template.pptx').slides[2]
     original_cmp = next(shape for shape in source_cmp.shapes if shape.name == 'da:title')
     assert unmoved.left == original_cmp.left
+    sources = store.status()['imported_slides']
+    assert sources['page-1']['source_slide_id'] == 'tpl-001'
+    assert sources['page-3']['source_slide_id'] == 'tpl-004'
     accept_all(store)
     store.finalize(store.status()['revision'])
     office.validator.validate_package(store.path.read_bytes())
+    assert timings['import_s']
+    assert timings['total_s'] > 0
 
 
 @pytest.mark.skipif(not shutil.which('libreoffice'), reason='LibreOffice Impress required')
@@ -174,7 +167,6 @@ def test_business_template_libreoffice_evidence(tmp_path):
     evidence = tmp_path / 'evidence'
     evidence.mkdir()
     sample.build(tmp_path / 'source')
-    add_cover_jump(tmp_path / 'source' / 'template.pptx')
     template = tmp_path / 'source' / 'template.pptx'
     before_pdf = baseline.render_pdf(template, tmp_path / 'before')
     baseline.save_page(before_pdf, evidence / 'before.png', index=0)
@@ -195,16 +187,29 @@ def test_business_template_libreoffice_evidence(tmp_path):
     report = dict(
         renderer='LibreOffice Impress', source='templates/consulting-brief',
         slides=[slide['slide_id'] for slide in store.status()['manifest']['slides']],
-        prototype_slides=store.status()['prototype_slides'],
+        imported_slides=store.status()['imported_slides'],
         theme=store.status()['theme'], native=counts, fonts=sorted(fonts),
         title_moved=any(name == 'da:title' and box[0] > 0 for name, *box in boxes),
         images={name: dict(bytes=(evidence / name).stat().st_size)
             for name in ('before.png', 'filled.png', 'recolored.png', 'comparison.png', 'final-sheet.png')},
         note='Screenshots are LibreOffice PDF exports. Geometry and native objects are checked in XML, not by pixel match.')
     (evidence / 'validation.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-    assert report['prototype_slides'] == []
     assert report['native']['charts'] == 2
     assert (evidence / 'final-sheet.png').stat().st_size > 1000
+
+
+@pytest.mark.skipif(not shutil.which('libreoffice'), reason='LibreOffice Impress required')
+def test_imported_cover_runs_real_check_slide(tmp_path):
+    sample.build(tmp_path)
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck')
+    apply(store, 'slide.import', slide_id='page-1', source_slide_id='tpl-001',
+        template_id='consulting-brief', template_path='template.pptx')
+    apply(store, 'slot.fill', slide_id='page-1', slots={'title': '检查封面', 'subtitle': '真实渲染'})
+    result = store.check_slide('page-1', 'Checked cover title and subtitle', intent='封面')
+    assert result['review']['automatic_passed'] is True
+    assert result['review']['rendered'] is True
+    assert result['review']['content_notes']
 
 
 def _text(slide, name):
