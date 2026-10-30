@@ -4,7 +4,6 @@ The visible DOCX is published atomically after a durable commit. pending_publish
 repairs a process crash between the database commit and os.replace. flock covers
 CLI and HTTP processes; revisions never decrease, including restore.
 """
-from contextlib import contextmanager
 import fcntl
 import hashlib
 import importlib.util
@@ -13,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import re
-import sqlite3
 import tempfile
 import time
 import zipfile
@@ -99,8 +97,8 @@ def mark_blocks(parts):
 
 
 class DocumentStore(_shared.ArtifactStore):
-    def __init__(self, path):
-        super().__init__(path, '.docx', '.docx-state')
+    def __init__(self, path, temporary_root=None):
+        super().__init__(path, '.docx', '.docx-state', temporary_root)
 
     def _publish(self, path, data):
         publish(path, data)
@@ -220,8 +218,8 @@ class DocumentStore(_shared.ArtifactStore):
         """One renderer per immutable revision, shared by live preview and QA."""
         data = self.snapshot(revision)
         digest = hashlib.sha256(data).hexdigest()
-        output = self.directory / ('render-%08d' % revision)
-        output.mkdir(exist_ok=True)
+        output = self.render_directory(revision)
+        output.mkdir(parents=True, exist_ok=True)
         with (output / 'render.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             manifest_file = output / 'render.json'
@@ -303,7 +301,7 @@ class DocumentStore(_shared.ArtifactStore):
             self.save_state(c, state)
             event = dict(type='document_review', document_id=state['document_id'], revision=revision,
                 pages=pages, gate=state['gate'], render_error=failure, path=self.path.name,
-                **({} if failure else dict(preview_revision=revision, preview_pages=len(pages), preview_ready=True)))
+                **({} if failure else dict(preview_revision=revision, preview_pages=len(pages), preview_ready=True, render_directory=str(output))))
             c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
             c.commit()
             return event
@@ -340,7 +338,7 @@ class DocumentStore(_shared.ArtifactStore):
             self.assert_current(state, base_revision)
             if state.get('render_revision') != base_revision or not state['pages'] or state['gate'] != 'open' or any(p['status'] != 'passed' for p in state['pages']):
                 raise ValueError('Final checkpoint and actual visual review of every page required')
-            render_dir = self.directory / ('render-%08d' % base_revision)
+            render_dir = self.render_directory(base_revision)
             if not (render_dir / 'render.json').is_file() or any(not (render_dir / p['image']).is_file() for p in state['pages']):
                 raise ValueError('Reviewed render artifacts are missing; render and review again')
             state['finalized'] = True

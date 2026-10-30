@@ -105,7 +105,7 @@ test('full histories remain intact beyond five lines; raw artifact envelopes are
  assert.equal((body.match(/Line 999/g)||[]).length,1)
 })
 
-test('separate turns keep their summaries, final answers, file blocks and lead labels',()=>{
+test('separate turns keep their summaries, final answers and lead labels; files stay session-scoped',()=>{
  const blocks=conversationTimeline([
   {seq:1,type:'operation',operation:'message',text:'Build'},
   {seq:2,type:'thinking_delta',content:'Planning'},
@@ -116,9 +116,9 @@ test('separate turns keep their summaries, final answers, file blocks and lead l
   {seq:7,type:'assistant_completed',content:'Ready'},
   {seq:8,type:'result',status:'completed',output:'Ready'},
  ],'completed')
- assert.deepEqual(blocks.map(b=>b.kind),['user','process','assistant','files','user','assistant'])
+ assert.deepEqual(blocks.map(b=>b.kind),['user','process','assistant','user','assistant'])
  assert.equal(blocks[1].finished,true);assert.equal(blocks[1].lead,true);assert.equal(blocks.at(-1).lead,true)
- assert.deepEqual(blocks[3].files,[{path:'report.docx',size:42}])
+ assert(!blocks.some(block=>block.kind==='files'))
 })
 
 test('task and step duration use persisted event timestamps, no fabricated old timings',()=>{

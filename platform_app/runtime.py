@@ -132,8 +132,14 @@ def find(session_id):
 
 def public(record):
     value = {k: v for k, v in record.items() if k not in ('model_snapshot', 'config')}
+    snapshot = record.get('model_snapshot')
+    if snapshot:
+        value['context_window'] = m.validate(m.unseal(snapshot['encrypted'])).get_profile(record['model_id']).context_window
+    value['enabled_features'] = [meta['id'] for meta in format_plugins.enabled()]
     context = resolve(record['id'])
     value['workspace_id'] = context.workspace_id
+    value['output_files'] = [{'path': path, 'size': size} for path, (_, size) in file_snapshot(context.files_root).items()
+        if Path(path).parts[0] != 'uploads']
     root = context.artifacts_root
     value['artifacts'] = [p.name for p in root.iterdir() if p.is_file() and not p.is_symlink()] if root.exists() else []
     return value
@@ -170,10 +176,10 @@ class Runtime:
                     record['usage'] = {}
             if event['type'] == 'runtime_config_failed':
                 record['pending_sandbox_mode'] = self.runner.pending_sandbox_mode() if self.runner else None
-            if event['type'] == 'assistant_started':
-                record['usage'] = {}
-            elif event['type'] == 'usage':
-                record['usage'] = event.get('result') or {}
+            # Keep the latest completed request visible while the next one streams.
+            # Empty usage events mark request start, not zero token consumption.
+            if event['type'] == 'usage' and (event.get('result') or {}).get('input_tokens') is not None:
+                record['usage'] = event['result']
             artifact=event.get('artifact_extension')
             if artifact:
                 items=record.setdefault(artifact['state_key'],{})
@@ -196,7 +202,7 @@ class Runtime:
             record=find(self.id)
             root=resolve(self.id).files_root
             root.mkdir(parents=True,exist_ok=True)
-            self.artifact_services=format_plugins.build_services(root,self.id,self.event)
+            self.artifact_services=format_plugins.build_services(root,self.event,temporary_root=resolve(self.id).workspace_root / 'tmp' / 'office-renders')
             for feature,service in self.artifact_services.items():
                 service.bind_state(record)
             return self.artifact_services
@@ -205,7 +211,6 @@ class Runtime:
         data=asdict(event)
         self.event(data)
         for service in self.artifact_services.values():
-            if self.runner:service.vision=self.runner.supports_next_input('image')
             if data['type'] in ('tool_completed','tool_failed'):service.detect_external()
 
     def build(self):
@@ -241,7 +246,7 @@ class Runtime:
         installed = skills / 'installed'
         installed.mkdir(exist_ok=True)
         for skill in config.get('native_skills', []):
-            if not skill.get('enabled'):
+            if not skill.get('enabled') or skill.get('source') == 'feature':
                 continue
             identity = skill['id']
             if Path(identity).name != identity or identity in ('.', '..'):
@@ -257,7 +262,7 @@ class Runtime:
                 shutil.rmtree(temporary)
             shutil.copytree(source, temporary, symlinks=True, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '*.pyc'))
             temporary.rename(destination)
-        format_plugins.snapshot_skills(skills)
+        format_plugins.snapshot_skills(skills,config.get('skill_bindings'))
         snapshot = record['model_snapshot']
         settings = Settings.from_mapping({'llm': m.unseal(snapshot['encrypted'])})
         hidden = d.hidden_tools(config)
@@ -276,11 +281,10 @@ class Runtime:
         manager.load()
         adapter = d.ToolAdapter(config, self.id)
         self.ensure_artifact_services()
-        for service in self.artifact_services.values():service.vision='image' in settings.active_profile.input
         try:
             prepared = prepare_agent(settings=settings, model=model, checkpointer=store.checkpointer,
-                instructions=f'当前 Thread 私有目录：{context.workspace_root}。面向用户的文件必须写入 {context.files_root}；通过 execute 使用文档脚本时先切换到该文件目录。不得读取其他 Thread 或平台控制数据。\n\n' + format_plugins.instructions() + '\n\n' + '\n\n'.join([config['system_prompt'], '\n'.join(config['rules'])]), skills=['/agent-skills/', '/agent-skills/installed/'],
-                extra_tools=[*adapter.tools(), *[tool for service in self.artifact_services.values() for tool in service.tools()]], interrupt_on={**{t['name']: True for t in config['tools'] if t['enabled'] and t['name'] in d.TOOL_SCHEMAS}, **{name: True for service in self.artifact_services.values() for name in getattr(service,'approval_tools',())}} or None, mcp=manager)
+                instructions=f'当前 Thread 私有目录：{context.workspace_root}。面向用户的文件必须写入 {context.files_root}；校验、渲染、截图等过程文件必须写入临时目录 {context.workspace_root / "tmp"}，不得作为输出文件交付。不得读取其他 Thread 或平台控制数据。\n\n' + '\n\n'.join([config['system_prompt'], '\n'.join(config['rules'])]), skills=['/agent-skills/', '/agent-skills/installed/'],
+                extra_tools=adapter.tools(), interrupt_on={t['name']: True for t in config['tools'] if t['enabled'] and t['name'] in d.TOOL_SCHEMAS} or None, mcp=manager)
             runner = AgentRunner(prepared=prepared, settings=settings, session_store=store,
                 thread_id=self.id, workspace=context.workspace_root, mcp_manager=manager,
                 on_event=self.core_event)
@@ -346,10 +350,13 @@ class Runtime:
                 raise ValueError('未知操作')
             with self.lock:
                 record = find(self.id)
+                usage = runner_usage(runner)
+                if result.error and usage.get('input_tokens') is None:
+                    usage = record.get('usage', {})
                 record.update(status=result.status, output=result.output or '',
                     error='内核执行失败，请检查服务端日志及模型配置。' if result.error else None,
                     pending_tool_calls=result.pending_tool_calls, human_input=result.human_input,
-                    usage=runner_usage(runner), model_id=runner.current_model().id,
+                    usage=usage, model_id=runner.current_model().id,
                     permission_mode=runner.permission_mode().value,
                     pending_permission_mode=runner.pending_permission_mode().value if runner.pending_permission_mode() else None,
                     sandbox_mode=runner.sandbox_mode(),

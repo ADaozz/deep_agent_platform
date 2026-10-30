@@ -11,7 +11,9 @@ os.environ.setdefault('PLATFORM_DATA_DIR',tempfile.mkdtemp(prefix='docx-e2e-'))
 from docx_corpus import formatted_operations, make_assets
 from platform_app import domain as d, models as m
 from platform_app.main import app
-from platform_app.documents import DocumentStore
+from platform_app.format_plugins import load_plugin
+DocumentStore = load_plugin('docx').DocumentStore
+from office_cli import command
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatResult, ChatGeneration
@@ -31,7 +33,7 @@ class FormattingModel(BaseChatModel):
         path=root/'report.docx'
         if not path.exists():
             make_assets(root)
-            name,args='docx_init',dict(document_id='report')
+            name,args='init',dict(document_id='report')
         else:
             store=DocumentStore(path); state=store.status(); revision=state['revision']
             ids={b['block_id'] for b in state['blocks']}
@@ -41,7 +43,7 @@ class FormattingModel(BaseChatModel):
             if state['gate']=='failed':
                 return ChatResult(generations=[ChatGeneration(message=AIMessage(content='排版检查失败，保留草稿等待修复。'))])
             if state['gate']!='open':
-                name,args='docx_checkpoint',dict(document_id='report')
+                name,args='checkpoint',dict(document_id='report')
             elif correction and 'correct-remove' not in history and 'p-2' in ids:
                 operation=dict(type='delete_block',block_id='p-2'); operation_id='correct-remove'
             elif correction and 'correct-remove' in history and 'correct-table' not in history:
@@ -53,12 +55,12 @@ class FormattingModel(BaseChatModel):
                 if next_op:
                     i,operation=next_op; operation_id=f'plan-{i:03d}'
                 elif not state['pages'] or any(not p['complete'] for p in state['pages']):
-                    name,args='docx_checkpoint',dict(document_id='report',final=True)
+                    name,args='checkpoint',dict(document_id='report',final=True)
                 else:
                     return ChatResult(generations=[ChatGeneration(message=AIMessage(content='带格式的报告草稿已通过自动排版检查；所有页面仍待实际视觉审查。'))])
             if operation:
-                name,args='docx_apply_one',dict(document_id='report',operation_id=operation_id,base_revision=revision,operation=operation)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='',tool_calls=[dict(name=name,args=args,id=str(time.time_ns()),type='tool_call')]))])
+                name,args='apply_one',dict(document_id='report',operation_id=operation_id,base_revision=revision,operation=operation)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='',tool_calls=[dict(name='execute',args={'command':command('docx',root,name,args)},id=str(time.time_ns()),type='tool_call')]))])
 
 platform_app.agent_core.llm.build_chat_model=lambda *a,**k:FormattingModel()
 platform_app.agent_core.runner.build_chat_model=lambda *a,**k:FormattingModel()

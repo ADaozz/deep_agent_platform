@@ -1,4 +1,4 @@
-"""Real AgentRunner, scoped approval, Impress and SSE; deterministic test model."""
+"""Real AgentRunner, execute approval, Impress and SSE; deterministic test model."""
 import os
 import sys
 import tempfile
@@ -9,6 +9,7 @@ os.environ.setdefault('PLATFORM_DATA_DIR',tempfile.mkdtemp(prefix='pptx-e2e-'))
 from pptx_corpus import make_template,plan,cards
 from platform_app import domain as d,models as m,format_plugins
 from platform_app.main import app
+from office_cli import command
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage,HumanMessage
 from langchain_core.outputs import ChatResult,ChatGeneration
@@ -18,14 +19,14 @@ if not m.public()['profiles']:
 engine=format_plugins.load_plugin('pptx').engine
 class Model(BaseChatModel):
     @property
-    def _llm_type(self):return 'pptx-scoped-formatted-e2e'
+    def _llm_type(self):return 'pptx-cli-formatted-e2e'
     def bind_tools(self,tools,**kwargs):return self
     def _generate(self,messages,**kwargs):
         time.sleep(.13)
         root=d.files_root([r for r in d.all_records('session') if r['status']=='running'][-1]['id']);root.mkdir(parents=True,exist_ok=True)
         path=root/'project-report.pptx'
         if not path.exists():
-            template=make_template(root);name,args='pptx_init',dict(presentation_id='project-report',template=template.name)
+            template=make_template(root);name,args='init',dict(presentation_id='project-report',template=template.name)
         else:
             state=engine.PresentationStore(path).status();rev=state['revision'];history={h['operation_id'] for h in state['history']};slides=state['manifest']['slides'];first=slides[0]['slide_id']
             text='\n'.join(str(msg.content) for msg in messages if isinstance(msg,HumanMessage))
@@ -44,13 +45,13 @@ class Model(BaseChatModel):
                         pending=next((s for s in slides if not s['review'].get('automatic_passed')),None)
                         if pending:
                             if pending['review'].get('status')=='blocked':return ChatResult(generations=[ChatGeneration(message=AIMessage(content='页面检查失败，需要修复，草稿已保留。'))])
-                            operation=None;name,args='pptx_check_slide',dict(presentation_id='project-report',slide_id=pending['slide_id'],content_notes='核对本页标题、短正文、原生对象及演示图表数据符合技术汇报提纲。')
+                            operation=None;name,args='check_slide',dict(presentation_id='project-report',slide_id=pending['slide_id'],content_notes='核对本页标题、短正文、原生对象及演示图表数据符合技术汇报提纲。')
                 else:
                     pending=next((s for s in slides if not s['review'].get('automatic_passed')),None)
-                    if pending:name,args='pptx_check_slide',dict(presentation_id='project-report',slide_id=pending['slide_id'],content_notes='核对总结、后续安排和可编辑对象，示例数据均已明确标注。')
+                    if pending:name,args='check_slide',dict(presentation_id='project-report',slide_id=pending['slide_id'],content_notes='核对总结、后续安排和可编辑对象，示例数据均已明确标注。')
                     else:return ChatResult(generations=[ChatGeneration(message=AIMessage(content='12 页可编辑汇报已完成自动和内容检查；视觉审查仍待实际查看截图。'))])
-            if operation:name,args='pptx_apply_one',dict(presentation_id='project-report',operation_id=opid,base_revision=rev,**operation)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='',tool_calls=[dict(name=name,args=args,id=str(time.time_ns()),type='tool_call')]))])
+            if operation:name,args='apply_one',dict(presentation_id='project-report',operation_id=opid,base_revision=rev,**operation)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='',tool_calls=[dict(name='execute',args={'command':command('pptx',root,name,args)},id=str(time.time_ns()),type='tool_call')]))])
 platform_app.agent_core.llm.build_chat_model=lambda *a,**k:Model()
 platform_app.agent_core.runner.build_chat_model=lambda *a,**k:Model()
 if __name__=='__main__':

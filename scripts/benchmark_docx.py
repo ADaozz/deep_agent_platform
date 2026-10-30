@@ -14,7 +14,9 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from platform_app.documents import Documents, DocumentStore, engine
+from platform_app.format_plugins import load_plugin
+_plugin = load_plugin('docx')
+Documents, engine = _plugin.Documents, _plugin.engine
 spec = importlib.util.spec_from_file_location('docx_corpus', ROOT / 'tests' / 'docx_corpus.py')
 corpus = importlib.util.module_from_spec(spec); spec.loader.exec_module(corpus)
 
@@ -40,22 +42,22 @@ def run_case(output, name, sections, images, tables, template=False):
     root = output / name; root.mkdir(parents=True)
     corpus.make_assets(root)
     notices = []; timings = []; render_times = []
-    docs = Documents(root, 'benchmark', lambda event: notices.append((time.time(), event)))
+    docs = Documents(root, lambda event: notices.append((time.time(), event)))
     source = corpus.make_template(root) if template else None
-    args = dict(document_id='report')
-    if source: args['template'] = source.name
-    docs.execute('init', args)
-    store = DocumentStore(root / 'report.docx')
+    store = docs.store(root / 'report.docx')
+    store.init('report', source)
+    docs.sync()
     for operation in corpus.formatted_operations(sections, images, tables):
         state = store.status()
         if state['gate'] != 'open':
-            start = time.perf_counter(); review = docs.execute('checkpoint', dict(document_id='report')); render_times.append(time.perf_counter()-start)
+            start = time.perf_counter(); review = store.checkpoint(); docs.sync(); render_times.append(time.perf_counter()-start)
             if review['gate'] != 'open':
                 raise ValueError(f'{name}: checkpoint failed at {state["revision"]}: {json.dumps(review, ensure_ascii=False)}')
         start = time.perf_counter()
-        docs.execute('apply_one', dict(document_id='report', operation_id=f'op-{state["revision"]+1}', base_revision=state['revision'], operation=operation))
+        store.apply_one(dict(document_id='report', operation_id=f'op-{state["revision"]+1}', base_revision=state['revision'], operation=operation))
+        docs.sync()
         timings.append(time.perf_counter()-start)
-    start=time.perf_counter(); final=docs.execute('checkpoint',dict(document_id='report',final=True)); render_times.append(time.perf_counter()-start)
+    start=time.perf_counter(); final=store.checkpoint(final=True); docs.sync(); render_times.append(time.perf_counter()-start)
     checks=check_structure(store) if not template else {'ooxml_valid': engine.o.validate_parts(engine.o.read_parts(store.path))['ok'], 'template_header_preserved': engine.o.read_parts(source)['word/header1.xml']==engine.o.read_parts(store.path)['word/header1.xml']}
     assert all(checks.values()), checks
     assert final['gate']=='open', final
@@ -65,7 +67,7 @@ def run_case(output, name, sections, images, tables, template=False):
     observe=[seen-event['committed_at'] for seen,event in notices if 'committed_at' in event]
     return dict(case=name, revisions=store.status()['revision'], page_count=len(pages), checks=checks,
         commit=percentiles(timings), commit_to_journal_callback=percentiles(observe), checkpoint=percentiles(render_times),
-        visual_review='pending', finalized=False, render_directory=str(store.directory / ('render-%08d'%store.status()['revision'])))
+        visual_review='pending', finalized=False, render_directory=str(store.render_directory(store.status()['revision'])))
 
 
 def main():

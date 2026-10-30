@@ -89,10 +89,14 @@ def init():
 
 def native_skills():
     from platform_app.agent_core.config import default_skills_dir
+    from .format_plugins import bundled_skills
     root = default_skills_dir()
-    result = []
+    result = bundled_skills()
+    bundled_ids = {skill['id'] for skill in result}
     if root.is_dir():
         for path in sorted(root.glob('*/SKILL.md')):
+            if path.parent.name in bundled_ids:
+                continue
             try:
                 text = path.read_text(encoding='utf-8')
                 front = yaml.safe_load(text.split('---', 2)[1]) if text.startswith('---') else {}
@@ -106,7 +110,7 @@ def native_skills():
 def effective_config():
     value = get('settings', 'global')
     bindings = value.get('skill_bindings', {})
-    value['native_skills'] = [{**skill, 'enabled': bindings.get(skill['id'], True)} for skill in native_skills()]
+    value['native_skills'] = [{**skill, 'enabled': skill.get('available', True) and bindings.get(skill['id'], True)} for skill in native_skills()]
     return value
 
 

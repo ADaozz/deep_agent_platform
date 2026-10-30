@@ -7,7 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from platform_app import domain as d, models as m, runtime as rt
+from platform_app import domain as d, models as m, runtime as rt, format_plugins
 from platform_app.main import app
 
 
@@ -50,6 +50,8 @@ class CoreModel(BaseChatModel):
             msg = AIMessage(content='', tool_calls=[{'name': 'write_file', 'args': {'file_path': self.target, 'content': 'from the real kernel'}, 'id': 'write-1', 'type': 'tool_call'}])
         elif text == 'run a command' and not any(isinstance(message, ToolMessage) for message in messages[last_user:]):
             msg = AIMessage(content='', tool_calls=[{'name': 'execute', 'args': {'command': 'printf core-command-ok'}, 'id': 'exec-1', 'type': 'tool_call'}])
+        elif text.startswith('network command: ') and not any(isinstance(message, ToolMessage) for message in messages[last_user:]):
+            msg = AIMessage(content='', tool_calls=[{'name': 'execute', 'args': {'command': text.removeprefix('network command: '), 'network': True}, 'id': 'network-1', 'type': 'tool_call'}])
         elif text == 'ask me a question' and not any(isinstance(message, ToolMessage) for message in messages[last_user:]):
             msg = AIMessage(content='', tool_calls=[{'name': 'request_human_input', 'args': {'reason': 'Need user preference', 'question': 'What title?', 'fields': [{'id': 'title', 'type': 'text', 'label': 'Title', 'required': True}]}, 'id': 'human-1', 'type': 'tool_call'}])
         elif text.startswith('inspect uploaded file') and not any(isinstance(message, ToolMessage) for message in messages[last_user:]):
@@ -136,6 +138,42 @@ def approve(client, session_id):
     assert record['status'] == 'waiting_confirmation', record
     decisions = [{'tool_call_id': call['toolCallId'], 'decision': 'approve'} for call in record['pending_tool_calls']]
     return client.post(f'/api/agent/sessions/{session_id}/actions/approve', json={'decisions': decisions})
+
+
+@pytest.mark.parametrize('decision', ['approve', 'reject'])
+def test_restricted_network_command_waits_for_approval(client, decision):
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    requests = []
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'APPROVED_NETWORK_OK')
+        def log_message(self, *args): pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        session = client.post('/api/agent/sessions', json={}).json()
+        base = '/api/agent/sessions/' + session['id']
+        command = f'curl --noproxy "*" --max-time 3 http://127.0.0.1:{server.server_port}/approved'
+        assert client.post(base + '/messages', json={'text': 'network command: ' + command}).status_code == 202
+        pending = client.get(base).json()
+        assert pending['status'] == 'waiting_confirmation', pending
+        assert pending['sandbox_mode'] == 'restricted'
+        call = pending['pending_tool_calls'][0]
+        assert call['args']['network'] is True
+        assert requests == []
+        response = client.post(base + '/actions/approve', json={'decisions': [{'tool_call_id': call['toolCallId'], 'decision': decision}]})
+        assert response.status_code == 202, response.text
+        assert client.get(base).json()['status'] == 'completed'
+        assert requests == (['/approved'] if decision == 'approve' else [])
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=3)
 
 
 def test_native_tools_approval_checkpoint_and_skill_mount(client, tmp_path):
@@ -387,6 +425,92 @@ def test_real_core_cache_usage_persists_and_does_not_leak_between_calls(client):
     assert client.get('/api/agent/sessions/' + session_id).json()['usage']['cache_hit_rate'] is None
 
 
+def test_usage_remains_visible_between_streaming_requests(client):
+    session_id = new_session(client)
+    assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'cached answer'}).status_code == 202
+    record = client.get('/api/agent/sessions/' + session_id).json()
+    assert 'context_window' in record
+    assert 'context_window' in client.get('/api/models').json()['profiles'][0]
+    adapter = rt.RUNTIMES[session_id]
+    adapter.event({'type': 'assistant_started'})
+    adapter.event({'type': 'usage', 'result': {}})
+    assert client.get('/api/agent/sessions/' + session_id).json()['usage'] == record['usage']
+    adapter.event({'type': 'usage', 'result': {'input_tokens': 1200, 'cache_hit_rate': None}})
+    assert client.get('/api/agent/sessions/' + session_id).json()['usage']['cache_hit_rate'] is None
+
+
+
+def test_office_screenshots_are_temporary_and_only_available_via_preview_routes(client):
+    session_id = new_session(client)
+    services = rt.runtime(session_id).ensure_artifact_services()
+    root = d.files_root(session_id)
+    for feature, extension, collection, image in (
+        ('docx', 'docx', 'documents', 'page-001.png'),
+        ('pptx', 'pptx', 'presentations', 'slide-001.png')):
+        service = services[feature]
+        if feature == 'docx': service.live_preview = False
+        store = service.store(root / ('report.' + extension))
+        store.init('report')
+        revision = store.status()['revision']
+        cache = store.render_directory(revision)
+        cache.mkdir(parents=True, exist_ok=True)
+        (cache / image).write_bytes(b'preview-image')
+        assert not cache.is_relative_to(root)
+        assert cache.is_relative_to(root.parent / 'tmp')
+        service.sync()
+        response = client.get(f'/api/agent/sessions/{session_id}/{collection}/report/renders/{revision}/{image}')
+        assert response.status_code == 200, response.text
+        assert response.content == b'preview-image'
+    paths = {item['path'] for item in client.get(f'/api/agent/sessions/{session_id}/files').json()}
+    assert paths == {'report.docx', 'report.pptx'}
+    assert {item['path'] for item in rt.changed_files(root, {})} == paths
+
+
+def test_session_output_list_is_current_and_excludes_uploads(client):
+    session_id = new_session(client)
+    root = d.files_root(session_id)
+    report = root / 'report.txt'
+    report.write_text('first')
+    adapter = rt.runtime(session_id)
+    adapter.event({'type':'output_files','files':[{'path':'report.txt','size':5}]})
+    report.write_text('second edit')
+    adapter.event({'type':'output_files','files':[{'path':'report.txt','size':11}]})
+    (root/'uploads').mkdir()
+    (root/'uploads'/'input.txt').write_text('input')
+    assert client.get('/api/agent/sessions/'+session_id).json()['output_files'] == [{'path':'report.txt','size':11}]
+    report.unlink()
+    assert client.get('/api/agent/sessions/'+session_id).json()['output_files'] == []
+
+
+def test_preview_catalog_indexes_all_session_office_files_without_changing_bytes(client):
+    from pptx import Presentation
+    from docx import Document
+    from hashlib import sha256
+    session_id = new_session(client)
+    root = d.files_root(session_id)
+    paths = []
+    for folder in (root, root/'nested', root/'uploads'/'example'):
+        folder.mkdir(parents=True, exist_ok=True)
+        doc = Document(); doc.add_paragraph('Preview document')
+        path = folder/'report.docx'; doc.save(path); paths.append(path)
+        deck = Presentation(); deck.slides.add_slide(deck.slide_layouts[5])
+        path = folder/'deck.pptx'; deck.save(path); paths.append(path)
+    before = {path:sha256(path.read_bytes()).hexdigest() for path in paths}
+    # Import only; the DOCX render worker is tested separately.
+    rt.runtime(session_id).ensure_artifact_services()['docx'].live_preview = False
+    for extension, collection in (('.docx','documents'),('.pptx','presentations')):
+        values = client.get(f'/api/agent/sessions/{session_id}/{collection}').json()
+        assert {value['path'] for value in values} == {str(path.relative_to(root)) for path in paths if path.suffix==extension}
+    assert all(sha256(path.read_bytes()).hexdigest()==digest for path,digest in before.items())
+    if __import__('shutil').which('libreoffice'):
+        response = client.post(f'/api/agent/sessions/{session_id}/presentations/deck/preview')
+        assert response.status_code == 200, response.text
+        slide = response.json()['manifest']['slides'][0]
+        assert slide['formal']['revision'] == 0
+        assert not slide['review'].get('automatic_passed')
+        assert slide['review']['visual_review'] == 'pending'
+
+
 def test_native_subagent_executes_and_returns_to_parent(client, monkeypatch):
     session_id = new_session(client)
     target = files_root() / 'delegated.txt'
@@ -467,12 +591,12 @@ def test_installed_skill_bindings_reach_native_discovery_and_freeze_resources(cl
     monkeypatch.setattr(platform_app.agent_core.config, 'default_skills_dir', lambda: root)
     monkeypatch.setattr('platform_app.agent_core.sandbox.default_skills_dir', lambda: root)
     writing = client.get('/api/settings').json()
-    assert {s['id'] for s in writing['native_skills']} == {'docx-author', 'other-skill'}
+    assert {s['id'] for s in writing['native_skills'] if s['source'] == 'platform'} == {'docx-author', 'other-skill'}
     assert all(s['enabled'] for s in writing['native_skills'])
     writing['skill_bindings'] = {'docx-author': True, 'other-skill': False}
     saved = client.put('/api/settings', json=writing)
     assert saved.status_code == 200, saved.text
-    assert [s['id'] for s in saved.json()['native_skills'] if s['enabled']] == ['docx-author']
+    assert [s['id'] for s in saved.json()['native_skills'] if s['enabled'] and s['source'] == 'platform'] == ['docx-author']
     session = new_session(client)
     assert client.post(f'/api/agent/sessions/{session}/messages', json={'text': 'hello'}).status_code == 202
     runner = rt.RUNTIMES[session].runner
@@ -488,7 +612,7 @@ def test_installed_skill_bindings_reach_native_discovery_and_freeze_resources(cl
     (root / 'docx-author' / 'scripts' / 'helper.py').write_text('print("new helper")')
     assert b'original helper' in runner.prepared.backend.download_files(['/agent-skills/installed/docx-author/scripts/helper.py'])[0].content
     assert d.get('session', session)['config']['skill_bindings']['docx-author']
-    assert not any(s['enabled'] for s in client.get('/api/settings').json()['native_skills'])
+    assert not any(s['enabled'] for s in client.get('/api/settings').json()['native_skills'] if s['source'] == 'platform')
 
 
 def test_skill_binding_validation(client):
@@ -498,79 +622,125 @@ def test_skill_binding_validation(client):
         assert client.put('/api/settings', json=config).status_code == 422
 
 
+def test_bundled_office_skills_are_listed_and_disable_for_new_sessions(client):
+    settings = client.get('/api/settings').json()
+    bundled = {skill['id']: skill for skill in settings['native_skills'] if skill['source'] == 'feature'}
+    assert set(bundled) == {'docx-ooxml-author', 'pptx-ooxml-author'}
+    assert all(skill['enabled'] and skill['description'] for skill in bundled.values())
+    settings['skill_bindings'] = {identity: False for identity in bundled}
+    assert client.put('/api/settings', json=settings).status_code == 200
+    session_id = new_session(client)
+    assert client.post(f'/api/agent/sessions/{session_id}/messages', json={'text':'hello'}).status_code == 202
+    native = rt.RUNTIMES[session_id].runner
+    assert not any(name.startswith(('docx_', 'pptx_')) for name in native.prepared.model_tool_names)
+    assert set(rt.RUNTIMES[session_id].artifact_services) == {'docx', 'pptx'}  # read-only preview stays available
+    assert set(client.get('/api/agent/sessions/' + session_id).json()['enabled_features']) == {'docx', 'pptx'}
+    from platform_app.workspace import resolve
+    assert all(not (resolve(session_id).skills_root / identity).exists() for identity in bundled)
+
+
+def test_pptx_skill_cli_runs_inside_native_sandbox(client):
+    from platform_app.workspace import resolve
+    session_id = new_session(client)
+    native = rt.runtime(session_id).build()
+    assert not any(name.startswith(('docx_', 'pptx_')) for name in native.prepared.model_tool_names)
+    context = resolve(session_id)
+    backend = native.prepared.backend
+    script = 'python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py'
+    prefix = 'cd ' + shlex.quote(str(context.files_root)) + ' && '
+    response = backend.execute(prefix + script + ' init deck.pptx --presentation-id deck')
+    assert response.exit_code == 0, response.output
+    request = '{"presentation_id":"deck","operation_id":"slide-1","base_revision":0,"slide_id":"s1","operation":"slide.add","layout":"title_body"}'
+    response = backend.execute(prefix + script + " apply-one deck.pptx --request /dev/stdin <<'JSON'\n" + request + '\nJSON')
+    assert response.exit_code == 0, response.output
+    response = backend.execute(prefix + script + ' check-slide deck.pptx --slide-id s1 --notes "Blank slide runtime check"')
+    assert response.exit_code == 0, response.output
+    import json
+    result = json.loads(response.output)
+    # Even if rendering dependencies are absent, the CLI returns a structured
+    # failure instead of falsely marking a slide as reviewed.
+    assert 'review' in result and 'rendered' in result['review']
+    if __import__('shutil').which('libreoffice'):
+        assert result['review']['rendered'], result['review']
+    assert __import__('pathlib').Path(result['render_directory']).is_relative_to(context.workspace_root / 'tmp')
+    rt.runtime(session_id).artifact_services['pptx'].sync()
+    assert client.get(f'/api/agent/sessions/{session_id}/presentations').json()[0]['revision'] == 1
+
+
 def test_docx_revisions_are_journaled_during_real_runner_invocation(client, monkeypatch):
     """Every next model call can already read the previous commit in the journal."""
     import json
-    from platform_app.documents import DocumentStore
+    DocumentStore = format_plugins.load_plugin('docx').DocumentStore
 
     class StreamingDocxModel(BaseChatModel):
         @property
         def _llm_type(self): return 'streaming-docx-test'
         def bind_tools(self, tools, **kwargs):
             names = [t.get('name') if isinstance(t, dict) else t.name for t in tools]
-            assert 'create_docx' not in names and 'docx_apply_one' in names
+            assert 'execute' in names and not any(name.startswith(('docx_', 'pptx_')) for name in names)
             return self
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             completed = [m for m in messages if isinstance(m, ToolMessage)]
             root = files_root()
             if not completed:
-                name, args = 'docx_init', {'document_id': 'report'}
+                command = 'python /agent-skills/docx-ooxml-author/scripts/office_docx.py init --document-id report --output report.docx'
             else:
                 state = DocumentStore(root / 'report.docx').status()
                 revisions = [e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]
                 assert len(revisions) >= state['revision'] + 1
-                if state['revision'] >= 10:
+                if state['revision'] >= 2:
                     return ChatResult(generations=[ChatGeneration(message=AIMessage(content='Draft ready; visual review pending.'))])
-                if state['gate'] != 'open':
-                    name, args = 'docx_checkpoint', {'document_id': 'report'}
-                else:
-                    n = state['revision'] + 1
-                    name = 'docx_apply_one'
-                    args = dict(document_id='report', operation_id=f'op-{n}', base_revision=n-1,
-                        operation=dict(type='append_paragraph', block_id=f'p-{n}', text=f'Paragraph {n}'))
-            return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[dict(name=name, args=args, id=f'doc-{len(completed)}', type='tool_call')]))])
+                n = state['revision'] + 1
+                request = dict(document_id='report', operation_id=f'op-{n}', base_revision=n-1,
+                    operation=dict(type='append_paragraph', block_id=f'p-{n}', text=f'Paragraph {n}'))
+                command = 'python /agent-skills/docx-ooxml-author/scripts/office_docx.py apply-one report.docx /dev/stdin <<\'JSON\'\n' + json.dumps(request) + '\nJSON'
+            command = 'cd ' + shlex.quote(str(root)) + ' && ' + command
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[dict(name='execute', args={'command':command}, id=f'doc-{len(completed)}', type='tool_call')]))])
 
-    # Deterministic rendering fixture; live main-Agent/tool execution is real.
-    import pymupdf as fitz
-    from platform_app.documents import engine
-    def render(docx, output, dpi=125):
-        doc = fitz.open(); page = doc.new_page(); page.insert_text((72,72), 'Paragraph body')
-        doc.save(output / 'preview.pdf'); page.get_pixmap().save(output / 'page-001.png'); doc.close()
-    monkeypatch.setattr(engine.o, 'run_render', render)
     monkeypatch.setattr('platform_app.agent_core.llm.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
     monkeypatch.setattr('platform_app.agent_core.runner.build_chat_model', lambda *args, **kwargs: StreamingDocxModel())
     session_id = new_session(client)
     response = client.post(f'/api/agent/sessions/{session_id}/messages', json={'text': 'Write a report incrementally'})
     assert response.status_code == 202, response.text
+    for _ in range(3):
+        assert approve(client, session_id).status_code == 202
     assert client.get(f'/api/agent/sessions/{session_id}').json()['status'] == 'completed'
     journal = client.get(f'/api/agent/sessions/{session_id}/journal').json()['events']
     updates = [e for e in journal if e['type'] in ('document_initialized', 'document_revision')]
-    assert [e['revision'] for e in updates] == list(range(11))
-    assert updates[-1]['seq'] < next(e['seq'] for e in journal if e['type'] == 'result')
+    assert [e['revision'] for e in updates] == list(range(3))
+    assert updates[-1]['seq'] < max(e['seq'] for e in journal if e['type'] == 'result')
     docs = client.get(f'/api/agent/sessions/{session_id}/documents').json()
-    assert docs[0]['revision'] == 10
+    assert docs[0]['revision'] == 2
     assert client.get(f'/api/agent/sessions/{session_id}/documents/report/revisions/2').content.startswith(b'PK')
     # Rebuild runtime without losing latest version or replaying old store events.
     runtime = rt.RUNTIMES[session_id]
     runtime.artifact_services['docx'].close(); runtime.runner.close(); runtime.runner.session_store.close(); rt.RUNTIMES.clear()
     rt.initialize()
-    assert client.get(f'/api/agent/sessions/{session_id}/documents').json()[0]['revision'] == 10
+    assert client.get(f'/api/agent/sessions/{session_id}/documents').json()[0]['revision'] == 2
     rebuilt = rt.runtime(session_id); rebuilt.build(); rebuilt.artifact_services['docx'].sync()
-    assert len([e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]) == 11
+    assert len([e for e in d.all_records('event') if e['type'] in ('document_initialized','document_revision')]) == 3
     # Internal version database is never downloadable/listed in the file library.
     assert all('.docx-state' not in item['path'] for item in client.get(file_api()).json())
     assert client.get(file_api() + '/.docx-state/report.docx/history.sqlite').status_code == 404
+    if __import__('shutil').which('libreoffice'):
+        response = rebuilt.runner.prepared.backend.execute('cd ' + shlex.quote(str(files_root())) +
+            ' && python /agent-skills/docx-ooxml-author/scripts/office_docx.py checkpoint report.docx')
+        assert response.exit_code == 0, response.output
+        review = json.loads(response.output)
+        assert review['render_error'] is None, review
+        assert review['pages']
 
 
 def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
-    from platform_app.documents import Documents, DocumentStore
+    Documents = format_plugins.load_plugin('docx').Documents
+    DocumentStore = format_plugins.load_plugin('docx').DocumentStore
     from dataclasses import dataclass
     session_id = new_session(client)
     runtime = rt.runtime(session_id)
     root = files_root(); root.mkdir(parents=True, exist_ok=True)
     runtime.artifact_services['docx'] = Documents(root, lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
-    runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
-    runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
+    runtime.artifact_services['docx'].store(root / 'report.docx').init('report')
+    runtime.artifact_services['docx'].store(root / 'report.docx').apply_one(dict(document_id='report', base_revision=0, operation_id='p1',
         operation=dict(type='append_paragraph', block_id='p1', text='Original')))
     from docx import Document
     doc = Document(root / 'report.docx'); doc.add_paragraph('Native tool wrote this'); doc.save(root / 'report.docx')
@@ -582,22 +752,22 @@ def test_docx_external_tool_boundary_tracking_and_visual_capability(client):
     store = DocumentStore(root / 'report.docx')
     assert store.status()['revision'] == 2
     assert store.status()['gate'] == 'checkpoint'
-    with pytest.raises(ValueError, match='Text-only'):
-        runtime.artifact_services['docx'].execute('review', dict(document_id='report', revision=2, page=1, passed=True, notes='Cannot see screenshot'))
+    assert not hasattr(runtime.artifact_services['docx'], 'execute')
     assert client.get(f'/api/agent/sessions/{session_id}/documents').json()[0]['revision'] == 2
     other = new_session(client)
     assert client.get(f'/api/agent/sessions/{other}/documents/report/revisions/2').status_code == 404
 
 
 def test_docx_steering_persists_viewed_revision_and_uses_current_version(client):
-    from platform_app.documents import Documents
+    Documents = format_plugins.load_plugin('docx').Documents
     from unittest.mock import Mock
     session_id = new_session(client); runtime = rt.runtime(session_id)
     root = files_root()
     runtime.artifact_services['docx'] = Documents(root, lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
-    runtime.artifact_services['docx'].execute('init', {'document_id': 'report'})
-    runtime.artifact_services['docx'].execute('apply_one', dict(document_id='report', base_revision=0, operation_id='p1',
+    runtime.artifact_services['docx'].store(root / 'report.docx').init('report')
+    runtime.artifact_services['docx'].store(root / 'report.docx').apply_one(dict(document_id='report', base_revision=0, operation_id='p1',
         operation=dict(type='append_paragraph', block_id='p1', text='Original')))
+    runtime.artifact_services['docx'].sync()
     record = d.get('session', session_id); record['status'] = 'running'; d.put('session', record)
     runtime.runner = Mock()
     result = client.post(f'/api/agent/sessions/{session_id}/actions/steer', json=dict(text='Use business language', artifact=dict(feature='docx',document_id='report', revision=0)))
@@ -611,7 +781,7 @@ def test_docx_steering_persists_viewed_revision_and_uses_current_version(client)
 
 
 def test_nested_native_docx_is_tracked_and_downloadable(client):
-    from platform_app.documents import Documents
+    Documents = format_plugins.load_plugin('docx').Documents
     from docx import Document
     session_id=new_session(client); runtime=rt.runtime(session_id)
     root=files_root(); (root/'reports').mkdir(parents=True)
@@ -627,7 +797,8 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
     import threading
     import time
     import pymupdf as fitz
-    from platform_app.documents import Documents, engine
+    Documents = format_plugins.load_plugin('docx').Documents
+    engine = format_plugins.load_plugin('docx').engine
     started=threading.Event(); release=threading.Event()
     def render(docx, output, dpi=125):
         started.set(); assert release.wait(5)
@@ -638,10 +809,13 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
     root=files_root()
     runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))),live_preview=True)
     docs=runtime.artifact_services['docx']
-    docs.execute('init',dict(document_id='report'))
+    doc_store = docs.store(root / 'report.docx')
+    doc_store.init('report')
+    docs.sync(); docs.schedule_preview(doc_store.path)
     assert started.wait(5)
     for i in range(3):
-        docs.execute('apply_one',dict(document_id='report',base_revision=i,operation_id=f'op-{i}',operation=dict(type='append_paragraph',block_id=f'p-{i}',text=f'Short formatted fixture {i}')))
+        doc_store.apply_one(dict(document_id='report',base_revision=i,operation_id=f'op-{i}',operation=dict(type='append_paragraph',block_id=f'p-{i}',text=f'Short formatted fixture {i}')))
+        docs.sync(); docs.schedule_preview(doc_store.path)
     release.set()
     end=time.time()+5
     while time.time()<end:
@@ -655,11 +829,11 @@ def test_background_preview_follows_the_last_commit(client, monkeypatch):
 
 
 def test_invalid_native_write_keeps_last_committed_document_visible(client):
-    from platform_app.documents import Documents
+    Documents = format_plugins.load_plugin('docx').Documents
     session_id=new_session(client); runtime=rt.runtime(session_id)
     root=files_root()
     runtime.artifact_services['docx']=Documents(root,lambda event: runtime.event(dict(event, artifact_extension=dict(feature='docx', id=event.get('document_id'), state_key='documents'))))
-    runtime.artifact_services['docx'].execute('init',dict(document_id='report'))
+    runtime.artifact_services['docx'].store(root / 'report.docx').init('report')
     original=(root/'report.docx').read_bytes()
     (root/'report.docx').write_bytes(b'partial invalid native ZIP')
     runtime.artifact_services['docx'].detect_external()

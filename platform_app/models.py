@@ -88,7 +88,7 @@ def public():
                 ready = bool(real.api_key)
             except ValueError:
                 ready = False
-            profiles.append({'id':profile.id, 'model':profile.model, 'api':profile.api, 'reasoning_efforts':list(profile.reasoning_efforts), 'default_reasoning_effort':profile.reasoning_efforts[0] if profile.reasoning_efforts else None, 'configured':ready})
+            profiles.append({'id':profile.id, 'model':profile.model, 'api':profile.api, 'context_window':profile.context_window, 'reasoning_efforts':list(profile.reasoning_efforts), 'default_reasoning_effort':profile.reasoning_efforts[0] if profile.reasoning_efforts else None, 'configured':ready})
     default_effort = next((p['default_reasoning_effort'] for p in profiles if p['id'] == config['default']), None)
     return {'llm':transform(config, lambda v: v if isinstance(v,str) and ENV.fullmatch(v) else MASK), 'revision':revision, 'profiles':profiles, 'default_reasoning_effort':default_effort}
 

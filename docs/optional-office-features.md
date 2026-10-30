@@ -7,7 +7,7 @@
 | DOCX | `docx-ooxml-skill/` | `frontend/src/features/docx/` |
 | PPTX | `pptx-ooxml-skill/` | `frontend/src/features/pptx/` |
 
-`feature.json` 声明功能身份、适配器、依赖和 Skill。通用注册器 `platform_app/format_plugins.py` 负责发现和接入；`artifact_runtime.py` 仅提供快照、事务、事件、幂等和恢复，不负责规划或 Agent 执行。`runtime.py` / `agent_factory.py` 不导入 Word 或 PowerPoint 的引擎、组件、提示词或业务实现；只接受启用扩展提供的工具、说明和事件。
+`feature.json` 声明功能身份、适配器、依赖和 Skill。通用注册器 `platform_app/format_plugins.py` 负责发现和接入；`artifact_runtime.py` 仅提供快照、事务、事件、幂等和恢复，不负责规划或 Agent 执行。`runtime.py` / `agent_factory.py` 不导入 Word 或 PowerPoint 的引擎、组件、提示词或业务实现；只接入技能快照、版本事件和预览。DOCX/PPTX 的制作流程由 `SKILL.md` 说明，脚本经原生 execute 运行，不注册文档专属模型工具，也不将制作流程注入系统提示词。
 
 前端 `FeaturePanels.vue` 使用可选组件目录发现，不直接导入两种格式的组件。移除某个目录后，其组件不参与构建。PPTX / DOCX 的接口也放在各自功能目录，停用或卸载后不可调用，另一功能和普通 Agent 不受影响。
 
@@ -44,13 +44,13 @@ npm --prefix frontend run build
 
 ## 授权与主 Agent
 
-PPTX 的 `pptx_init` 使用内核原有工具审批：ask 模式下一次授权当前演示文稿，后续受限元素修改只在这个会话/文件范围内执行。其他演示文稿、任意文件、命令和网络没有因此获得授权。全局 allow 仍由现有 Permission 菜单管理，扩展不会切换它。
+Agent 设置的「技能」页显示 Word / PowerPoint 内置技能，可分别启用或停用；保存后用于新会话。DeepAgents 原生 Skills 中间件解析只读 `/agent-skills/<skill-name>/SKILL.md`。其中说明本技能 `scripts/` 的命令行入口、操作请求和校验流程。每次 execute 只执行一个有界修改，在 ask 模式下逐条审批；联网仍需申请 network=true。没有 `docx_*` / `pptx_*` 模型工具或额外的文档授权模型。
 
-`create_docx` / `create_pptx` 批量处理器和旧任务 API 已移除，不提供旧配置迁移。XLSX 不变；PPTX 初始化使用会话界面的文件作用域审批。
+Python 依赖环境以只读方式提供给沙箱；用户级便携 LibreOffice 可同样以只读方式使用。渲染缓存通过 `OFFICE_RENDER_TMP` 写入当前 Thread 的临时目录。宿主扩展同步脚本产生的版本事件，并通过专用接口提供只读预览和人工审查。
 
 ## 验证
 
-回归包含：分别卸载、重新启用、物理移除功能目录、两项都卸载后通过真实 AgentRunner 完成普通对话，以及另一功能的工具仍可独立注册。
+回归包含：分别卸载、重新启用、物理移除功能目录、两项都卸载后通过真实 AgentRunner 完成普通对话，以及真实沙箱中的 DOCX/PPTX CLI 制作、技能开关和无专用模型工具的 AgentRunner 执行。
 
 ```sh
 python -m pytest -q tests/test_features.py tests/test_runtime.py

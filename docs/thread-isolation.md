@@ -13,6 +13,7 @@
   configuration/policy.yaml
   workspaces/<workspace_id>/files/
   workspaces/<workspace_id>/artifacts/
+  workspaces/<workspace_id>/tmp/office-renders/
   workspaces/<workspace_id>/tmp/
   sessions/<thread_id>/checkpoint.sqlite
   sessions/<thread_id>/checkpoint.attachments/
@@ -23,6 +24,8 @@
 ```
 
 Workspace 与 Thread 独立存储：以后由获授权的 Project 绑定器共享 Workspace 时，HOME/TMP、checkpoint 和只读 Skill 快照仍然各自独立。目前没有向用户或模型开放 Project 绑定接口。
+
+DOCX/PPTX 校验生成的截图、渲染 PDF 和中间副本保存在 Workspace 的 `tmp/office-renders/` 临时缓存中，不进入文件库、输出文件事件或交付列表；预览仍通过所属 Thread 的专用版本接口提供。缓存不是交付文件，删除后需要重新渲染校验，文档版本与可编辑文件独立保留。
 
 Skill 快照保留在独立的 `skill-snapshots` 根目录，而非受保护的 `sessions` 根目录下。这样 full-access 可以遮蔽整个会话控制目录，同时让原生文件工具和进程通过 `/agent-skills` 一致读取只读快照。其真实宿主路径也显式只读挂载，不提供全局可写 `/skills`。
 
@@ -50,9 +53,9 @@ sandbox:
 
 restricted 是新 Thread 的默认模式，只挂载本 Workspace、私有 HOME/TMP、只读运行依赖和本 Thread 的 Skill。Bubblewrap 初始化失败直接失败，绝不改为宿主执行。
 
-full-access 不承诺 Thread 之间的文件隔离。用户必须在运行环境菜单输入 `FULL_ACCESS`，对应 `PUT /api/agent/sessions/<id>/sandbox` 的确认字段；运行中的变更由原生 Runner 在安全边界重建沙箱。重建失败保留原模式并清除待生效标记。会话重启沿用用户明确选择并持久化的模式。数据库、密钥、全局配置、会话控制数据、沙箱状态目录及平台 Skills 源目录由原生保护规则遮蔽；不会遮蔽包含当前 Workspace 的整个 `.platform` 父目录。
+full-access 不承诺 Thread 之间的文件隔离。调用者必须明确确认 `FULL_ACCESS`，对应 `PUT /api/agent/sessions/<id>/sandbox` 的确认字段；运行中的变更由原生 Runner 在安全边界重建沙箱。重建失败保留原模式并清除待生效标记。会话重启沿用用户明确选择并持久化的模式。数据库、密钥、全局配置、会话控制数据、沙箱状态目录及平台 Skills 源目录由原生保护规则遮蔽；不会遮蔽包含当前 Workspace 的整个 `.platform` 父目录。
 
-工具审批 `ask/allow` 与文件系统模式独立。输入 `ALLOW` 只确认自动批准工具，不会开启 full-access。restricted 下即使 execute 请求联网，也保留独立网络命名空间，不能通过宿主本地 HTTP 服务绕过文件隔离。联网检索使用受控宿主工具；full-access 下才允许原生工具审批开放命令网络。
+工具审批 `ask/allow` 与文件系统模式独立。输入 `ALLOW` 只确认自动批准工具，不会开启 full-access。ask 模式下 execute 默认使用独立网络命名空间；命令申请 `network=true` 并获批后，在 restricted 和 full-access 下均可共享宿主网络。allow 模式沿用原生命令默认联网行为。联网命令可以访问互联网、宿主 localhost 和局域网；文件系统挂载仍按当前模式执行，网络权限不代表切换文件系统模式。
 
 ## HTTP 与宿主工具
 
@@ -82,7 +85,7 @@ PLATFORM_DATA_DIR=.platform-thread .venv/bin/uvicorn platform_app.main:app --hos
 
 执行引擎随平台源码保存在 `platform_app/agent_core`，不依赖 CLI 包、CLI 仓库或未合并 PR。只读 Skills 和命令联网策略在这份平台自有源码中维护；原生 Bubblewrap 隔离实现被复用，没有另造 Agent Loop。来源与许可见 [内置运行时](agent-core.md)。
 
-真实 Bubblewrap 回归覆盖 100 个并发解析的 Thread、原生读取/目录/搜索/execute 越界、软链接、HOME/TMP、只读 Skills、非法挂载、full-access 确认和原生模式切换、初始化失败，以及 Office 并发同名文档、当前 Thread 重启恢复和旧布局拒绝。浏览器覆盖私有上传/下载、跨 Thread 下载拒绝、模式确认和执行时间线。
+真实 Bubblewrap 回归覆盖 100 个并发解析的 Thread、原生读取/目录/搜索/execute 越界、软链接、HOME/TMP、只读 Skills、非法挂载、full-access 确认和原生模式切换、初始化失败，以及 Office 并发同名文档、当前 Thread 重启恢复和旧布局拒绝。浏览器覆盖私有上传/下载、跨 Thread 下载拒绝和执行时间线；模式确认由 HTTP 回归验证。
 
 
 

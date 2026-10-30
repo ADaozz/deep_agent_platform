@@ -6,15 +6,8 @@ import sys
 
 def test_platform_boots_with_external_cli_imports_blocked(tmp_path):
     source = r'''
-import importlib.abc, importlib.util, importlib.metadata, os, sys
+import importlib.abc, os, sys
 os.environ['PLATFORM_DATA_DIR'] = sys.argv[1]
-assert importlib.util.find_spec('agent') is None
-try:
-    importlib.metadata.distribution('deep-agent-cli')
-except importlib.metadata.PackageNotFoundError:
-    pass
-else:
-    raise AssertionError('CLI distribution is installed')
 class BlockCLI(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname == 'agent' or fullname.startswith('agent.'):

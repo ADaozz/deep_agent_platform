@@ -1,17 +1,35 @@
 <script setup>
 import {ref,computed,watch} from 'vue'
 import Icon from '../../Icon.vue'
+import PreviewFileSelect from '../../PreviewFileSelect.vue'
 import {t} from '../../preferences'
 import {api} from '../../featureApi'
 import SlideCanvas from './SlideCanvas.vue'
-const props=defineProps({session:Object,events:{type:Array,default:()=>[]},active:Boolean})
-const emit=defineEmits(['open','context','error'])
+const props=defineProps({session:Object,events:{type:Array,default:()=>[]},active:Boolean,files:{type:Array,default:()=>[]},openRequest:Object})
+const emit=defineEmits(['open','context','error','catalog','select-file'])
 const decks=ref({}),identity=ref(''),opened=ref(false),selectedSlide=ref(''),follow=ref(true),visual=ref(false),notes=ref('')
 const deck=computed(()=>decks.value[identity.value]),slides=computed(()=>deck.value?.manifest?.slides||[]),slide=computed(()=>slides.value.find(s=>s.slide_id===selectedSlide.value)||slides.value[0])
 const base=computed(()=>props.session&&identity.value?`/api/agent/sessions/${props.session.id}/presentations/${encodeURIComponent(identity.value)}`:'')
 let cursor=0
 function key(id){return `pptx-preview:${props.session?.id}:${id}:closed`}
 function receive(updates){for(const update of updates){if(!update.presentation_id||!Number.isInteger(update.revision))continue;const old=decks.value[update.presentation_id];if(old&&old.revision>update.revision)continue;const next={...old,...update};decks.value={...decks.value,[update.presentation_id]:next};if(!old){identity.value=update.presentation_id;opened.value=sessionStorage.getItem(key(identity.value))!=='true';emit('open',opened.value)}if(follow.value&&update.slide_id)selectedSlide.value=update.slide_id;if(!selectedSlide.value&&next.manifest?.slides.length)selectedSlide.value=next.manifest.slides[0].slide_id}}
+watch(decks,values=>emit('catalog',Object.values(values).filter(file=>file.path)),{deep:true})
+watch(()=>props.openRequest,async request=>{
+ if(!request||!props.session)return
+ const id=props.session.id
+ try{
+  const values=await api(`/agent/sessions/${id}/presentations`)
+  if(props.session?.id!==id||props.openRequest?.token!==request.token)return
+  receive(values)
+  const item=Object.values(decks.value).find(file=>file.path===request.path)
+  if(!item)throw new Error(t('artifacts.previewUnavailable'))
+  identity.value=item.presentation_id;selectedSlide.value=item.manifest?.slides[0]?.slide_id||'';show()
+  if(item.manifest?.slides.some(slide=>slide.formal?.revision!==item.revision)){
+   const preview=await api(`/agent/sessions/${id}/presentations/${encodeURIComponent(item.presentation_id)}/preview`,{method:'POST'})
+   if(props.session?.id===id&&props.openRequest?.token===request.token)receive([preview])
+  }
+ }catch(e){emit('error',e.message)}
+},{immediate:true})
 function close(){opened.value=false;sessionStorage.setItem(key(identity.value),'true');emit('open',false)}
 function show(){opened.value=true;sessionStorage.removeItem(key(identity.value));emit('open',true)}
 function select(sid){selectedSlide.value=sid;follow.value=false;visual.value=false}
@@ -23,7 +41,7 @@ watch(()=>[deck.value?.revision,slide.value?.slide_id,props.active],()=>{visual.
 <template>
  <button v-if="deck&&(!opened||!active)" class="secondary pptx-reopen" type="button" @click="show"><Icon name="Presentation" :size="15" />{{ deck.path }}</button>
  <aside v-if="deck&&opened&&active" class="docx-panel pptx-panel" :aria-label="t('pptx.preview')">
-  <header class="docx-panel-header"><Icon name="Presentation" :size="18"/><select v-model="identity" :aria-label="t('pptx.select')"><option v-for="item in decks" :key="item.presentation_id" :value="item.presentation_id">{{ item.path }}</option></select><a :href="`${base}/revisions/${deck.revision}`" download :aria-label="t('Download')"><Icon name="Download" :size="17"/></a><button class="icon-button" type="button" :aria-label="t('pptx.close')" @click="close"><Icon name="X" :size="17"/></button></header>
+  <header class="docx-panel-header"><Icon name="Presentation" :size="18"/><PreviewFileSelect :model-value="deck.path" :files="files" @update:model-value="emit('select-file',$event)" /><a :href="`${base}/revisions/${deck.revision}`" download :aria-label="t('Download')"><Icon name="Download" :size="17"/></a><button class="icon-button" type="button" :aria-label="t('pptx.close')" @click="close"><Icon name="X" :size="17"/></button></header>
   <div class="pptx-status"><span>{{ t('docx.revision',{revision:deck.revision}) }}</span><span>{{ deck.finalized?t('pptx.finalized'):t('pptx.draft') }}</span><button class="text-button" type="button" @click="follow=true;selectedSlide=deck.slide_id||deck.active_slide||slides.at(-1)?.slide_id">{{ t('pptx.follow') }}</button></div>
   <div class="pptx-workbench"><nav class="pptx-thumbnails" :aria-label="t('pptx.slides')"><button v-for="(item,index) in slides" :key="item.slide_id" :class="{selected:item.slide_id===slide?.slide_id}" @click="select(item.slide_id)"><SlideCanvas :slide="item" :revision="deck.revision" :base-url="base" thumbnail/><span>{{ String(index+1).padStart(2,'0') }} · {{ t('pptx.'+(item.review?.status||'writing')) }}</span></button></nav><div class="pptx-stage"><div v-if="slide" class="pptx-slide-heading"><span>Slide {{ slides.indexOf(slide)+1 }} / {{ slides.length }}</span><span>{{ slide.review?.rendered?t('pptx.formal'):t('pptx.instant') }}</span></div><SlideCanvas v-if="slide" :slide="slide" :revision="deck.revision" :base-url="base"/><div v-else class="pptx-empty">{{ t('pptx.creating') }}</div><section v-if="slide" class="pptx-review-summary"><strong>{{ t('pptx.'+(slide.review?.status||'writing')) }}</strong><span>{{ t('pptx.visual') }}: {{ slide.review?.visual_review||'pending' }}</span><p v-for="(issue,index) in slide.review?.layout_issues||[]" :key="index">{{ issue.type }} {{ issue.element_id||issue.elements?.join(', ') }}</p><button v-if="slide.formal" type="button" class="text-button" @click="visual=true;notes=''">{{ t('pptx.inspect') }}</button></section></div></div>
   <div v-if="visual&&slide?.formal" class="docx-human-review"><button class="icon-button" @click="visual=false"><Icon name="X" :size="16"/></button><p>{{ t('docx.actualReview') }}</p><img :src="`${base}/renders/${slide.formal.revision}/${slide.formal.image}`" :alt="slide.slide_id"><textarea v-model="notes" :placeholder="t('docx.reviewNotes')"></textarea><div><button class="secondary" :disabled="!notes.trim()" @click="review(false)">{{ t('docx.reject') }}</button><button class="primary" :disabled="!notes.trim()" @click="review(true)">{{ t('docx.approve') }}</button></div></div>

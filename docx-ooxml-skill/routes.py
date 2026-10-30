@@ -1,18 +1,18 @@
 """Optional DOCX HTTP API. Loaded only while the DOCX feature is installed."""
 import re
-from pathlib import Path
 from fastapi import APIRouter,HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel,Field
 from platform_app import domain as d
 
-def create_router(host, DocumentStore):
+def create_router(host):
     router=APIRouter(prefix='/api/agent')
     @router.get('/sessions/{session_id}/documents')
     def session_documents(session_id: str):
         record = host.session(session_id)
         documents = host.service(session_id, 'docx')
-        documents.sync()
+        documents.detect_external()
+        record = host.session(session_id)
         result = []
         for document_id in record.get('documents', {}):
             try:
@@ -38,7 +38,7 @@ def create_router(host, DocumentStore):
                 raise ValueError('Invalid document path')
         except ValueError:
             raise HTTPException(422, '文档标识无效')
-        return DocumentStore(path)
+        return host.service(session_id, 'docx').store(path)
 
 
     @router.get('/sessions/{session_id}/documents/{document_id}/revisions/{revision}')
@@ -59,7 +59,7 @@ def create_router(host, DocumentStore):
         store = document_store(session_id, document_id)
         if not re.fullmatch(r'page-\d{3}\.png|preview\.pdf', filename) or revision < 0:
             raise HTTPException(404, '页面不存在')
-        path = store.directory / ('render-%08d' % revision) / filename
+        path = store.render_directory(revision) / filename
         if not path.is_file() or path.is_symlink():
             raise HTTPException(404, '页面不存在')
         return FileResponse(path, headers={'Cache-Control': 'private, max-age=31536000, immutable'})

@@ -145,13 +145,14 @@ def test_file_api_and_office_services_never_cross_threads(store):
     for tid in (a,b):
         service=runtime.runtime(tid).ensure_artifact_services()
         service['docx'].live_preview=False
-        service['docx'].execute('init',{'document_id':'same'})
-        service['pptx'].execute('init',{'presentation_id':'same'})
+        service['docx'].store(resolve(tid).files_root/'same.docx').init('same')
+        service['pptx'].store(resolve(tid).files_root/'same.pptx').init('same')
     with ThreadPoolExecutor(max_workers=2) as pool:
         def mutate(tid):
             service=runtime.runtime(tid).ensure_artifact_services()
-            service['docx'].execute('apply_one',dict(document_id='same',operation_id='title',base_revision=0,operation=dict(type='append_paragraph',block_id='title',style='Heading1',text=tid)))
-            service['pptx'].execute('apply_one',dict(presentation_id='same',operation_id='slide',base_revision=0,operation='slide.add',slide_id='one'))
+            service['docx'].store(resolve(tid).files_root/'same.docx').apply_one(dict(document_id='same',operation_id='title',base_revision=0,operation=dict(type='append_paragraph',block_id='title',style='Heading1',text=tid)))
+            service['pptx'].store(resolve(tid).files_root/'same.pptx').apply_one(dict(presentation_id='same',operation_id='slide',base_revision=0,operation='slide.add',slide_id='one'))
+            service['docx'].sync();service['pptx'].sync()
         list(pool.map(mutate,(a,b)))
     assert resolve(a).files_root!=resolve(b).files_root
     for tid,other in ((a,b),(b,a)):
@@ -166,7 +167,7 @@ def test_file_api_and_office_services_never_cross_threads(store):
 
 def test_host_office_resources_cannot_resolve_sibling_files(store):
     import zipfile
-    from platform_app.documents import DocumentStore
+    DocumentStore = format_plugins.load_plugin('docx').DocumentStore
     from platform_app.artifact_runtime import validate_embedded_resources
     a,b=thread(store),thread(store)
     root=resolve(a).files_root
@@ -177,8 +178,8 @@ def test_host_office_resources_cannot_resolve_sibling_files(store):
     with zipfile.ZipFile(template,'w') as package:
         for name,data in parts.items():package.writestr(name,data)
     service=runtime.runtime(a).ensure_artifact_services()['docx'];service.live_preview=False
-    with pytest.raises(ValueError,match='outside the Thread scope'):
-        service.execute('init',dict(document_id='blocked',template='template.docx'))
+    service.detect_external()
+    assert not service.bound_paths
     assert not (root/'blocked.docx').exists()
     with pytest.raises(ValueError):validate_embedded_resources(template)
 
@@ -202,10 +203,10 @@ def test_legacy_task_and_global_file_api_are_absent(store):
     assert store.post('/api/agent/uploads',files={'file':('no.txt',b'no')}).status_code==404
 
 
-def test_restricted_network_cannot_call_host_control_services_even_when_requested(store):
+def test_execute_network_request_is_effective_in_both_filesystem_modes(store):
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from platform_app.agent_core.network import set_execute_network, reset_execute_network
+    from platform_app.agent_core.tools.execute import build_execute_tool
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200);self.end_headers();self.wfile.write(b'HOST_PRIVATE_API')
@@ -213,18 +214,18 @@ def test_restricted_network_cannot_call_host_control_services_even_when_requeste
     server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
     worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
     backend=select_backend(SandboxPolicyBuilder().build(resolve('network-thread'))).backend
-    token=set_execute_network(True)
     command=f'curl --noproxy "*" --max-time 2 http://127.0.0.1:{server.server_port}/private'
+    tool=build_execute_tool(backend)
     try:
-        denied=backend.execute(command)
-        assert denied.exit_code!=0 and 'HOST_PRIVATE_API' not in denied.output
-        backend.apply_sandbox_mode('full-access')
-        allowed=backend.execute(command)
-        assert allowed.exit_code==0 and 'HOST_PRIVATE_API' in allowed.output
-        backend.apply_sandbox_mode('restricted')
-        denied=backend.execute(command)
-        assert denied.exit_code!=0 and 'HOST_PRIVATE_API' not in denied.output
+        for mode in ('restricted', 'full-access', 'restricted'):
+            backend.apply_sandbox_mode(mode)
+            denied=tool.invoke({'command':command})
+            assert 'HOST_PRIVATE_API' not in denied
+            allowed=tool.invoke({'command':command,'network':True})
+            assert 'HOST_PRIVATE_API' in allowed,allowed
+            # A subsequent command without network=true remains offline.
+            denied=tool.invoke({'command':command,'network':False})
+            assert 'HOST_PRIVATE_API' not in denied
     finally:
-        reset_execute_network(token)
         backend.executor.pool.shutdown('network policy test complete')
         server.shutdown();server.server_close();worker.join(timeout=3)

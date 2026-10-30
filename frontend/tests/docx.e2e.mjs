@@ -29,7 +29,7 @@ async function poll(fn, timeout = 180000) {
 try {
   await page.goto(base)
   await page.evaluate(() => localStorage.setItem('locale', 'zh'))
-  const response = await page.request.post(base + '/api/agent/sessions', { data: { model_id: 'test/model' } })
+  const response = await page.request.post(base + '/api/agent/sessions', { data: { model_id: 'test/model', permission_mode: 'allow', permission_confirmation: 'ALLOW' } })
   assert.equal(response.status(), 201)
   const session = await response.json(); const sessionUrl = base + '/api/agent/sessions/' + session.id
   await page.goto(base + '/?session=' + session.id)
@@ -47,7 +47,7 @@ try {
   await page.locator('.docx-panel').waitFor({ timeout: 20000 })
   await page.locator('.docx-paper>img').first().waitFor({ timeout: 30000 })
   // Streaming commits must arrive while the task is still running.
-  await poll(async () => (await page.request.get(sessionUrl + '/documents')).json().then(docs => docs[0]?.revision >= 16), 60000)
+  await poll(async () => (await page.request.get(sessionUrl + '/documents')).json().then(docs => docs.find(doc=>doc.path==='report.docx')?.revision >= 16), 60000)
   assert.equal((await (await page.request.get(sessionUrl)).json()).status, 'running')
   await input.fill('第二节改成表格，用业务语言展示职责分工。')
   await input.focus(); await page.waitForTimeout(300)
@@ -73,7 +73,7 @@ try {
     const state = await (await page.request.get(sessionUrl)).json()
     const docs = await (await page.request.get(sessionUrl + '/documents')).json()
     if (state.status === 'failed') throw new Error(state.error)
-    return state.status === 'completed' && docs[0]?.revision >= 112 && docs[0]?.preview_revision === docs[0]?.revision ? docs[0] : null
+    return state.status === 'completed' && docs.find(doc=>doc.path==='report.docx')?.revision >= 112 && docs.find(doc=>doc.path==='report.docx')?.preview_revision === docs.find(doc=>doc.path==='report.docx')?.revision ? docs.find(doc=>doc.path==='report.docx') : null
   })
   assert(document.pages.length >= 10, 'fixture did not naturally reach ten pages')
   assert(document.pages.every(p => p.checks.automatic_passed && p.checks.visual_review === 'pending'))

@@ -13,7 +13,7 @@
 - 保留原有主 Agent Loop、steering、安全检查点、checkpoint、审批和原生 Bubblewrap 隔离机制。
 - 在平台源码中增加 Skills 挂载控制和按沙箱模式限制命令联网，防止全局可写 Skills 与宿主 HTTP 绕过 Thread 隔离。
 - 默认配置、Skills、会话路径属于 `PLATFORM_DATA_DIR`，不读取 `~/.deep-agent`。子 Agent 日志按 Thread 保存。
-- DOCX/PPTX 工具由独立可卸载扩展注册，内置执行引擎没有格式专属依赖。
+- DOCX/PPTX 通过标准 Skill 加载，`SKILL.md` 指明脚本位置和流程，Agent 使用原生 execute 运行脚本，不注册格式专属工具，也不注入制作流程提示词。可选扩展只负责版本事件同步和只读预览。
 
 CLI 项目可以独立演进；平台不要求其修改、发版或合并 PR。今后需要复用上游修复时，在平台内审查和修改源码，按平台测试与版本发布。
 

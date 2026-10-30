@@ -1,45 +1,37 @@
-"""Uninstallable PPTX feature: tool provider and presentation HTTP API."""
+"""Read-only PPTX indexing, preview and human review HTTP API."""
 import hashlib
 import importlib.util
 import io
-import json
 from pathlib import Path
 import threading
 from fastapi import APIRouter,HTTPException
 from fastapi.responses import Response,FileResponse
 from pydantic import BaseModel,Field
-from platform_app import domain as d
 from platform_app.artifact_runtime import validate_embedded_resources
 
 spec=importlib.util.spec_from_file_location('pptx_feature_engine',Path(__file__).parent/'scripts'/'office_pptx.py')
 engine=importlib.util.module_from_spec(spec); spec.loader.exec_module(engine)
 PresentationStore=engine.PresentationStore
-APPROVAL_TOOLS=('pptx_init',)
-INSTRUCTIONS='''PPTX requests use the optional PPTX feature, not create_pptx or Python scripts writing a complete deck. Inspect/reuse uploaded templates first. Call pptx_init; its one native approval grants only this presentation in this session. Each pptx_apply_one call handles one slide or one native element; never whole-deck generation. Use stable IDs, operation_id and optimistic base_revision. Choose one of cover, section, title_body, comparison, three_columns, data before adding elements; use layout anchors and theme tokens. Native text/shape/image/table/chart remain editable. Complete a slide with pptx_check_slide and concrete content_notes. Automatic failures block the next slide, allow at most 3 failed checks then restore/request intervention. Normal mode keeps actual visual review pending, strict mode requires it before next slide. Actually inspect the Impress PNG before pptx_review; text-only models must ask for visual inspection. Recheck all affected slides after theme/layout changes. Steering binds viewed slide and revision; fix affected historical slide before proceeding. Do not claim completion before pptx_finalize accepts every slide. User authorization never extends to other files or generic execute/network tools.'''
-
-
-def safe_path(root,presentation_id):
-    engine.identifier(presentation_id); root=Path(root).resolve(); path=root/(presentation_id+'.pptx')
-    if path.is_symlink() or not path.resolve().is_relative_to(root):raise ValueError('Invalid presentation path')
-    return path
 
 
 class Presentations:
-    approval_tools=('pptx_init',)
-    def __init__(self,root,emit,actor,vision=False):
-        self.root=Path(root).resolve(); self.emit=emit; self.actor=actor; self.vision=vision; self.cursors={}; self.bound_paths={}; self.lock=threading.RLock()
+    def __init__(self,root,emit,temporary_root=None):
+        self.root=Path(root).resolve(); self.temporary_root=temporary_root; self.emit=emit; self.cursors={}; self.bound_paths={}; self.lock=threading.RLock()
+    def store(self, path):
+        return PresentationStore(path, temporary_root=self.temporary_root)
     def bind_state(self,record):
         self.bound_paths={identity:item['path'] for identity,item in record.get('presentations',{}).items()}
         self.cursors=dict(record.get('artifact_cursors',{}).get('pptx',{}))
         for path in self.paths():
             if path.relative_to(self.root).as_posix() not in self.cursors and path.relative_to(self.root).as_posix() not in self.bound_paths.values():
                 if (path.parent/'.pptx-state'/path.name/'history.sqlite').exists():
-                    events=PresentationStore(path).events()
+                    events=self.store(path).events()
                     self.cursors[path.relative_to(self.root).as_posix()]=events[-1]['store_seq'] if events else 0
     def paths(self):
         return [p for p in self.root.rglob('*.pptx') if not p.is_symlink() and '.pptx-state' not in p.relative_to(self.root).parts and p.resolve().is_relative_to(self.root.resolve())]
     def presentation_path(self,identity):
-        path=self.root/self.bound_paths[identity] if identity in self.bound_paths else safe_path(self.root,identity)
+        if identity not in self.bound_paths:raise ValueError('Unknown presentation')
+        path=self.root/self.bound_paths[identity]
         if path.is_symlink() or not path.resolve().is_relative_to(self.root.resolve()):raise ValueError('Invalid presentation path')
         return path
     def close(self):pass
@@ -47,7 +39,7 @@ class Presentations:
         with self.lock:
             for path in self.paths():
                 if path.is_symlink() or not (path.parent/'.pptx-state'/path.name/'history.sqlite').exists():continue
-                for event in PresentationStore(path).events(self.cursors.get(path.relative_to(self.root).as_posix(),0)):
+                for event in self.store(path).events(self.cursors.get(path.relative_to(self.root).as_posix(),0)):
                     event['path']=path.relative_to(self.root).as_posix()
                     identity=event.get('presentation_id')
                     if identity in self.bound_paths and self.bound_paths[identity]!=event['path']:
@@ -59,76 +51,29 @@ class Presentations:
         # Detect unversioned native writes without replacing the last valid snapshot.
         for path in self.paths():
             if path.is_symlink():continue
-            store=PresentationStore(path)
-            if not (store.directory/'history.sqlite').exists():continue
+            store=self.store(path)
+            if not (store.directory/'history.sqlite').exists():
+                relative = path.relative_to(self.root).as_posix()
+                try:
+                    validate_embedded_resources(path)
+                    try: identity = engine.identifier(path.stem) if len(Path(relative).parts) == 1 else 'external-' + hashlib.sha256(relative.encode()).hexdigest()[:20]
+                    except ValueError: identity = 'external-' + hashlib.sha256(relative.encode()).hexdigest()[:20]
+                    if identity in self.bound_paths and self.bound_paths[identity] != relative:
+                        identity = 'external-' + hashlib.sha256(relative.encode()).hexdigest()[:20]
+                    store.track_external(identity)
+                except (ValueError, OSError):
+                    continue
             with store.locked() as(c,state):
                 if state and hashlib.sha256(path.read_bytes()).hexdigest()!=state['sha256']:
                     self.emit(dict(type='presentation_error',presentation_id=state['presentation_id'],revision=state['revision'],path=path.name,external_conflict=True))
         self.sync()
     def feedback(self,text,context):
         identity=context.get('presentation_id') or context.get('id'); sid=context.get('slide_id'); revision=context.get('revision')
-        state=PresentationStore(self.presentation_path(identity)).status()
+        state=self.store(self.presentation_path(identity)).status()
         if type(revision)is not int or revision>state['revision'] or sid not in [s['slide_id'] for s in state['manifest']['slides']]:raise ValueError('Invalid presentation/slide feedback version')
         return text+f'\n[Presentation feedback: presentation_id={identity}, slide_id={sid}, viewed_revision={revision}, current_revision={state["revision"]}. Prioritize this slide, invalidate affected checks, recheck before continuing.]'
-    def execute(self,action,args):
-        result=self._execute(action,args)
-        if isinstance(result,dict) and 'path' in result:
-            result={**result,'path':self.presentation_path(args['presentation_id']).relative_to(self.root).as_posix()}
-        return result
-    def _execute(self,action,args):
-        self.root.mkdir(parents=True,exist_ok=True); identity=args['presentation_id']; store=PresentationStore(self.presentation_path(identity))
-        if store.path.is_file():validate_embedded_resources(store.path)
-        grant_key=self.actor+':'+identity
-        if action!='init':
-            try:grant=d.get('artifact_grant',grant_key)
-            except KeyError:raise ValueError('Approve pptx_init once for this presentation and session first')
-            if grant.get('path')!=str(store.path):raise ValueError('Presentation scope changed; authorization required')
-        try:
-            if action=='init':
-                template=args.get('template')
-                if template:
-                    template=(self.root/template).resolve()
-                    if not template.is_relative_to(self.root.resolve()) or not template.is_file():raise ValueError('Template must be a library file')
-                    validate_embedded_resources(template)
-                result=store.init(identity,template,args.get('mode','normal'),args.get('theme','corporate_blue'))
-                d.put('artifact_grant',dict(id=grant_key,path=str(store.path),actor=self.actor,presentation_id=identity,scope=['init','apply_one','status','check_slide','review','restore','finalize']))
-                return result
-            if action=='apply_one':return store.apply_one({k:v for k,v in args.items() if k!='action'},self.root)
-            if action=='status':return store.status()
-            if action=='check_slide':return store.check_slide(args['slide_id'],args['content_notes'])
-            if action=='review':
-                if not self.vision:raise ValueError('Text-only model cannot certify visual review')
-                return store.review(args['slide_id'],args['revision'],args['passed'],args['notes'])
-            if action=='restore':return store.restore(args['revision'],args['base_revision'],args['operation_id'])
-            if action=='finalize':return store.finalize(args['base_revision'])
-            raise ValueError('Unsupported feature action')
-        finally:self.sync()
-    def tools(self):
-        from langchain_core.tools import StructuredTool
-        text=dict(type='string'); integer=dict(type='integer',minimum=0)
-        def schema(properties,required=()):return dict(type='object',properties=dict(presentation_id=text,**properties),required=['presentation_id',*required],additionalProperties=False)
-        definitions={
-         'init':(schema(dict(template=text,theme=dict(type='string',enum=list(engine.THEMES)),mode=dict(type='string',enum=['normal','strict']))),'Initialize an optional-template presentation. Native approval grants only this deck/session.'),
-         'apply_one':(schema(dict(operation_id=text,base_revision=integer,slide_id=text,operation=dict(type='string',enum=['slide.add','slide.set_layout','slide.reorder','presentation.set_theme','element.add_text','element.add_shape','element.add_image','element.add_table','element.add_chart','element.update','element.remove']),element=dict(type='object'),layout=dict(type='string',enum=list(engine.LAYOUTS)),layout_index=integer,theme=text,index=integer),['operation_id','base_revision','operation']),'Commit one native element or slide operation. element requires id, normalized geometry{x,y,w,h} or layout anchor; text style token cover_title/slide_title/body/caption/card_title. Shapes rectangle/rounded_rectangle/arrow/ellipse, optional fill_token and explicit layer background/decoration/content or overlap_group. Table rows<=10x8. Chart {type:bar|line|pie,categories,series:[{name,values}]}. No batching or whole-deck content.'),
-         'status':(schema({}),'Inspect stable slide/element IDs, geometry, theme, versions and review state.'),
-         'check_slide':(schema(dict(slide_id=text,content_notes=text),['slide_id','content_notes']),'Formally render exact snapshot with Impress and inspect structure/layout. Supply actual content-review notes. Visual inspection remains pending.'),
-         'review':(schema(dict(slide_id=text,revision=integer,passed=dict(type='boolean'),notes=text),['slide_id','revision','passed','notes']),'Record actual screenshot inspection. Requires a vision-capable model and concrete evidence.'),
-         'restore':(schema(dict(revision=integer,base_revision=integer,operation_id=text),['revision','base_revision','operation_id']),'Restore known snapshot as a new monotonically increasing revision.'),
-         'finalize':(schema(dict(base_revision=integer),['base_revision']),'Publish after every slide passes actual content and visual review.')}
-        result=[]
-        for action,(args,description) in definitions.items():
-            def invoke(_action=action,**kwargs):
-                try:
-                    value=self.execute(_action,kwargs)
-                    if _action in ('apply_one','init','restore'):
-                        return {key:item for key,item in value.items() if key not in ('manifest','history')}
-                    return value
-                except (ValueError,KeyError,OSError,TypeError) as exc:return dict(status='rejected',error=str(exc))
-            result.append(StructuredTool.from_function(func=invoke,name='pptx_'+action,description=description,args_schema=args))
-        return result
 
-
-def create_service(root,emit,actor,vision=False):return Presentations(root,emit,actor,vision)
+def create_service(root,emit,temporary_root=None):return Presentations(root,emit,temporary_root=temporary_root)
 
 
 def create_router(host):
@@ -136,15 +81,23 @@ def create_router(host):
     def store_for(session_id,presentation_id):
         service=host.service(session_id,'pptx'); record=host.session(session_id)
         if presentation_id not in record.get('presentations',{}):raise HTTPException(404,'Presentation does not belong to this session')
-        try:return service,PresentationStore(service.presentation_path(presentation_id))
+        try:return service,service.store(service.presentation_path(presentation_id))
         except ValueError:raise HTTPException(422,'Invalid presentation ID')
     @router.get('/{session_id}/presentations')
     def presentations(session_id:str):
-        service=host.service(session_id,'pptx'); service.sync(); record=host.session(session_id); result=[]
+        service=host.service(session_id,'pptx'); service.detect_external(); record=host.session(session_id); result=[]
         for identity in record.get('presentations',{}):
-            try:result.append({**PresentationStore(service.presentation_path(identity)).status(),'path':record['presentations'][identity]['path']})
+            try:result.append({**service.store(service.presentation_path(identity)).status(),'path':record['presentations'][identity]['path']})
             except (ValueError,OSError):continue
         return result
+    @router.post('/{session_id}/presentations/{presentation_id}/preview')
+    def preview(session_id:str,presentation_id:str):
+        service,store=store_for(session_id,presentation_id)
+        validate_embedded_resources(store.path)
+        try:result=store.preview()
+        except (OSError,RuntimeError,ValueError) as exc:raise HTTPException(409,'演示文稿预览暂不可用，请检查 LibreOffice') from exc
+        service.sync()
+        return {**result, 'path': store.path.relative_to(service.root).as_posix()}
     @router.get('/{session_id}/presentations/{presentation_id}/revisions/{revision}')
     def snapshot(session_id:str,presentation_id:str,revision:int):
         _,store=store_for(session_id,presentation_id)
@@ -156,7 +109,7 @@ def create_router(host):
         import re
         _,store=store_for(session_id,presentation_id)
         if revision<0 or not re.fullmatch(r'slide-\d{3}\.png',filename):raise HTTPException(404,'Unknown rendered page')
-        path=store.directory/f'render-{revision:08d}'/filename
+        path=store.render_directory(revision)/filename
         if not path.is_file():raise HTTPException(404,'Render unavailable')
         return FileResponse(path,headers={'Cache-Control':'private, max-age=31536000, immutable'})
     @router.get('/{session_id}/presentations/{presentation_id}/assets/{revision}/{slide_id}/{element_id}')

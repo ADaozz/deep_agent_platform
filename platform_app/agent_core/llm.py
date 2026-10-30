@@ -472,6 +472,10 @@ class ChatCompletionsChatOpenAI(ProtocolChatOpenAI):
         raw_usage = chunk.get("usage")
         if isinstance(raw_usage, dict) and (type(raw_usage.get("prompt_tokens")) is not int or raw_usage["prompt_tokens"] < 0):
             generation.message.usage_metadata = None
+        elif isinstance(raw_usage, dict) and generation.message.usage_metadata is not None:
+            cached = raw_usage.get('prompt_cache_hit_tokens')
+            if type(cached) is int and 0 <= cached <= raw_usage['prompt_tokens']:
+                generation.message.usage_metadata.setdefault('input_token_details', {})['cache_read'] = cached
         choices = chunk.get("choices") or (chunk.get("chunk") or {}).get("choices") or []
         if choices:
             reasoning = _optional_reasoning(choices[0].get("delta"))

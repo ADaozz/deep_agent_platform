@@ -15,7 +15,6 @@ from pptx import Presentation
 from pptx.util import Inches,Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE,MSO_CONNECTOR
-from pptx.enum.text import PP_ALIGN
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE,XL_LEGEND_POSITION
 from pptx.oxml.xmlchemy import OxmlElement
@@ -102,7 +101,7 @@ def find_element(slide,eid):
 
 
 class PresentationStore(shared.ArtifactStore):
-    def __init__(self,path):super().__init__(path,'.pptx','.pptx-state')
+    def __init__(self,path,temporary_root=None):super().__init__(path,'.pptx','.pptx-state',temporary_root)
     def assert_current(self,state,base_revision=None):
         if state is None:raise ValueError('Presentation not initialized')
         if base_revision is not None and (type(base_revision) is not int or base_revision!=state['revision']):raise ValueError('Revision conflict')
@@ -161,6 +160,33 @@ class PresentationStore(shared.ArtifactStore):
             history=[{key:value for key,value in json.loads(r[0]).items() if key in ('revision','operation_id','sha256','slide_id','status')} for r in c.execute('SELECT result FROM revisions ORDER BY revision')])
     def status(self):
         with self.locked() as (c,state):return self.view(c,state)
+    def track_external(self, presentation_id):
+        """Index a valid existing PPTX without changing its package bytes."""
+        with self.locked() as (c, state):
+            if state is not None:
+                return None
+            data = self.path.read_bytes()
+            validator.validate_package(data)
+            prs = Presentation(io.BytesIO(data))
+            state = dict(presentation_id=identifier(presentation_id), revision=-1, mode='normal',
+                theme=copy.deepcopy(THEMES['corporate_blue']), theme_name='corporate_blue', font_family='Noto Sans CJK SC',
+                slots={}, layouts={}, backgrounds={}, reviews={}, renders={}, repair_attempts={}, template=True,
+                template_complex={renderer.slide_identity(slide): True for slide in prs.slides},
+                active_slide=renderer.slide_identity(prs.slides[0]) if len(prs.slides) else None)
+            return self.commit(c, state, data, '__external__', {'external': True}, ['*'], 'presentation_initialized')
+    def preview(self):
+        """Generate display images while retaining pending content/visual checks."""
+        current = self.status()
+        revision = current['revision']
+        reviewer = load('slide_reviewer')
+        reviewer.render_snapshot(self, revision)
+        with self.locked() as (c, state):
+            self.assert_current(state, revision)
+            for index, slide in enumerate(current['manifest']['slides']):
+                state['renders'][slide['slide_id']] = dict(revision=revision, image=f'slide-{index+1:03d}.png')
+            return self.emit_state(c, state, dict(type='presentation_preview',
+                presentation_id=state['presentation_id'], revision=revision, path=self.path.name,
+                manifest=self.view(c, state)['manifest']))
     def apply_one(self,request,asset_root=None):
         identifier(request['operation_id'])
         if len(json.dumps(request,ensure_ascii=False))>30000:raise ValueError('Bounded operation payload exceeded')
@@ -315,7 +341,7 @@ class PresentationStore(shared.ArtifactStore):
             self.assert_current(state,revision); review=state['reviews'].get(slide_id)
             if not review or not review['automatic_passed'] or review['revision']>revision:raise ValueError('Exact-revision successful formal check required')
             formal=state.get('renders',{}).get(slide_id)
-            if not formal or not (self.directory/f"render-{formal['revision']:08d}"/formal['image']).is_file():raise ValueError('Formal screenshot is missing')
+            if not formal or not (self.render_directory(formal['revision'])/formal['image']).is_file():raise ValueError('Formal screenshot is missing')
             review.update(visual_review='passed' if passed else 'failed',status='passed' if passed else 'blocked',visual_evidence=dict(reviewer=reviewer,notes=notes))
             return self.emit_state(c,state,dict(type='presentation_review',presentation_id=state['presentation_id'],revision=revision,slide_id=slide_id,manifest=renderer.manifest(Presentation(io.BytesIO(self.snapshot_unlocked(c,revision))),state),path=self.path.name))
     def finalize(self,base_revision):

@@ -135,10 +135,6 @@
     "zh": "运行环境",
     "en": "Runtime"
   },
-  "Runtime": {
-    "zh": "运行环境",
-    "en": "Runtime"
-  },
   "Tool permission ·": {
     "zh": "工具权限 ·",
     "en": "Tool permission ·"
@@ -875,10 +871,6 @@
     "zh": "权限模式已更新",
     "en": "Permission mode updated."
   },
-  "sandbox.fullAccess": {
-    "zh": "高权限文件访问模式，可访问宿主允许的其他目录；不保证会话之间的文件隔离。",
-    "en": "High privilege filesystem access can reach other host directories; Thread filesystem isolation is not guaranteed."
-  },
   "permission.confirmTitle": {
     "zh": "启用 ALLOW？",
     "en": "Enable ALLOW?"
@@ -1064,8 +1056,8 @@
     "en": "Long result; showing the first part."
   },
   "skills.configureHint": {
-    "zh": "配置已安装 Skill 在当前设置的启用状态。脚本、参考资料和操作指引随 Skill 一同加载。",
-    "en": "Choose which installed skills to enable for this settings. Scripts, references and instructions load with each skill."
+    "zh": "选择启用的内置或已安装技能。技能包含操作指引、脚本和参考资料，保存后用于新会话。",
+    "en": "Enable built-in or installed skills. Instructions, scripts and references load with each skill; saved settings apply to new chats."
   },
   "skills.empty": {
     "zh": "尚未发现已安装的 Skill。",
@@ -1098,10 +1090,6 @@
   "docx.preview": {
     "zh": "文档只读预览",
     "en": "Read-only document preview"
-  },
-  "docx.select": {
-    "zh": "选择文档",
-    "en": "Select document"
   },
   "docx.close": {
     "zh": "关闭文档预览",
@@ -1231,10 +1219,6 @@
     "zh": "PPTX 只读预览",
     "en": "PPTX read-only preview"
   },
-  "pptx.select": {
-    "zh": "选择演示文稿",
-    "en": "Select presentation"
-  },
   "pptx.close": {
     "zh": "关闭演示文稿预览",
     "en": "Close presentation preview"
@@ -1318,18 +1302,6 @@
   "features.uninstall": {
     "zh": "卸载",
     "en": "Uninstall"
-  },
-  "pptx_init": {
-    "zh": "授权并创建此演示文稿",
-    "en": "Authorize and create this presentation"
-  },
-  "pptx_apply_one": {
-    "zh": "修改一个幻灯片元素",
-    "en": "Edit one slide element"
-  },
-  "pptx_check_slide": {
-    "zh": "检查当前幻灯片",
-    "en": "Check current slide"
   },
   "process.summary": {
     "zh": "执行摘要",
@@ -1463,17 +1435,9 @@
     "zh": "会话文件",
     "en": "Thread files"
   },
-  "Local files": {
-    "zh": "本地文件",
-    "en": "Local files"
-  },
-  "Browse files": {
-    "zh": "浏览文件",
-    "en": "Browse files"
-  },
-  "查看文件": {
-    "zh": "查看设置文件",
-    "en": "View settings files"
+  "Local environment": {
+    "zh": "本地环境",
+    "en": "Local environment"
   },
   "Additional tools": {
     "zh": "设置工具",
@@ -1491,29 +1455,9 @@
     "zh": "设置已保存；新会话使用新配置",
     "en": "Settings saved; new chats use the updated configuration"
   },
-  "sandbox.restricted": {
-    "zh": "当前会话独享文件、HOME 和 TMP；execute 不共享宿主网络，联网检索使用受控工具。",
-    "en": "Private files, HOME and TMP. Execute cannot share host networking; use the controlled web tools."
-  },
   "sandbox.independentPermission": {
     "zh": "工具审批与文件系统隔离独立；allow 不会自动开启 full-access。",
     "en": "Tool approval is independent of filesystem isolation. Allow does not enable full-access."
-  },
-  "sandbox.confirmWarning": {
-    "zh": "full-access 会放宽文件系统隔离，可以访问其他宿主目录。平台密钥和内部状态仍受保护。只对当前会话生效。",
-    "en": "Full-access relaxes filesystem isolation for this Thread and can reach other host directories. Platform secrets and internal state remain protected."
-  },
-  "sandbox.typeConfirmation": {
-    "zh": "输入 FULL_ACCESS 确认",
-    "en": "Type FULL_ACCESS to confirm"
-  },
-  "sandbox.enableFull": {
-    "zh": "启用 full-access",
-    "en": "Enable full-access"
-  },
-  "sandbox.pending": {
-    "zh": "文件系统模式变更将在下一个安全边界生效",
-    "en": "Filesystem mode change will apply at the next safe boundary"
   },
   "当前会话的文件库": {
     "zh": "当前会话独享的文件库",
@@ -1523,8 +1467,18 @@
     "zh": "MCP 配置可保留。通用宿主 MCP 服务尚无 Thread 作用域适配，因此当前不会启动；不会把宿主访问能力当作沙箱内工具。",
     "en": "MCP configuration is retained. Generic host MCP servers are not started until a Thread-scoped adapter is available; host access is not treated as sandboxed."
   },
-  "sandbox.title": {
-    "zh": "文件系统隔离",
-    "en": "Filesystem isolation"
-  }
+  "human.other": { "zh": "其他", "en": "Other" },
+  "human.otherAnswer": { "zh": "{field}：其他回复", "en": "{field}: custom answer" },
+  "human.otherPlaceholder": { "zh": "请填写你的回复…", "en": "Enter your answer…" }
+,
+  "usage.context": { "zh": "上下文 {used} / {limit} Token", "en": "Context {used} / {limit} tokens" },
+  "usage.output": { "zh": "输出 {count} Token", "en": "Output {count} tokens" },
+  "usage.latestRequest": { "zh": "最近一次模型请求的输入用量 / 模型上下文窗口", "en": "Latest model request input usage / model context window" }
+,
+  "skills.bundled": { "zh": "内置技能", "en": "Built-in skill" }
+,
+  "artifacts.preview": { "zh": "点击预览", "en": "Preview" },
+  "artifacts.select": { "zh": "选择预览文件", "en": "Select preview file" },
+  "artifacts.previewUnavailable": { "zh": "此文件的预览暂不可用，可下载查看。", "en": "Preview is unavailable for this file. You can download it." }
+
 }

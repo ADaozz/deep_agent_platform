@@ -5,6 +5,7 @@ of any supported artifact. This module never plans or executes Agent work.
 """
 from contextlib import contextmanager
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -40,11 +41,19 @@ def publish(path, data):
 
 
 class ArtifactStore:
-    def __init__(self, path, suffix, state_dir):
+    def __init__(self, path, suffix, state_dir, temporary_root=None):
+        temporary_root = temporary_root or os.environ.get('OFFICE_RENDER_TMP')
         self.path=Path(path).absolute()
         if self.path.suffix.lower()!=suffix or self.path.is_symlink():
             raise ValueError('Invalid artifact path')
         self.directory=self.path.parent/state_dir/self.path.name
+        self.render_root = (Path(temporary_root) / hashlib.sha256(str(self.directory).encode()).hexdigest()
+            if temporary_root is not None else self.directory / 'tmp')
+
+    def render_directory(self, revision):
+        if type(revision) is not int or revision < 0:
+            raise ValueError('Invalid render revision')
+        return self.render_root / f'render-{revision:08d}'
 
     def _publish(self,path,data):
         publish(path,data)

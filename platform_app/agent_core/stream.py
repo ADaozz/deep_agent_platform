@@ -10,6 +10,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessageChunk, BaseMessage
 
 from platform_app.agent_core.performance import GenerationTiming
+from platform_app.agent_core.token_usage import message_usage
 
 DeltaHandler = Callable[[str, str], None]
 
@@ -113,7 +114,7 @@ class StreamDeltaCallback(BaseCallbackHandler):
         on_start: Callable[[], None] | None = None,
         on_end: Callable[[str, str], None] | None = None,
         on_compaction: Callable[[bool], None] | None = None,
-        on_usage: Callable[[dict[str, int]], None] | None = None,
+        on_usage: Callable[[dict[str, Any]], None] | None = None,
         on_metrics: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         super().__init__()
@@ -161,10 +162,7 @@ class StreamDeltaCallback(BaseCallbackHandler):
             self._message = message if self._message is None else self._message + message
             if self._on_usage and isinstance(message.usage_metadata, dict):
                 # A usage-only final chunk has no text, but must still reach TUI.
-                usage = self._message.usage_metadata or {}
-                self._on_usage({key: value for key, value in usage.items()
-                                if key in {"input_tokens", "output_tokens", "total_tokens"}
-                                and type(value) is int and value >= 0})
+                self._on_usage(message_usage(self._message))
             visible = visible_text(self._message)
             reasoning = reasoning_text(self._message)
         else:

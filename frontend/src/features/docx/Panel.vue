@@ -1,12 +1,13 @@
 <script setup>
 import {ref,computed,watch} from 'vue'
 import Icon from '../../Icon.vue'
+import PreviewFileSelect from '../../PreviewFileSelect.vue'
 import DocxPreview from './DocxPreview.vue'
 import {t} from '../../preferences'
 import {mergeDocument,previewKey} from './state'
 import {api} from '../../featureApi'
-const props=defineProps({session:Object,events:{type:Array,default:()=>[]},active:Boolean})
-const emit=defineEmits(['open','context','error'])
+const props=defineProps({session:Object,events:{type:Array,default:()=>[]},active:Boolean,files:{type:Array,default:()=>[]},openRequest:Object})
+const emit=defineEmits(['open','context','error','catalog','select-file'])
 const selected=computed(()=>props.session)
 async function guard(fn){try{return await fn()}catch(error){emit('error',error.message)}}
 const documents = ref({}), activeDocumentId = ref(''), documentOpen = ref(false), reviewPage = ref(null), reviewNotes = ref(''), renderedRevision = ref(null)
@@ -26,6 +27,19 @@ function receiveDocuments(updates) {
     }
   }
 }
+watch(documents,values=>emit('catalog',Object.values(values).filter(file=>file.path)),{deep:true})
+watch(()=>props.openRequest,async request=>{
+ if(!request||!props.session)return
+ const id=props.session.id
+ await guard(async()=>{
+  const values=await api(`/agent/sessions/${id}/documents`)
+  if(props.session?.id!==id||props.openRequest?.token!==request.token)return
+  receiveDocuments(values)
+  const document=Object.values(documents.value).find(file=>file.path===request.path)
+  if(!document)throw new Error(t('artifacts.previewUnavailable'))
+  activeDocumentId.value=document.document_id;showDocument()
+ })
+},{immediate:true})
 function closeDocument() { documentOpen.value = false; sessionStorage.setItem(documentStorageKey.value + ':closed', 'true') }
 function showDocument() { documentOpen.value = true; emit('open',true); sessionStorage.removeItem(documentStorageKey.value + ':closed') }
 function feedbackContext() { return activeDocument.value ? { document_id: activeDocumentId.value, revision: renderedRevision.value ?? activeDocument.value.revision } : null }
@@ -57,7 +71,7 @@ watch(()=>[activeDocument.value?.revision,renderedRevision.value,props.active],(
 <template>
     <button v-if="activeDocument && (!documentOpen || !active)" type="button" class="docx-reopen secondary" @click="showDocument"><Icon name="FileText" :size="15" />{{ activeDocument.path }}</button>
     <aside v-if="activeDocument && documentOpen && active" class="docx-panel" :aria-label="t('docx.preview')">
-      <header class="docx-panel-header"><Icon name="FileText" :size="17" /><select v-model="activeDocumentId" :aria-label="t('docx.select')"><option v-for="doc in documents" :key="doc.document_id" :value="doc.document_id">{{ doc.path }}</option></select><a :href="documentUrl" download :aria-label="t('Download')"><Icon name="Download" :size="17" /></a><button type="button" class="icon-button" :aria-label="t('docx.close')" @click="closeDocument"><Icon name="X" :size="17" /></button></header>
+      <header class="docx-panel-header"><Icon name="FileText" :size="17" /><PreviewFileSelect :model-value="activeDocument.path" :files="files" @update:model-value="emit('select-file',$event)" /><a :href="documentUrl" download :aria-label="t('Download')"><Icon name="Download" :size="17" /></a><button type="button" class="icon-button" :aria-label="t('docx.close')" @click="closeDocument"><Icon name="X" :size="17" /></button></header>
       <p class="docx-gate-note">{{ activeDocument.finalized ? t('docx.finalized') : t('docx.draft') }}</p>
       <p v-if="activeDocument.external_conflict" class="docx-gate-error">{{ t('docx.externalConflict') }}</p>
       <p v-if="activeDocument.preview_error" class="docx-gate-error">{{ t('docx.previewUnavailable') }}</p>

@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from platform_app.agent_core.llm_stream import ModelStreamCancelled
 from platform_app.agent_core.session import tool_message_is_error
 from platform_app.agent_core.stream import visible_text
+from platform_app.agent_core.token_usage import message_usage
 
 
 @dataclass(frozen=True)
@@ -236,17 +237,11 @@ def _messages_in_update(value: Any) -> list[BaseMessage]:
     return found
 
 
-_USAGE_KEYS = ("input_tokens", "output_tokens", "total_tokens")
+def _usage_metadata_dict(message: BaseMessage) -> dict[str, Any]:
+    return message_usage(message)
 
 
-def _usage_metadata_dict(message: BaseMessage) -> dict[str, int]:
-    usage = getattr(message, "usage_metadata", None)
-    if not isinstance(usage, dict):
-        return {}
-    return {key: int(usage[key]) for key in _USAGE_KEYS if type(usage.get(key)) is int and usage[key] >= 0}
-
-
-def _usage_from_messages(messages: Any) -> dict[str, int]:
+def _usage_from_messages(messages: Any) -> dict[str, Any]:
     """Most recent reported usage, which is the size of the context the model saw."""
     for message in reversed(list(messages or [])):
         if isinstance(message, AIMessage):

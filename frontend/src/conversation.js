@@ -133,14 +133,6 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
       turn.endedAt = eventTime(event)
     } else if (event.type === 'task_progress' && event.content) {
       ensureTurn(event, index).steps.push({ key: `progress-${event.seq ?? index}`, kind: 'progress', name: 'progress', order: index, content: rawText(event.content), status: 'completed', startedAt: eventTime(event), endedAt: eventTime(event) })
-    } else if (event.type === 'output_files') {
-      const current = ensureTurn(event, index); current.outputFiles ||= []
-      for (const file of event.files || []) {
-        if (!file?.path) continue
-        const existing = current.outputFiles.find(item => item.path === file.path)
-        if (existing) existing.size = file.size
-        else current.outputFiles.push({ path: file.path, size: file.size })
-      }
     } else if (event.type === 'steer' || event.type === 'follow_up') {
       ensureTurn(event, index).notes.push({ kind: 'note', key: event.seq ?? index, type: event.type, content: event.content })
     }
@@ -169,7 +161,6 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
     const answers = item.models.filter(chunk => !chunk.hasTools && chunk.content)
     for (const chunk of answers) blocks.push({ kind: 'assistant', key: `answer-${chunk.key}`, content: chunk.content })
     if (item.result && !answers.some(chunk => chunk.content === item.result)) blocks.push({ kind: 'assistant', key: `result-${item.key}`, content: item.result })
-    if (item.outputFiles?.length) blocks.push({ kind: 'files', key: `files-${item.key}`, files: item.outputFiles })
     blocks.push(...item.notes)
     const lead = blocks.find(block => block.kind === 'process' || block.kind === 'assistant')
     if (lead) lead.lead = true

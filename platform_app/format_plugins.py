@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import yaml
 from fastapi import APIRouter,HTTPException
 from pydantic import BaseModel
 from . import domain as d
@@ -33,8 +34,23 @@ def config(feature_id):
     except KeyError:return dict(id=feature_id,installed=True,enabled=True)
 
 
-def enabled():
-    return [meta for meta in catalog() if config(meta['id']).get('installed') and config(meta['id']).get('enabled')]
+def enabled(skill_bindings=None):
+    bindings = skill_bindings or {}
+    return [meta for meta in catalog() if config(meta['id']).get('installed') and config(meta['id']).get('enabled') and bindings.get(meta['skill_name'], True)]
+
+
+def bundled_skills():
+    result = []
+    for meta in catalog():
+        state = config(meta['id'])
+        path = meta['directory'] / 'SKILL.md'
+        if not state.get('installed') or not path.is_file():
+            continue
+        text = path.read_text(encoding='utf-8')
+        front = yaml.safe_load(text.split('---', 2)[1]) if text.startswith('---') else {}
+        result.append(dict(id=meta['skill_name'], name=meta['name'], description=(front or {}).get('description', ''),
+            source='feature', feature_id=meta['id'], available=state.get('enabled', False)))
+    return result
 
 
 def load_plugin(feature_id):
@@ -48,31 +64,28 @@ def load_plugin(feature_id):
     return CACHE[key]
 
 
-def build_services(root,actor,emit,vision=False):
+def build_services(root,emit,temporary_root=None,skill_bindings=None):
     result={}
-    for meta in enabled():
+    for meta in enabled(skill_bindings):
         try:
             module=load_plugin(meta['id'])
             def publish(event,_meta=meta):
                 identity=event.get(_meta['identity_key'])
                 if identity:event={**event,'artifact_extension':dict(feature=_meta['id'],id=identity,state_key=_meta['state_key'])}
                 emit(event)
-            result[meta['id']]=module.create_service(root,publish,actor,vision)
+            result[meta['id']]=module.create_service(root,publish,temporary_root=temporary_root)
         except (ImportError,LookupError):
             continue
     return result
 
 
-def instructions():
-    result=[]
-    for meta in enabled():
-        try:result.append(load_plugin(meta['id']).INSTRUCTIONS)
-        except (ImportError,LookupError):continue
-    return '\n\n'.join(result)
-
-
-def snapshot_skills(destination):
-    active=enabled()
+def snapshot_skills(destination,skill_bindings=None):
+    runtime_bin = destination / '.runtime' / 'bin'
+    runtime_bin.mkdir(parents=True, exist_ok=True)
+    office = runtime_bin / 'libreoffice'
+    office.write_text('#!/bin/sh\nif [ -x /opt/agent-libreoffice/program/soffice ]; then\n  for runtime in /opt/agent-libreoffice/program/python-core-*; do export PYTHONHOME="$runtime"; break; done\n  exec /opt/agent-libreoffice/program/soffice "$@"\nfi\nexec /usr/bin/libreoffice "$@"\n')
+    office.chmod(0o755)
+    active=enabled(skill_bindings)
     active_ids={meta['id'] for meta in active}
     # Uninstall/disable is explicit authorization to retract this extension's
     # previous snapshot, even when the conversation itself is retained.
@@ -82,8 +95,6 @@ def snapshot_skills(destination):
             if identity not in active_ids:shutil.rmtree(manifest.parent)
         except (OSError,ValueError,KeyError):continue
     for meta in active:
-        try:load_plugin(meta['id'])
-        except (ImportError,LookupError):continue
         folder=destination/meta['skill_name']
         if not folder.exists():
             shutil.copytree(meta['directory'],folder,ignore=shutil.ignore_patterns('__pycache__','.pytest_cache','tests','platform_adapter.py'))
@@ -132,12 +143,3 @@ def configure_feature(feature_id:str,value:FeatureConfig):return change(feature_
 
 @router.delete('/{feature_id}')
 def uninstall_feature(feature_id:str):return change(feature_id,False,False)
-
-
-def approval_rules():
-    rules={}
-    for meta in enabled():
-        try:
-            for name in getattr(load_plugin(meta['id']),'APPROVAL_TOOLS',()):rules[name]=True
-        except (ImportError,LookupError):continue
-    return rules

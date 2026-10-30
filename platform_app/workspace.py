@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 from uuid import uuid4
 
 import yaml
@@ -128,12 +129,23 @@ class SandboxPolicyBuilder:
         for path in protected:
             if context.workspace_root.is_relative_to(path.resolve()):
                 raise ValueError('A protected control directory cannot contain the workspace')
+        # A read-only Python runtime lets installed skill scripts use the same
+        # dependencies as the host without exposing the project or user HOME.
+        runtime_mounts = []
+        runtime_path = '/agent-skills/.runtime/bin:/usr/local/bin:/usr/bin:/bin'
+        if sys.prefix != sys.base_prefix:
+            runtime_mounts.append(BindMount(source=Path(sys.prefix), destination='/opt/agent-python'))
+            runtime_path = '/opt/agent-python/bin:' + runtime_path
+        portable_office = sorted((Path.home() / '.local/libreoffice/opt').glob('libreoffice*'))
+        if portable_office:
+            runtime_mounts.append(BindMount(source=portable_office[-1], destination='/opt/agent-libreoffice'))
         config = SandboxConfig(workspace=context.workspace_root, mode=mode,
             protected_config_dir=context.sandbox_state_root, protected_files=protected,
-            mount_skills=False, network_modes=('full-access',), extra_read_only_mounts=(
+            mount_skills=False, network_modes=('restricted', 'full-access'), extra_read_only_mounts=(
                 BindMount(source=context.skills_root, destination='/agent-skills'),
-                BindMount(source=context.skills_root, destination=context.skills_root.as_posix())),
-            extra_read_write_mounts=(), env_set={})
+                BindMount(source=context.skills_root, destination=context.skills_root.as_posix()), *runtime_mounts),
+            extra_read_write_mounts=(), env_set={'PATH': runtime_path,
+                'OFFICE_RENDER_TMP': str(context.workspace_root / 'tmp' / 'office-renders')})
         _validate_config(config)  # Native validation also runs on each mode rebuild.
         return config
 

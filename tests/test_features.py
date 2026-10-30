@@ -23,8 +23,8 @@ def test_features_uninstall_independently_and_reinstall(client):
     assert {f['id'] for f in client.get('/api/features').json()}=={'docx','pptx'}
     result=client.delete('/api/features/docx');assert result.status_code==200
     rows={f['id']:f for f in result.json()};assert not rows['docx']['installed'] and rows['pptx']['enabled']
-    assert 'docx' not in format_plugins.build_services(d.DATA/'files','s',lambda e:None)
-    assert 'pptx' in format_plugins.build_services(d.DATA/'files','s',lambda e:None)
+    assert 'docx' not in format_plugins.build_services(d.DATA/'files',lambda e:None)
+    assert 'pptx' in format_plugins.build_services(d.DATA/'files',lambda e:None)
     assert client.get('/api/settings').status_code==200
     assert client.put('/api/features/docx',json={'enabled':True}).status_code==200
     assert client.delete('/api/features/pptx').status_code==200
@@ -40,20 +40,17 @@ def test_physical_feature_directory_removal_does_not_import_engines(client,tmp_p
     monkeypatch.setattr(format_plugins,'ROOT',root)
     assert [m['id'] for m in format_plugins.catalog()]==['docx']
     shutil.rmtree(root/'docx-ooxml-skill')
-    assert format_plugins.build_services(root/'files','s',lambda e:None)=={}
-    assert format_plugins.instructions()==''
+    assert format_plugins.build_services(root/'files',lambda e:None)=={}
     assert client.get('/api/settings').status_code==200
 
 
-def test_deck_authorization_is_scoped_to_one_presentation_and_actor(client):
-    module=format_plugins.load_plugin('pptx');root=d.DATA/'files'
-    service=module.create_service(root,lambda e:None,'actor-a')
-    with pytest.raises(ValueError):service.execute('apply_one',dict(presentation_id='unapproved',operation_id='op1',base_revision=0,operation='slide.add',slide_id='s1'))
-    service.execute('init',dict(presentation_id='deck'))
-    service.execute('apply_one',dict(presentation_id='deck',operation_id='op1',base_revision=0,operation='slide.add',slide_id='s1'))
-    other=module.create_service(root,lambda e:None,'actor-b')
-    with pytest.raises(ValueError):other.execute('status',dict(presentation_id='deck'))
-    assert 'pptx_init' in service.approval_tools
+def test_office_adapters_only_expose_preview_and_sync(client):
+    for feature in ('docx', 'pptx'):
+        module = format_plugins.load_plugin(feature)
+        service = module.create_service(d.DATA / 'files', lambda event: None)
+        assert not hasattr(service, 'tools')
+        assert not hasattr(service, 'execute')
+        assert not hasattr(service, 'actor')
 
 
 def test_disabled_feature_skill_is_removed_from_existing_session_snapshot(client,tmp_path):

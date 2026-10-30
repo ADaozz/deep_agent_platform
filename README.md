@@ -36,7 +36,7 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 - 输入框底部显示最近一次模型请求的输入 Token 和缓存命中率（缓存读取的输入 Token / 总输入 Token），支持 DeepSeek 和兼容接口的真实统计。未返回统计时显示 `—`，明确返回零命中时显示 `0%`；悬停可查看命中与输入 Token。使用当前布局持久化记录中的真实统计值。
 - 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话启用原生 `task` / `read_subagent_log`，按内置运行时策略委派子 Agent，并保留并发控制、取消传播与结果返回。
 - 输入框加号直接上传文件，每条消息最多 10 个文件、每个 20MB。文件存入当前 Thread 的私有文件库，随消息传入可供 Agent 读取的路径；若模型支持图片输入，则最多 4 张符合条件的图片同时通过内核图片附件接口发送。
-- 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具，不改变文件系统隔离模式；restricted 下 execute 始终隔离宿主网络。未提供 Thread 作用域适配的宿主 MCP 服务不会启动。
+- 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具，不改变文件系统隔离模式；ask 模式下 execute 默认无网，申请 `network=true` 并获批后可联网，restricted 同样生效；allow 模式沿用命令默认联网。未提供 Thread 作用域适配的宿主 MCP 服务不会启动。
 - 文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的文件以文件块展示，点击直接下载。
 
 ## 工具、Skill 和 MCP
@@ -45,9 +45,9 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 
 **Core tools** 通过全局设置控制原生工具是否对模型可见。`write_todos` 已从平台移除，主 Agent 与子 Agent 均不向模型暴露该工具。未启用的工具通过内核 `hidden_tools` 排除。联网工具直接使用 DeepSeek [Search / Fetch API](https://api-docs.deepseek.com/guides/search/)：`web_search` → `POST https://api.deepseek.com/v1/tools/search`，`web_fetch` → `POST https://api.deepseek.com/v1/tools/fetch`。复用模型配置中 DeepSeek 官方接口的 API Key；不注册 Tavily，不读取其环境变量，也没有回退。两项工具按全局开关控制，ask 模式均需审批。沙箱默认使用 `restricted`，每个 Thread 独享文件、HOME/TMP 及只读 Skill 快照；切换 `full-access` 需单独输入 `FULL_ACCESS`。工具审批独立，默认 Permission 仍为 `ask`。沙箱不可用时明确失败，不降级成宿主 shell 或假回答。
 
-**Additional tools** 保留已注册的 XLSX Python 处理器，DOCX/PPTX 由独立扩展提供。可编辑启用状态、description 和 JSON Schema；参数名与必填字段必须兼容处理器，调用时验证两层 schema，不能通过 JSON 注入任意处理器。
+**Additional tools** 保留已注册的 XLSX Python 处理器，DOCX/PPTX 由内置技能提供，通过 `execute` 调用技能目录中的 Python 脚本，不固定注册文档专属 Agent 工具。可编辑启用状态、description 和 JSON Schema；参数名与必填字段必须兼容处理器，调用时验证两层 schema，不能通过 JSON 注入任意处理器。
 
-**Skills** 展示平台数据目录 `skills/` 下已安装技能及配置中的技能，可全局启用或停用。每个会话生成独立的标准 `SKILL.md` 快照，以只读 `/agent-skills/` 目录挂载，由原生 Skills 中间件按需加载。Skill 不会作为全文重复注入系统提示词。
+**Skills** 展示 DOCX/PPTX 内置技能、平台数据目录 `skills/` 下已安装技能及配置中的技能，可全局启用或停用。每个会话生成独立的标准 `SKILL.md` 快照，以只读 `/agent-skills/` 目录挂载，由原生 Skills 中间件按需加载。Skill 不会作为全文重复注入系统提示词。
 
 **MCP servers** 可在工具设置中保留原生 MCP JSON 配置。尚未提供 Thread 作用域适配的服务不会启动；原生 `MCPManager` 不会被当作文件隔离边界。例如：
 

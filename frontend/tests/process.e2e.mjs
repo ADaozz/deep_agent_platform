@@ -32,17 +32,10 @@ try{
  assert(uploaded)
  assert.equal(await(await page.request.get(base+`/api/agent/sessions/${uploadThread}/files/`+uploaded.path)).text(),'Private Thread file library')
  await page.locator('.runtime-select').click()
- await page.getByRole('button',{name:'full-access',exact:false}).click()
- await page.getByPlaceholder('FULL_ACCESS',{exact:true}).fill('FULL_ACCESS')
- await page.getByRole('button',{name:'启用 full-access',exact:true}).click()
- await wait(async()=>!(await page.getByRole('dialog').count()))
- assert.equal((await(await page.request.get(base+'/api/agent/sessions/'+uploadThread)).json()).sandbox_mode,'full-access')
- await page.locator('.runtime-select').click()
- await page.getByRole('button',{name:'restricted',exact:false}).click()
- await wait(async()=>(await(await page.request.get(base+'/api/agent/sessions/'+uploadThread)).json()).sandbox_mode==='restricted')
- await page.locator('.runtime-select').click()
- await page.screenshot({path:output+'/thread-runtime-restricted.png'})
- await page.locator('.runtime-select').click()
+ assert.equal(await page.locator('.runtime-popover .menu-row').count(),1)
+ await page.getByRole('button',{name:'本地环境',exact:true}).click()
+ await page.getByRole('dialog').waitFor()
+ await page.getByRole('button',{name:'关闭设置',exact:true}).click()
  await page.screenshot({path:output+'/global-chat-home.png'})
  // Inspect the actual new-chat request while stubbing only external execution.
  let sent
@@ -114,6 +107,6 @@ try{
  assert((await restoredA.locator('.process-step-content').textContent()).includes('A-LATEST'))
  await page.screenshot({path:output+'/process-restored-history.png'})
  assert.deepEqual(errors,[])
- const result={session_id:session.id,tests:['global_settings','workspace_ui_removed','thread_scoped_files','cross_thread_download_denied','sandbox_mode_confirmation','new_chat_keeps_upload','five_visual_lines','short_content_height','independent_parallel_scroll','stream_identity','per_step_collapse','no_early_task_collapse','whole_task_collapse','history_reopen','cancelled_and_failed','persisted_replay'],errors}
+ const result={session_id:session.id,tests:['global_settings','workspace_ui_removed','thread_scoped_files','cross_thread_download_denied','local_environment_menu','new_chat_keeps_upload','five_visual_lines','short_content_height','independent_parallel_scroll','stream_identity','per_step_collapse','no_early_task_collapse','whole_task_collapse','history_reopen','cancelled_and_failed','persisted_replay'],errors}
  await writeFile(output+'/process-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result))
 }finally{await browser.close()}

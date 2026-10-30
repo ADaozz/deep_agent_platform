@@ -9,6 +9,7 @@ import WorkProcess from './WorkProcess.vue'
 import { t, locale, theme, toggleLocale, toggleTheme } from './preferences'
 import { vPopoverPlacement } from './popoverPlacement'
 import { conversationTimeline } from './conversation'
+import { sessionOutputFiles } from './outputFiles'
 
 const artifactPanelOpen = ref(false), artifactContext = ref(null), featurePanels = ref(null), featuresList = ref([])
 function feedbackContext() { return artifactContext.value }
@@ -38,6 +39,13 @@ const visibleSessions = computed(() => sessions.value.filter(s => !search.value 
 const busy = computed(() => ['queued', 'running'].includes(selected.value?.status))
 const waiting = computed(() => ['waiting_confirmation', 'waiting_human', 'paused', 'runtime_config_boundary'].includes(selected.value?.status))
 const modelLabel = computed(() => profile.value?.model || t('Select model'))
+const contextWindow = computed(() => selected.value?.context_window || profile.value?.context_window || 0)
+const contextUsageLabel = computed(() => {
+  const used = selected.value?.usage?.input_tokens
+  const limit = contextWindow.value
+  return t('usage.context', { used: used == null ? '—' : used.toLocaleString(), limit: limit ? limit.toLocaleString() : '—' }) +
+    (used != null && limit ? ` (${(used / limit * 100).toFixed(1)}%)` : '')
+})
 const cacheHitLabel = computed(() => {
   const rate = selected.value?.usage?.cache_hit_rate
   return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 1
@@ -62,6 +70,7 @@ const toolLabels = computed(() => ({ ls: t('列出文件'), read_file: t('读取
 const statusLabels = computed(() => ({ idle: t('新会话'), queued: t('排队中'), running: t('执行中'), completed: t('已完成'), failed: t('执行失败'), waiting_confirmation: t('等待审批'), waiting_human: t('等待回复'), paused: t('已暂停'), runtime_config_boundary: t('等待继续'), cancelled: t('已取消'), interrupted: t('已中断') }))
 
 const timeline = computed(() => conversationTimeline(events.value, selected.value?.status))
+const outputFiles = computed(() => sessionOutputFiles(selected.value))
 function actionLabel(name) {
   const labels = { ...toolLabels.value, create_docx: t('activity.document'), create_pptx: t('activity.presentation'), create_xlsx: t('activity.spreadsheet') }
   return labels[name] || t(name?.startsWith('mcp') ? 'activity.external' : 'activity.action')
@@ -146,18 +155,6 @@ async function ensureSession() {
   return selected.value
 }
 function fileUrl(path) { return `/api/agent/sessions/${selected.value.id}/files/${path.split('/').map(encodeURIComponent).join('/')}` }
-const sandboxConfirmation=ref('')
-async function selectSandbox(mode, confirmation) {
-  if(mode==='full-access' && confirmation!=='FULL_ACCESS') {sandboxConfirmation.value='';modal.value='sandbox';popup.value='';return}
-  saving.value=true
-  await guard(async()=>{
-    const session=await ensureSession()
-    selected.value=await api(`/agent/sessions/${session.id}/sandbox`,{method:'PUT',body:{mode,confirmation}})
-    modal.value='';popup.value=''
-    if(selected.value.pending_sandbox_mode)toast('sandbox.pending')
-  })
-  saving.value=false
-}
 async function send() {
   if ((!draft.value.trim() && !attachments.value.length) || sending.value || uploading.value) return
   sending.value = true
@@ -293,10 +290,47 @@ async function permission(mode, confirmation = null) {
   saving.value = false
 }
 function approval() { return action('approve', { decisions: selected.value.pending_tool_calls.map(p => ({ tool_call_id: p.toolCallId, decision: decisions.value[p.toolCallId] || 'approve' })) }) }
-function answer() { return action('answer', { values: humanValues.value }) }
+const humanOtherValues = ref({}), humanSubmitting = ref(false)
+function humanOptionSelected(field, value) {
+  return field.type === 'multi_select' ? (humanValues.value[field.id] || []).includes(value) : humanValues.value[field.id] === value
+}
+function customHumanOption(option) { return option.allowsCustomText || /^__other__+$/.test(option.value) }
+const humanAnswerValid = computed(() => (selected.value?.human_input?.fields || []).every(field => {
+  const value = humanValues.value[field.id]
+  if (['single_select', 'multi_select'].includes(field.type)) {
+    if (field.type === 'multi_select' ? !value?.length : !value) return false
+    return (field.options || []).every(option => !customHumanOption(option) || !humanOptionSelected(field, option.value) || !!humanOtherValues.value[field.id]?.trim())
+  }
+  return !field.required || (field.type === 'boolean' ? typeof value === 'boolean' : !!value?.trim())
+}))
+async function answer() {
+  if (!humanAnswerValid.value || humanSubmitting.value) return
+  const values = { ...humanValues.value }
+  for (const field of selected.value.human_input.fields) {
+    for (const option of field.options || []) {
+      if (customHumanOption(option) && humanOptionSelected(field, option.value)) {
+        const text = humanOtherValues.value[field.id].trim()
+        values[field.id] = field.type === 'multi_select' ? values[field.id].map(value => value === option.value ? text : value) : text
+      }
+    }
+  }
+  humanSubmitting.value = true
+  try { await action('answer', { values }) } finally { humanSubmitting.value = false }
+}
+function selectHumanOption(field, value, checked) {
+  if (field.type === 'multi_select') {
+    const values = humanValues.value[field.id] || []
+    humanValues.value[field.id] = checked ? [...new Set([...values, value])] : values.filter(item => item !== value)
+  } else if (checked) {
+    humanValues.value[field.id] = value
+  } else {
+    delete humanValues.value[field.id]
+  }
+}
 watch(sidebar, value => localStorage.setItem('sidebar', value))
 watch(popup, value => { if (value !== 'model') reasoningModelId.value = '' })
-watch(() => selected.value?.status, () => { humanValues.value = {}; decisions.value = {} })
+watch(() => selected.value?.id, () => { humanOtherValues.value = {} })
+watch(() => selected.value?.status, () => { humanValues.value = {}; humanOtherValues.value = {}; decisions.value = {} })
 onMounted(() => { init(); document.addEventListener('keydown', keydown); poll = setInterval(() => refreshSessions().catch(() => {}), 3000) })
 onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTimer); document.removeEventListener('keydown', keydown); clearAttachments() })
 </script>
@@ -341,25 +375,21 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
             <article v-if="b.kind === 'user'" class="user-message"><div class="message-label">{{ t("You") }}</div><div>{{ b.content }}</div><div v-if="b.attachments?.length" class="message-attachments"><a v-for="file in b.attachments" :key="file.id" :href="fileUrl(file.path)" download><Icon name="Paperclip" :size="13" />{{ file.name }}</a></div></article>
             <WorkProcess v-else-if="b.kind === 'process'" :process="b" :action-label="actionLabel" :status-labels="statusLabels" />
             <article v-else-if="b.kind === 'assistant'" class="assistant-message"><div v-html="html(b.content)" class="markdown"></div></article>
-            <section v-else-if="b.kind === 'files'" class="output-files">
-              <div class="output-files-heading"><Icon name="FileBox" :size="14" />{{ t("artifacts.title") }}</div>
-              <FileBlock v-for="file in b.files" :key="file.path" :path="file.path" :size="file.size" :download-url="fileUrl(file.path)" />
-            </section>
             <div v-else class="turn-note"><Icon name="CornerDownRight" :size="14" />{{ b.type === 'steer' ? t('追加指令') : t('后续任务') }}：{{ b.content }}</div>
           </template>
           <div v-if="busy" class="working"><Icon name="LoaderCircle" :size="15" class="spin" />{{ selected.status === 'queued' ? t('Queued…') : t('Agent is working…') }}<button @click="action('pause')" :disabled="selected.status !== 'running'">{{ t("Pause") }}</button><button @click="action('cancel')" :disabled="selected.status !== 'running'">{{ t("Stop") }}</button></div>
           <div v-if="selected.error" class="session-error"><Icon name="CircleAlert" />{{ t(selected.error) }}</div>
-          <section v-if="selected.artifacts.length" class="output-files">
+          <section v-if="outputFiles.length" class="output-files" :aria-label="t('artifacts.title')">
             <div class="output-files-heading"><Icon name="FileBox" :size="14" />{{ t("artifacts.title") }}</div>
-            <FileBlock v-for="file in selected.artifacts" :key="file" :path="file" :download-url="`/api/agent/sessions/${selected.id}/artifacts/${encodeURIComponent(file)}`" />
+            <FileBlock v-for="file in outputFiles" :key="file.url" :path="file.path" :size="file.size" :download-url="file.url" @preview="featurePanels?.openFile($event)" />
           </section>
           <section v-if="selected.status === 'waiting_confirmation'" class="approval-panel"><div class="panel-title"><Icon name="ShieldCheck" />{{ t("Review tool calls") }}</div><p>{{ t("Agent 请求执行以下操作，请逐项确认。") }}</p><div v-for="call in selected.pending_tool_calls" :key="call.toolCallId" class="approval-call"><div><strong>{{ actionLabel(call.name) }}</strong><select v-model="decisions[call.toolCallId]" :aria-label="t('reviewTool', { name: actionLabel(call.name) })"><option :value="undefined">{{ t("Approve") }}</option><option value="approve">{{ t("Approve") }}</option><option value="reject">{{ t("Reject") }}</option></select></div><dl class="approval-details"><div v-for="(field, index) in approvalFields(call)" :key="index"><dt>{{ field.label }}</dt><dd><pre>{{ field.content }}</pre></dd></div></dl></div><button class="primary" @click="approval">{{ t("Submit decisions") }} <Icon name="ArrowUpRight" :size="14" /></button></section>
-          <section v-if="selected.status === 'waiting_human'" class="approval-panel"><div class="panel-title"><Icon name="MessageCircleQuestion" />{{ selected.human_input.title || t('Agent needs your input') }}</div><p>{{ selected.human_input.reason }}</p><h4>{{ selected.human_input.question }}</h4><div v-for="field in selected.human_input.fields" :key="field.id" class="field"><label :for="'human-' + field.id">{{ field.label }}{{ field.required ? ' *' : '' }}</label><select v-if="['single_select', 'multi_select'].includes(field.type)" :id="'human-' + field.id" v-model="humanValues[field.id]" :multiple="field.type === 'multi_select'"><option v-for="o in field.options" :key="o.value" :value="o.value">{{ o.label }} {{ o.description }}</option></select><input v-else-if="field.type === 'boolean'" :id="'human-' + field.id" type="checkbox" v-model="humanValues[field.id]"><textarea v-else :id="'human-' + field.id" v-model="humanValues[field.id]" :placeholder="field.placeholder"></textarea></div><button class="primary" @click="answer">{{ t("Continue") }} <Icon name="ArrowRight" :size="14" /></button></section>
+          <section v-if="selected.status === 'waiting_human'" class="approval-panel"><div class="panel-title"><Icon name="MessageCircleQuestion" />{{ selected.human_input.title || t('Agent needs your input') }}</div><p>{{ selected.human_input.reason }}</p><h4>{{ selected.human_input.question }}</h4><div v-for="field in selected.human_input.fields" :key="field.id" class="field"><label :for="'human-' + field.id">{{ field.label }}{{ field.required ? ' *' : '' }}</label><div v-if="['single_select', 'multi_select'].includes(field.type)" :id="'human-' + field.id" class="human-options" role="group" :aria-label="field.label"><div v-for="o in field.options" :key="o.value" class="human-option-group"><button type="button" class="human-option" :class="{ selected: humanOptionSelected(field, o.value) }" :aria-pressed="humanOptionSelected(field, o.value)" @click="selectHumanOption(field, o.value, !humanOptionSelected(field, o.value))"><span>{{ customHumanOption(o) ? t('human.other') : o.label }}<small v-if="o.description">{{ o.description }}</small></span><Icon v-if="humanOptionSelected(field, o.value)" name="Check" :size="16" /></button><textarea v-if="customHumanOption(o) && humanOptionSelected(field, o.value)" v-model="humanOtherValues[field.id]" class="human-other-input" :aria-label="t('human.otherAnswer', { field: field.label })" :placeholder="t('human.otherPlaceholder')" rows="2" required></textarea></div></div><input v-else-if="field.type === 'boolean'" :id="'human-' + field.id" type="checkbox" v-model="humanValues[field.id]"><textarea v-else :id="'human-' + field.id" v-model="humanValues[field.id]" :placeholder="field.placeholder"></textarea></div><button class="primary" :disabled="!humanAnswerValid || humanSubmitting" @click="answer">{{ t("Continue") }} <Icon name="ArrowRight" :size="14" /></button></section>
           <section v-if="['paused', 'runtime_config_boundary'].includes(selected.status)" class="pause-panel"><Icon name="Pause" /><span>{{ t("Agent paused") }}</span><button class="primary" @click="action('resume')">{{ t("Continue") }}</button></section>
         </div>
 
         <div class="composer-area">
-          <div class="runtime-bar"><div class="popover-anchor"><button class="text-button runtime-select" :aria-label='t("运行环境")' @click.stop="toggle('runtime')"><Icon name="Cloud" :size="15" /><Icon name="ChevronDown" :size="11" /></button><div v-if="popup === 'runtime'" v-popover-placement class="popover runtime-popover" @click.stop><div class="popover-heading">{{ t("Runtime") }}</div><div class="runtime-card"><Icon name="Monitor" /><div><strong>{{ t("Local files") }}</strong><small>Deep Agent Platform · {{ selected?.sandbox_mode || 'restricted' }}</small></div><Icon name="Check" /></div><p>{{ t(selected?.sandbox_mode === 'full-access' ? 'sandbox.fullAccess' : 'sandbox.restricted') }}</p><button class="menu-row" @click="selectSandbox('restricted')"><Icon name="ShieldCheck"/>restricted<Icon v-if="!selected || selected.sandbox_mode==='restricted'" name="Check"/></button><button class="menu-row" @click="selectSandbox('full-access')"><Icon name="Monitor"/>full-access<Icon v-if="selected?.sandbox_mode==='full-access'" name="Check"/></button><p v-if="selected?.pending_sandbox_mode">{{ t('sandbox.pending') }} → {{ selected.pending_sandbox_mode }}</p><button class="menu-row" @click="showFiles"><Icon name="Files" />{{ t("Browse files") }}</button></div></div><div v-if="selected" class="composer-spacer"></div><button v-if="selected && !busy && !waiting" class="text-button compact-button" @click="action('compact')"><Icon name="Minimize2" :size="13" />{{ t("Compact context") }}</button></div>
+          <div class="runtime-bar"><div class="popover-anchor"><button class="text-button runtime-select" :aria-label='t("运行环境")' @click.stop="toggle('runtime')"><Icon name="Cloud" :size="15" /><Icon name="ChevronDown" :size="11" /></button><div v-if="popup === 'runtime'" v-popover-placement class="popover runtime-popover" @click.stop><button class="menu-row" @click="showFiles"><Icon name="Monitor" /><span>{{ t("Local environment") }}</span></button></div></div><div v-if="selected" class="composer-spacer"></div><button v-if="selected && !busy && !waiting" class="text-button compact-button" @click="action('compact')"><Icon name="Minimize2" :size="13" />{{ t("Compact context") }}</button></div>
           <form class="composer" :class="{ 'is-dragging-files': fileDragDepth > 0 && !uploadDisabled }" @submit.prevent="send" @dragenter="fileDrag($event, true)" @dragover="fileDrag($event)" @dragleave="fileDragLeave" @drop="dropFiles">
             <div v-if="fileDragDepth > 0 && !uploadDisabled" class="composer-drop-hint" role="status"><Icon name="Upload" :size="22" /><span>{{ t('upload.drop') }}</span></div>
             <textarea v-model="draft" :placeholder="busy ? t('Add instructions while Agent works…') : selected ? t('Ask a follow-up…') : t('Ask Agent to build, fix bugs, explore')" :aria-label='t("任务输入")' @keydown="composerKey" @paste="pasteImages"></textarea>
@@ -380,11 +410,11 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
                 </div>
               </div>
               <div class="popover-anchor permission-anchor"><button type="button" class="text-button permission-select" :aria-label="t('Permission')" :disabled="waiting || sending" @click.stop="toggle('permission')"><Icon name="ShieldCheck" :size="13" /><span class="permission-title">{{ t('Permission') }}</span><span>{{ effectivePermission }}</span><span v-if="pendingPermission" class="permission-pending">→ {{ pendingPermission }}</span><Icon name="ChevronDown" :size="11" /></button><div v-if="popup === 'permission'" v-popover-placement class="popover permission-popover" @click.stop><div class="popover-heading">{{ t('Permission') }}</div><button class="menu-row" @click="permission('ask')"><Icon name="ShieldCheck" :size="15" /><span>ask<small>{{ t('permission.askDescription') }}</small></span><Icon v-if="(pendingPermission || effectivePermission) === 'ask'" name="Check" :size="14" /></button><button class="menu-row" @click="permission('allow')"><Icon name="Wrench" :size="15" /><span>allow<small>{{ t('permission.allowDescription') }}</small></span><Icon v-if="(pendingPermission || effectivePermission) === 'allow'" name="Check" :size="14" /></button><p class="permission-note">{{ t('sandbox.independentPermission') }}</p><p v-if="pendingPermission" class="permission-note">{{ t('permission.pending') }}</p></div></div>
-              <div class="composer-spacer"></div><button v-if="busy && draft.trim()" type="button" class="text-button queue-button" @click="queueFollowUp">{{ t("Queue") }}</button><button v-if="!draft.trim()" type="button" class="icon-button files-shortcut" :title='t("查看文件")' @click="showFiles"><Icon name="Paperclip" :size="15" /></button><button type="submit" class="send-button" :disabled="(!draft.trim() && !attachments.length) || sending || waiting || uploading" :aria-label="busy ? t('追加指令') : t('发送任务')"><Icon :name="sending ? 'LoaderCircle' : (draft.trim() || attachments.length) ? 'ArrowUp' : 'AudioLines'" :size="17" :class="{ spin: sending }" /></button>
+              <div class="composer-spacer"></div><button v-if="busy && draft.trim()" type="button" class="text-button queue-button" @click="queueFollowUp">{{ t("Queue") }}</button><button type="submit" class="send-button" :disabled="(!draft.trim() && !attachments.length) || sending || waiting || uploading" :aria-label="busy ? t('追加指令') : t('发送任务')"><Icon :name="sending ? 'LoaderCircle' : (draft.trim() || attachments.length) ? 'ArrowUp' : 'AudioLines'" :size="17" :class="{ spin: sending }" /></button>
             </div>
           </form>
           <input ref="fileInput" type="file" multiple hidden @change="upload">
-          <div v-if="selected" class="composer-caption"><span>{{ busy ? t('Enter to steer · Queue for a follow-up') : t('Enter to send · Shift+Enter for a new line') }}</span><span class="composer-usage"><span v-if="selected.usage?.input_tokens != null">{{ selected.usage.input_tokens.toLocaleString() }} {{ t("tokens") }}</span><span v-else>Deep Agent Platform</span><span class="cache-hit-rate" :title="cacheHitTitle">{{ t('usage.cacheHit') }} {{ cacheHitLabel }}</span></span></div>
+          <div v-if="selected" class="composer-caption"><span>{{ busy ? t('Enter to steer · Queue for a follow-up') : t('Enter to send · Shift+Enter for a new line') }}</span><span class="composer-usage"><span class="context-usage" :title="t('usage.latestRequest')">{{ contextUsageLabel }}</span><span v-if="selected.usage?.output_tokens != null" class="output-usage">{{ t('usage.output', { count: selected.usage.output_tokens.toLocaleString() }) }}</span><span class="cache-hit-rate" :title="cacheHitTitle">{{ t('usage.cacheHit') }} {{ cacheHitLabel }}</span></span></div>
           <div v-if="error && !modal" role="alert" class="error-inline"><Icon name="CircleAlert" :size="14" />{{ t(error) }}<button @click="error = ''" class="icon-button" :aria-label='t("关闭错误")'><Icon name="X" :size="13" /></button></div>
         </div>
 
@@ -398,10 +428,9 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
 
     <FeaturePanels ref="featurePanels" :session="selected" :events="events" @open="artifactPanelOpen = $event" @context="artifactContext = $event" @error="error = $event" />
     <div v-if="modal" class="modal-backdrop" @click.self="closeModal">
-      <section class="modal" :class="{ 'wide-modal': modal === 'agent-settings' || modal === 'models' }" role="dialog" aria-modal="true" :aria-label="modal === 'sandbox' ? t('sandbox.title') : modal === 'features' ? t('Features') : modal === 'permission' ? t('permission.confirmTitle') : modal === 'models' ? t('模型配置') : t('Agent settings')">
-        <header class="modal-header"><div><Icon :name="modal === 'models' ? 'Sparkles' : modal === 'files' ? 'Files' : modal === 'permission' ? 'ShieldCheck' : 'SlidersHorizontal'" :size="18" /><h2>{{ modal === 'sandbox' ? t('sandbox.title') : modal === 'features' ? t('Features') : modal === 'permission' ? t('permission.confirmTitle') : modal === 'models' ? t('Model settings') : modal === 'agent-settings' ? t('Agent settings') : modal === 'search' ? t('Search chats') : t('Files') }}</h2></div><button class="icon-button" :aria-label='t("关闭设置")' @click="closeModal"><Icon name="X" :size="18" /></button></header>
-        <template v-if="modal === 'sandbox'"><form @submit.prevent="selectSandbox('full-access',sandboxConfirmation)"><div class="modal-body form-stack"><p>{{ t('sandbox.confirmWarning') }}</p><label>{{ t('sandbox.typeConfirmation') }}<input v-model="sandboxConfirmation" autocomplete="off" placeholder="FULL_ACCESS"></label></div><div v-if="error" class="modal-error">{{ error }}</div><footer class="modal-footer"><button type="button" class="secondary" @click="modal=''">{{ t('Cancel') }}</button><button class="primary" :disabled="saving||sandboxConfirmation!=='FULL_ACCESS'">{{ t('sandbox.enableFull') }}</button></footer></form></template>
-        <template v-else-if="modal === 'features'"><div class="modal-body"><p class="muted">{{ t('features.explain') }}</p><div v-for="feature in featuresList" :key="feature.id" class="feature-setting"><strong>{{ feature.name }}</strong><small>{{ feature.installed ? (feature.enabled ? t('Enabled') : t('Disabled')) : t('features.uninstalled') }}</small><button class="secondary" @click="setFeature(feature,!feature.enabled)">{{ !feature.installed ? t('features.install') : feature.enabled ? t('features.disable') : t('features.enable') }}</button><button v-if="feature.installed" class="text-button danger" @click="setFeature(feature,false,true)">{{ t('features.uninstall') }}</button></div></div><div v-if="error" class="modal-error">{{ error }}</div></template>
+      <section class="modal" :class="{ 'wide-modal': modal === 'agent-settings' || modal === 'models' }" role="dialog" aria-modal="true" :aria-label="modal === 'features' ? t('Features') : modal === 'permission' ? t('permission.confirmTitle') : modal === 'models' ? t('模型配置') : t('Agent settings')">
+        <header class="modal-header"><div><Icon :name="modal === 'models' ? 'Sparkles' : modal === 'files' ? 'Files' : modal === 'permission' ? 'ShieldCheck' : 'SlidersHorizontal'" :size="18" /><h2>{{ modal === 'features' ? t('Features') : modal === 'permission' ? t('permission.confirmTitle') : modal === 'models' ? t('Model settings') : modal === 'agent-settings' ? t('Agent settings') : modal === 'search' ? t('Search chats') : t('Files') }}</h2></div><button class="icon-button" :aria-label='t("关闭设置")' @click="closeModal"><Icon name="X" :size="18" /></button></header>
+        <template v-if="modal === 'features'"><div class="modal-body"><p class="muted">{{ t('features.explain') }}</p><div v-for="feature in featuresList" :key="feature.id" class="feature-setting"><strong>{{ feature.name }}</strong><small>{{ feature.installed ? (feature.enabled ? t('Enabled') : t('Disabled')) : t('features.uninstalled') }}</small><button class="secondary" @click="setFeature(feature,!feature.enabled)">{{ !feature.installed ? t('features.install') : feature.enabled ? t('features.disable') : t('features.enable') }}</button><button v-if="feature.installed" class="text-button danger" @click="setFeature(feature,false,true)">{{ t('features.uninstall') }}</button></div></div><div v-if="error" class="modal-error">{{ error }}</div></template>
         <template v-else-if="modal === 'permission'"><form @submit.prevent="permission('allow', allowConfirmation)"><div class="modal-body form-stack"><p class="muted">{{ t('permission.allowWarning') }}</p><div class="field"><label for="allow-confirmation">{{ t('permission.typeAllow') }}</label><input id="allow-confirmation" v-model="allowConfirmation" :aria-label="t('permission.typeAllow')" autocomplete="off" spellcheck="false" placeholder="ALLOW" autofocus></div></div><div v-if="error" class="modal-error" role="alert">{{ t(error) }}</div><footer class="modal-footer"><button type="button" class="secondary" @click="modal = ''">{{ t('Cancel') }}</button><button class="primary" :disabled="saving || allowConfirmation !== 'ALLOW'">{{ t('permission.enableAllow') }}</button></footer></form></template>
         <template v-else-if="modal === 'agent-settings' && settingsEdit"><div class="modal-tabs"><button v-for="(label, key) in { general: t('General'), tools: t('Tools'), skills: t('Skills') }" :key="key" :class="{ active: configTab === key }" @click="configTab = key">{{ label }}</button><span>v{{ settingsEdit.revision }}</span></div><div class="modal-body">
           <div v-if="configTab === 'general'" class="form-stack"><div class="field"><label>{{ t("System prompt") }}</label><textarea v-model="settingsEdit.system_prompt" rows="5"></textarea></div><div class="field"><label>{{ t("Rules") }} <small>{{ t("每行一条规则") }}</small></label><textarea v-model="rulesText" rows="4"></textarea></div><div class="settings-note"><Icon name="Info" :size="14" />{{ t("配置保存后用于新会话；现有会话保留创建时的配置快照。") }}</div></div>
@@ -413,8 +442,8 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
             <fieldset  class="installed-skills">
               <div v-if="!settingsEdit.native_skills.length && !settingsEdit.skills.length" class="settings-empty"><Icon name="BookOpen" :size="28" /><p>{{ t('skills.empty') }}</p></div>
               <div v-for="skill in settingsEdit.native_skills" :key="skill.id" class="skill-card installed-skill">
-                <div class="skill-heading"><Icon name="BookOpen" :size="16" /><strong>{{ skill.name }}</strong><label class="checkbox-label"><input type="checkbox" :aria-label="t('skills.enable', { name: skill.name })" :checked="settingsEdit.skill_bindings[skill.id] ?? skill.enabled" @change="settingsEdit.skill_bindings[skill.id] = $event.target.checked">{{ t('Enabled') }}</label></div>
-                <p class="muted">{{ skill.description }}</p><small class="skill-source">{{ t('skills.installed') }}</small>
+                <div class="skill-heading"><Icon name="BookOpen" :size="16" /><strong>{{ skill.name }}</strong><label class="checkbox-label"><input type="checkbox" :disabled="skill.available === false" :aria-label="t('skills.enable', { name: skill.name })" :checked="skill.available !== false && (settingsEdit.skill_bindings[skill.id] ?? skill.enabled)" @change="settingsEdit.skill_bindings[skill.id] = $event.target.checked">{{ t('Enabled') }}</label></div>
+                <p class="muted">{{ skill.description }}</p><small class="skill-source">{{ t(skill.source === 'feature' ? 'skills.bundled' : 'skills.installed') }}</small>
               </div>
               <div v-for="(skill, i) in settingsEdit.skills" :key="'configured-' + i" class="skill-card installed-skill">
                 <div class="skill-heading"><Icon name="BookOpen" :size="16" /><strong>{{ skill.name }}</strong><label class="checkbox-label"><input type="checkbox" :aria-label="t('skills.enable', { name: skill.name })" :checked="skill.enabled !== false" @change="skill.enabled = $event.target.checked">{{ t('Enabled') }}</label></div>

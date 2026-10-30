@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 .platform/
+.platform-thread/
 .env
 frontend/node_modules/
 platform_app/web/

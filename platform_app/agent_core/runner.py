@@ -67,7 +67,6 @@ from platform_app.agent_core.run_events import (
     update_tool_events,
     interrupt_kind_from_state,
     interrupt_payloads,
-    is_valid_hitl_interrupt as is_valid_hitl_interrupt,
 )
 from platform_app.agent_core.permission import (
     PermissionMode,
@@ -576,7 +575,7 @@ class AgentRunner:
     def model_metrics_history(self) -> list[dict[str, Any]]:
         return self.session_store.model_metrics_history(self.thread_id) if self.session_store is not None else []
 
-    def latest_usage(self) -> dict[str, int]:
+    def latest_usage(self) -> dict[str, Any]:
         """Token usage of the most recent model call still held in the checkpoint."""
         try:
             state = self.prepared.graph.get_state(self._thread_config())
@@ -1309,7 +1308,7 @@ class AgentRunner:
         handler = on_delta or self.on_delta
         event_handler = on_event or self.on_event
         config = self._thread_config()
-        def stream_usage(usage: dict[str, int]) -> None:
+        def stream_usage(usage: dict[str, Any]) -> None:
             if not usage:
                 self._context_usage_invalidated = True
             elif "input_tokens" in usage:
