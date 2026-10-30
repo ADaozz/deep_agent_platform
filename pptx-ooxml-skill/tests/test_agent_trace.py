@@ -56,6 +56,13 @@ def apply(store, log, kind, **kwargs):
     return log.run(command, lambda: store.apply_one(request))
 
 
+def check(store, log, slide_id, notes='Checked generated page'):
+    accept_all(store)
+    return log.run(
+        f'{CLI} check-slide deck.pptx --slide-id {slide_id} --notes "{notes}"',
+        lambda: dict(slide_id=slide_id, automatic_passed=True, revision=store.status()['revision']))
+
+
 def test_agent_trace_creates_pptx_from_template(tmp_path):
     log = ExecuteLog()
     sample.build(tmp_path)
@@ -69,21 +76,28 @@ def test_agent_trace_creates_pptx_from_template(tmp_path):
     matched = log.run(f'{CLI} match-template deck.pptx --role cover',
         lambda: importer.match(store.status(), 'cover'))
     source = matched['slides'][0]['slide_id']
-    accept_all(store)
     apply(store, log, 'slide.clone', slide_id='page-1', source_slide_id=source)
     apply(store, log, 'slot.fill', slide_id='page-1', slots={'title': '项目汇报', 'subtitle': '模板优先'})
-    accept_all(store)
+    check(store, log, 'page-1', 'Checked title and values')
     apply(store, log, 'slide.clone', slide_id='page-2', source_slide_id='tpl-004')
     apply(store, log, 'presentation.recolor', palette={'accent': '707780', 'background': 'FFFFFF', 'text': '20242A', 'muted': '79818A'})
     apply(store, log, 'element.adjust', slide_id='page-1', element={'id': 'title', 'dx_in': 0.2})
     apply(store, log, 'presentation.discard_prototypes')
+    check(store, log, 'page-1', 'Rechecked after prototypes were discarded')
+    check(store, log, 'page-2', 'Rechecked after prototypes were discarded')
     text = log.text()
     assert 'list-templates' in text and 'import-template' in text
     assert '--use template_reference' in text
-    assert 'slide.clone' in text and 'slot.fill' in text
+    assert 'slide.clone' in text and 'slot.fill' in text and 'check-slide' in text
     assert 'presentation.recolor' in text and 'element.adjust' in text
     assert 'presentation.discard_prototypes' in text
     assert 'slide.add' not in text and ' plan ' not in text
+    commands = [item['command'] for item in log.calls]
+    first_check = next(i for i, command in enumerate(commands) if 'check-slide' in command and 'page-1' in command)
+    second_clone = next(i for i, command in enumerate(commands) if 'slide.clone' in command and 'page-2' in command)
+    discard_at = next(i for i, command in enumerate(commands) if 'presentation.discard_prototypes' in command)
+    final_check = next(i for i, command in enumerate(commands) if i > discard_at and 'check-slide' in command)
+    assert first_check < second_clone < discard_at < final_check
     mutating = [item for item in log.calls if item['mutates']]
     assert all('apply-one' in item['command'] or ' init ' in item['command'] for item in mutating)
     assert store.status()['prototype_slides'] == []

@@ -213,6 +213,22 @@ def test_template_reference_delivers_only_generated_slides(tmp_path):
     assert store.status()['finalized'] is True
 
 
+def test_second_clone_requires_check_slide_of_generated_pages(tmp_path):
+    sample.build(tmp_path)
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck', tmp_path / 'template.pptx', use='template_reference')
+    apply(store, 'slide.clone', slide_id='page-1', source_slide_id='tpl-001')
+    revision = store.status()['revision']
+    before = store.path.read_bytes()
+    with pytest.raises(ValueError, match='Check all affected slides before creating the next slide'):
+        apply(store, 'slide.clone', slide_id='page-2', source_slide_id='tpl-002')
+    assert store.path.read_bytes() == before
+    assert store.status()['revision'] == revision
+    accept_all(store)
+    apply(store, 'slide.clone', slide_id='page-2', source_slide_id='tpl-002')
+    assert [slide['slide_id'] for slide in store.status()['manifest']['slides'][-2:]] == ['page-1', 'page-2']
+
+
 def test_finalize_blocks_while_template_prototypes_remain(tmp_path):
     sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')

@@ -24,7 +24,7 @@ The heuristic is a draft. A `manifest.json` beside the PPTX overrides role and s
 
 ## Operations that keep the template
 
-- `slide.clone`: copies the slide, its layout relationship, pictures (shared), and a **new** chart part plus workbook. Editing the clone's chart must not change the source chart. `insert_after` places the new slide. The same slide-acceptance gate as `slide.add` applies.
+- `slide.clone`: copies the slide, its layout relationship, pictures (shared), and a **new** chart part plus workbook. Editing the clone's chart must not change the source chart. `insert_after` places the new slide. Existing generated slides must have passed `check-slide` first, the same gate as `slide.add`. Prototype slides are exempt. After clone and fill, `check-slide` that new page before cloning another.
 - `slot.fill`: replaces text in the named slot and keeps the first run's paragraph and character properties. If the text does not fit the box, the operation raises `capacity conflict` and changes nothing. Shorten the copy, choose another layout, or enlarge that one box with `element.adjust`. Do not shrink every font on the page.
 - `chart.replace_data`: replaces categories and series on a native chart, including a chart that came from the template. Type changes still go through `chart.change_type`.
 - `image.replace`: points one picture at a new PNG/JPEG of the same aspect ratio. Other slides that share the old image keep it.
@@ -36,7 +36,7 @@ The heuristic is a draft. A `manifest.json` beside the PPTX overrides role and s
 ## Two ways to open a template
 
 - `init --use edit_existing` keeps every sample slide. Use it when the user wants that file edited.
-- `init --use template_reference` records those slides as prototypes. Clone the pages you need, fill them, then `presentation.discard_prototypes` with `redirects` for any internal slide jump that still points at a prototype. `finalize` refuses this mode while prototypes remain. The delivered file contains only the generated slides.
+- `init --use template_reference` records those slides as prototypes. For each page: `slide.clone`, fill, `check-slide`, then the next page. After the set is built, `presentation.discard_prototypes` with `redirects` for any internal slide jump that still points at a prototype, then `check-slide` every remaining page of that revision. `finalize` refuses this mode while prototypes remain. The delivered file contains only the generated slides.
 
 `effective_palette` is the deck's current color set. Recolor updates it in the same transaction as the PPTX. New native objects use it. The original theme tokens remain available as `template_tokens`.
 
