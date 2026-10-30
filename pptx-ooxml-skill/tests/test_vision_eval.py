@@ -26,7 +26,7 @@ class Oracle:
         self.lazy = lazy
         self.cases = {case['id']: case for case in harness.CASES}
 
-    def complete(self, system, text, images):
+    def complete(self, system, text, images, schema=None):
         assert images and images[0][1][:8] == b'\x89PNG\r\n\x1a\n'
         request = json.loads(text)
         if system == vision.DECK_SYSTEM_PROMPT:

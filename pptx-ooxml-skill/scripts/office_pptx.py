@@ -735,7 +735,7 @@ class PresentationStore(shared.ArtifactStore):
                             removals={key for key,value in (element.get('style') or {}).items() if value is None}
                             additions={key:value for key,value in (element.get('style') or {}).items() if value is not None}
                             overrides=dict(meta.get('style_overrides') or {})
-                            if additions:overrides.update(native_style.validate_style(kind,additions,state))
+                            if additions:overrides=native_style.merge_overrides(overrides,native_style.validate_style(kind,additions,state))
                             elif not removals:raise ValueError('style must change at least one field')
                             for key in removals:overrides.pop(key,None)
                             if overrides:meta['style_overrides']=overrides
@@ -873,11 +873,12 @@ class PresentationStore(shared.ArtifactStore):
             attempts=state.setdefault('aesthetic_attempts',{}).setdefault(slide_id,{})
             if aesthetic['status']=='failed':
                 escalated=[]
+                # Only critical findings are repaired without asking; the rest wait for the user's decision.
                 for issue in aesthetic.get('issues',[]):
-                    if issue['severity'] in ('critical','major') and issue['confidence'] in ('high','medium') and not issue.get('needs_verification'):
+                    if issue['severity']=='critical' and issue['confidence'] in ('high','medium') and not issue.get('needs_verification'):
                         key=issue.get('fingerprint') or issue['category']
                         attempts[key]=attempts.get(key,0)+1;issue['attempt']=attempts[key]
-                        if attempts[key]>MAX_AUTO_REPAIR_ROUNDS:escalated.append(issue['id'])
+                        if attempts[key]>CRITICAL_REPAIR_ROUNDS:escalated.append(issue['id'])
                 aesthetic['escalated_issues']=escalated;aesthetic['auto_repair']=not escalated
             elif aesthetic['status']=='passed':state['aesthetic_attempts'][slide_id]={}
             review['aesthetic_review']=aesthetic
@@ -987,28 +988,24 @@ class PresentationStore(shared.ArtifactStore):
         with self.locked() as(c,state):
             self.assert_current(state,base_revision); prs=Presentation(io.BytesIO(self.snapshot_unlocked(c,base_revision)))
             if not len(prs.slides):raise ValueError('Empty presentation')
-            problems=[];accepted={}
+            # Delivery needs intact, content-checked slides. Visual review is advice and never holds it up.
+            problems=[];aesthetics={}
             for slide in prs.slides:
                 sid=renderer.slide_identity(slide);review=state['reviews'].get(sid,{})
                 if not review.get('automatic_passed') or not review.get('content_notes'):problems.append(f'{sid}: automatic and content checks required');continue
                 aesthetic=review.get('aesthetic_review') or {}
-                verdict=reviewer().effective_aesthetic(review)
-                if verdict!='passed':
-                    problems.append(f'{sid}: aesthetic review is {verdict}'+(' (human acceptance in the UI required)' if verdict in ('uncertain','unavailable') else ''));continue
-                accepted[sid]=dict(review_id=aesthetic.get('review_id'),decision_id=(aesthetic.get('human') or {}).get('decision_id'),fingerprint=review.get('fingerprint'))
-            if len(prs.slides)>=3:
-                deck=state.get('deck_review') or {}
-                fingerprints={sid:state['reviews'].get(sid,{}).get('fingerprint') for sid in accepted}
-                verdict='passed' if (deck.get('human') or {}).get('decision')=='accept' else deck.get('status','missing')
-                if verdict!='passed':problems.append(f'deck review is {verdict}; run request-deck-review after all slides pass')
-                elif deck.get('slide_fingerprints')!=fingerprints:problems.append('deck review is stale; slides changed after it, request a new deck review')
+                aesthetics[sid]=dict(status=reviewer().effective_aesthetic(review),review_id=aesthetic.get('review_id'),
+                    decision_id=(aesthetic.get('human') or {}).get('decision_id'),critical=[i['id'] for i in reviewer().outstanding_critical(review)],
+                    suggestions=len([i for i in aesthetic.get('issues',[]) if not i.get('dismissed')]))
             if problems:raise ValueError('Finalize blocked: '+'; '.join(problems))
             validator.validate_package(self.snapshot_unlocked(c,base_revision)); state['finalized']=True
+            outstanding={sid:item['critical'] for sid,item in aesthetics.items() if item['critical']}
             return self.emit_state(c,state,dict(type='presentation_finalized',presentation_id=state['presentation_id'],revision=base_revision,finalized=True,
-                path=self.path.name,acceptance=accepted,deck_review_id=(state.get('deck_review') or {}).get('review_id')))
+                path=self.path.name,aesthetics=aesthetics,outstanding_critical=outstanding,deck_review_id=(state.get('deck_review') or {}).get('review_id'),
+                note='Report outstanding critical findings and the number of suggestions to the user; they decide what to change.'))
 
 
-MAX_AUTO_REPAIR_ROUNDS=2
+CRITICAL_REPAIR_ROUNDS=2
 _REVIEWER=None
 
 
@@ -1018,27 +1015,38 @@ def reviewer():
     return _REVIEWER
 
 
+def critical_issues(aesthetic):
+    return [issue for issue in (aesthetic or {}).get('issues',[]) if issue.get('severity')=='critical' and issue.get('confidence') in ('high','medium')
+            and not issue.get('needs_verification') and not issue.get('dismissed')]
+
+
 def next_action(review):
+    """Aesthetic review is advice: only critical findings are repaired unasked, nothing waits on it."""
     if not review:return 'Run check-slide for this slide.'
     if not review.get('automatic_passed'):return 'Fix the automatic check errors with atomic operations, then run check-slide again.'
     aesthetic=review.get('aesthetic_review') or {}
     status=reviewer().effective_aesthetic(review)
-    if status=='pending':return 'Vision review is running on the host; wait with review-status --wait or continue with the next slide.'
-    if status=='passed':return 'Accepted. Minor suggestions are optional polish; do not loop on them.'
-    if status=='unavailable':
-        return 'No usable vision review ('+str((aesthetic.get('error') or {}).get('code','no_vision_model'))+'). Never claim visual acceptance; re-request once if transient, otherwise ask the user to inspect the slide in the preview.'
-    if status=='uncertain':return 'The model could not confirm the page. Ask the user to review it in the preview; do not mark it accepted yourself.'
-    if not aesthetic.get('auto_repair',True):
-        return 'The same issue persisted after '+str(MAX_AUTO_REPAIR_ROUNDS)+' repair rounds: stop auto-fixing, keep the issue and ask the user how to proceed.'
-    return 'Repair the confirmed critical/major issues locally with element.adjust/set_style/diagram.update etc., then run check-slide again.'
+    critical=critical_issues(aesthetic) if (aesthetic.get('human') or {}).get('decision')!='accept' else []
+    if critical and not aesthetic.get('auto_repair',True):
+        return 'A critical issue survived '+str(CRITICAL_REPAIR_ROUNDS)+' repair rounds: stop editing it and tell the user; delivery is not blocked.'
+    if critical:
+        return 'Fix the critical issue(s) with small local edits, then run check-slide again. Do not act on other suggestions unless the user asks.'
+    if status=='pending':return 'Vision review runs in the background; continue with the next slide, do not wait for it.'
+    if status in ('unavailable','uncertain'):return 'No usable visual verdict; continue. Do not claim visual acceptance; mention it when you deliver.'
+    if aesthetic.get('issues'):return 'No critical issue. Leave the suggestions to the user: list them briefly when you deliver and change nothing unless asked.'
+    return 'No issues. Continue.'
 
 
 def review_summary(slide_id,review):
     if not review:return dict(slide_id=slide_id,status='writing',next_action=next_action(None))
     aesthetic=review.get('aesthetic_review') or {}
+    critical={issue['id'] for issue in critical_issues(aesthetic)}
+    issues=aesthetic.get('issues') or []
     return dict(slide_id=slide_id,revision=review.get('revision'),status=review.get('status'),automatic_passed=review.get('automatic_passed'),
         technical_review=review.get('technical_review'),visual_integrity=review.get('visual_integrity'),
         aesthetic_review={key:aesthetic.get(key) for key in ('status','summary','issues','model_id','prompt_version','error','auto_repair','escalated_issues','human','review_id','reason') if key in aesthetic},
+        critical_issues=[issue for issue in issues if issue['id'] in critical],
+        suggestions=[{key:issue.get(key) for key in ('id','severity','category','element_ids','observation','suggestion')} for issue in issues if issue['id'] not in critical and not issue.get('dismissed')],
         effective_aesthetic=reviewer().effective_aesthetic(review),next_action=next_action(review))
 
 

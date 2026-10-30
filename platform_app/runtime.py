@@ -153,12 +153,59 @@ def initialize():
 
 
 
+def thinking_snapshot(event):
+    # Native reasoning deltas carry the whole text so far; only the newest of a run is needed.
+    return event.get('type') == 'thinking_delta' and event.get('content_mode') != 'append'
+
+
+def manifest_key(event):
+    artifact = event.get('artifact_extension')
+    return (artifact['feature'], artifact['id']) if artifact and 'manifest' in event else None
+
+
+def strip_manifest(connection, row_id):
+    row = connection.execute('SELECT data FROM records WHERE kind=? AND id=?', ('event', row_id)).fetchone()
+    if row:
+        value = json.loads(row[0])
+        if value.pop('manifest', None) is not None:
+            connection.execute('UPDATE records SET data=? WHERE kind=? AND id=?', (json.dumps(value, ensure_ascii=False), 'event', row_id))
+
+
+def compact_journal(session_id):
+    """Drop superseded reasoning snapshots and old artifact manifests; the rendered history is unchanged."""
+    prefix = f'{session_id}:'
+    removed, stripped = [], []
+    previous_snapshot, manifests = None, {}
+    with d.db() as connection:
+        rows = connection.execute('SELECT id, data FROM records WHERE kind=? AND id>? AND id<? ORDER BY id', ('event', prefix, prefix + '~'))
+        for row_id, data in rows:
+            event = json.loads(data)
+            if thinking_snapshot(event):
+                if previous_snapshot:
+                    removed.append(previous_snapshot)
+                previous_snapshot = row_id
+            else:
+                previous_snapshot = None
+            key = manifest_key(event)
+            if key:
+                if key in manifests:
+                    stripped.append(manifests[key])
+                manifests[key] = row_id
+    with d.LOCK, d.db() as connection:
+        connection.executemany('DELETE FROM records WHERE kind=? AND id=?', [('event', row_id) for row_id in removed])
+        for row_id in stripped:
+            strip_manifest(connection, row_id)
+    return dict(removed=len(removed), stripped=len(stripped))
+
+
 class Runtime:
     def __init__(self, session_id):
         self.id = session_id
         self.runner = None
         self.artifact_services = {}
         self.lock = threading.RLock()
+        self.previous_snapshot = None
+        self.manifest_rows = {}
 
     def event(self, event):
         with self.lock:
@@ -191,9 +238,22 @@ class Runtime:
                     record.setdefault('artifact_cursors',{}).setdefault(artifact['feature'],{})[event['path']]=event['store_seq']
             # Event journal is durable; reconnecting clients resume by sequence.
             record['updated_at'] = now()
+            row_id = f'{self.id}:{event["seq"]:010d}'
             with d.LOCK, d.db() as connection:
-                for kind, value in [('event', {'id': f'{self.id}:{event["seq"]:010d}', 'session_id': self.id, **event}), ('session', record)]:
+                for kind, value in [('event', {'id': row_id, 'session_id': self.id, **event}), ('session', record)]:
                     connection.execute('INSERT INTO records VALUES (?,?,?) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data', (kind, value['id'], json.dumps(value, ensure_ascii=False)))
+                # Keep the journal proportional to what it renders: one reasoning snapshot per run, one full manifest per artifact.
+                if thinking_snapshot(event):
+                    if self.previous_snapshot:
+                        connection.execute('DELETE FROM records WHERE kind=? AND id=?', ('event', self.previous_snapshot))
+                    self.previous_snapshot = row_id
+                else:
+                    self.previous_snapshot = None
+                key = manifest_key(event)
+                if key:
+                    if key in self.manifest_rows:
+                        strip_manifest(connection, self.manifest_rows[key])
+                    self.manifest_rows[key] = row_id
 
     def ensure_artifact_services(self):
         with self.lock:
@@ -242,7 +302,7 @@ class Runtime:
                 return None, 'configured vision model is not defined'
             if not profile.supports_input('image'):
                 return None, f'configured vision model {profile.id} does not declare image input'
-        model = build_chat_model(profile, streaming=False, trust_env=True, timeout=max(90.0, settings.request_timeout))
+        model = build_chat_model(profile, streaming=False, trust_env=True, timeout=max(150.0, settings.request_timeout))
         return profile.id, model
 
     def core_event(self,event):

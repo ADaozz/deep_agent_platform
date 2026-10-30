@@ -120,9 +120,9 @@ class ReviewCoordinator:
             model_id=client.model_id
             context=dict(slide=slides[index],index=index,total=len(slides),profile=state.get('profile'),intent=review.get('intent'),
                 constraints=review.get('constraints'),technical_issues=review.get('layout_issues'))
-            text=client.complete(vision.SLIDE_SYSTEM_PROMPT,vision.slide_request(context),[('image/png',png)])
-            response_hash=hashlib.sha256(text.encode('utf-8','replace')).hexdigest()
-            result=vision.evaluate_slide(text,slides[index])
+            result,text=vision.review_with_retry(client,vision.SLIDE_SYSTEM_PROMPT,vision.slide_request(context),[('image/png',png)],vision.SlideReview,
+                lambda answer:vision.evaluate_slide(answer,slides[index]))
+            response_hash=hashlib.sha256(json.dumps(text.model_dump() if hasattr(text,'model_dump') else text,ensure_ascii=False,default=str).encode()).hexdigest()
         except vision.VisionUnavailable as exc:
             result=vision.failure(exc.code,str(exc))
         for issue in result.get('issues',[]):issue['fingerprint']=vision.issue_fingerprint(issue)
@@ -154,9 +154,9 @@ class ReviewCoordinator:
             summary=[dict(page=index+1,slide_id=slide['slide_id'],layout=slide.get('layout'),title=_title(slide),
                 elements={kind:sum(1 for e in slide['elements'] if e.get('type')==kind) for kind in {e.get('type') for e in slide['elements']}},
                 aesthetic=(state.get('reviews',{}).get(slide['slide_id'],{}).get('aesthetic_review') or {}).get('status')) for index,slide in enumerate(slides)]
-            text=client.complete(vision.DECK_SYSTEM_PROMPT,vision.deck_request(dict(slides=summary,profile=state.get('profile'))),[('image/png',sheet)])
-            response_hash=hashlib.sha256(text.encode('utf-8','replace')).hexdigest()
-            result=vision.evaluate_deck(text,len(slides))
+            result,text=vision.review_with_retry(client,vision.DECK_SYSTEM_PROMPT,vision.deck_request(dict(slides=summary,profile=state.get('profile'))),
+                [('image/png',sheet)],vision.DeckReview,lambda answer:vision.evaluate_deck(answer,len(slides)))
+            response_hash=hashlib.sha256(json.dumps(text.model_dump() if hasattr(text,'model_dump') else text,ensure_ascii=False,default=str).encode()).hexdigest()
             for issue in result['issues']+result.get('rejected_issues',[]):
                 issue['slide_ids']=[slides[page-1]['slide_id'] for page in issue['slides'] if 0<page<=len(slides)]
         except vision.VisionUnavailable as exc:
@@ -180,15 +180,17 @@ class ReviewCoordinator:
                 image=directory/f'slide-{index+1:03d}.png'
                 if image.is_file():pixels[slide['slide_id']]=vision.png_info(image.read_bytes())['pixel_sha256']
         except (OSError,RuntimeError,ValueError,vision.VisionUnavailable):problems.append('host render unavailable')
+        # Visual review never gates delivery; this only proves that claimed verdicts were really recorded here.
         for slide in manifest['slides']:
-            sid=slide['slide_id'];accepted=(event.get('acceptance') or {}).get(sid) or {}
-            decision=self.ledger.decision(accepted['decision_id']) if accepted.get('decision_id') else None
-            if decision:
-                if decision['decision'] not in ('accept','dismiss_issues') or decision['slide_id']!=sid:problems.append(f'{sid}: human decision does not accept this slide')
+            sid=slide['slide_id'];claimed=(event.get('aesthetics') or {}).get(sid) or {}
+            if claimed.get('decision_id'):
+                decision=self.ledger.decision(claimed['decision_id'])
+                if not decision or decision['slide_id']!=sid:problems.append(f'{sid}: claimed human decision is not on record')
                 continue
-            record=self.ledger.get(accepted.get('review_id')) if accepted.get('review_id') else None
-            if not record or record['status']!='passed' or record['slide_id']!=sid or record['presentation_id']!=state.get('presentation_id'):
-                problems.append(f'{sid}: no host-recorded passing vision review');continue
+            if claimed.get('status') not in ('passed','failed','uncertain'):continue
+            record=self.ledger.get(claimed.get('review_id')) if claimed.get('review_id') else None
+            if not record or record['slide_id']!=sid or record['presentation_id']!=state.get('presentation_id') or record['status']!=claimed['status']:
+                problems.append(f'{sid}: claimed visual verdict {claimed.get("status")} is not on record');continue
             if pixels.get(sid) and record.get('pixel_sha256')!=pixels[sid]:problems.append(f'{sid}: reviewed screenshot differs from the finalized slide')
         self.service.emit(dict(type='presentation_finalize_verification',presentation_id=state.get('presentation_id'),revision=revision,
             path=Path(path).relative_to(self.service.root).as_posix(),finalize_verified=not problems,verification_problems=problems))

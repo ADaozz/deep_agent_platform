@@ -1,10 +1,11 @@
 """Bounded native styling, presets and relative geometry for generated PPTX objects.
 
-The vocabulary is deliberately small: colours, fonts, strokes, a few chart and
-table switches and a handful of reviewed presets. Glow, heavy shadow, gradients,
-3-D and similar effects are rejected rather than approximated. Every explicit
-override is stored in element metadata so profile changes and data updates
-re-apply it after the profile defaults (explicit user style wins).
+The vocabulary is deliberately small: colours, fonts, strokes, a soft shadow,
+a two-colour linear gradient, a few chart and table switches and a handful of
+presets. Defaults stay flat; glow, bevel, reflection, 3-D and similar effects
+are rejected rather than approximated. Every explicit override is stored in
+element metadata so profile changes and data updates re-apply it after the
+profile defaults (explicit user style wins).
 """
 import io
 import math
@@ -18,7 +19,8 @@ from pptx.oxml.ns import qn
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
-FORBIDDEN_EFFECTS = ('glow', 'shadow', 'gradient', 'bevel', 'reflection', 'soft_edges', '3d', 'three_d', 'outer_shadow', 'inner_shadow', 'neon')
+FORBIDDEN_EFFECTS = ('glow', 'bevel', 'reflection', 'soft_edges', '3d', 'three_d', 'inner_shadow', 'neon')
+SHADOWS = ('none', 'soft')
 CHART_TYPES = {'bar': XL_CHART_TYPE.COLUMN_CLUSTERED, 'line': XL_CHART_TYPE.LINE_MARKERS, 'pie': XL_CHART_TYPE.PIE}
 NUMBER_FORMATS = ('General', '0', '0.0', '0.00', '#,##0', '#,##0.0', '0%', '0.0%')
 DASHES = {'solid': MSO_LINE_DASH_STYLE.SOLID, 'dash': MSO_LINE_DASH_STYLE.DASH, 'dot': MSO_LINE_DASH_STYLE.ROUND_DOT}
@@ -27,7 +29,7 @@ ALIGN = {'left': PP_ALIGN.LEFT, 'center': PP_ALIGN.CENTER, 'right': PP_ALIGN.RIG
 # Allowed override keys per element kind. Anything else is rejected.
 STYLE_KEYS = {
     'text': {'color', 'bold', 'italic', 'font_size', 'font_family', 'align'},
-    'shape': {'fill', 'line_color', 'line_width_pt', 'dash', 'text_color', 'bold', 'font_size'},
+    'shape': {'fill', 'gradient', 'shadow', 'line_color', 'line_width_pt', 'dash', 'text_color', 'bold', 'font_size'},
     'connector': {'line_color', 'line_width_pt', 'dash'},
     'table': {'header_fill', 'header_text', 'header_bold', 'body_fill', 'body_text', 'divider_color', 'font_size', 'zebra'},
     'chart': {'series_colors', 'gridlines', 'data_labels', 'number_format', 'emphasis', 'legend', 'font_size', 'line_width_pt'},
@@ -54,6 +56,10 @@ PRESETS = {
         style=dict(fill='accent', line_color='none')),
     'shape.subtle': dict(kind='shape', description='near-background surface with a hairline border',
         style=dict(fill='surface', line_color='border', line_width_pt=.75)),
+    'shape.raised': dict(kind='shape', description='soft card surface lifted by a faint shadow',
+        style=dict(fill='card', line_color='none', shadow='soft')),
+    'shape.gradient': dict(kind='shape', description='gentle two-colour gradient from card to surface',
+        style=dict(gradient=dict(start='card', end='surface', angle=90), line_color='none')),
     'text.emphasis': dict(kind='text', description='accent colour, bold', style=dict(color='accent', bold=True)),
     'text.muted': dict(kind='text', description='muted secondary text', style=dict(color='muted', bold=False)),
 }
@@ -107,7 +113,7 @@ def _check_forbidden(style):
     for key in style:
         lowered = str(key).lower()
         if any(effect in lowered for effect in FORBIDDEN_EFFECTS):
-            raise ValueError(f'Decorative effect {key!r} is not supported; native objects stay flat (no glow, heavy shadow or gradients)')
+            raise ValueError(f'Decorative effect {key!r} is not supported; use at most a soft shadow or a two-colour gradient (no glow, bevel, reflection or 3-D)')
 
 
 def validate_style(kind, style, state):
@@ -149,6 +155,18 @@ def validate_style(kind, style, state):
         elif key == 'dash':
             if value not in DASHES:
                 raise ValueError('dash must be solid, dash or dot')
+        elif key == 'shadow':
+            if value not in SHADOWS:
+                raise ValueError('shadow must be none or soft')
+        elif key == 'gradient':
+            if value is not None and (not isinstance(value, dict) or set(value) - {'start', 'end', 'angle'} or not {'start', 'end'} <= set(value)):
+                raise ValueError('gradient is {start, end, angle?} with two colours')
+            if value is not None:
+                resolve_color(value['start'], state)
+                resolve_color(value['end'], state)
+                angle = value.get('angle', 90)
+                if type(angle) not in (int, float) or not 0 <= angle < 360:
+                    raise ValueError('gradient angle must be between 0 and 359 degrees')
         elif key == 'series_colors':
             if not isinstance(value, list) or not 1 <= len(value) <= 6:
                 raise ValueError('series_colors must list 1 to 6 colours')
@@ -242,9 +260,53 @@ def text_style(meta, state):
     return resolved
 
 
+def merge_overrides(current, additions):
+    """Solid fill and gradient replace each other; everything else merges."""
+    merged = dict(current)
+    if 'fill' in additions:
+        merged.pop('gradient', None)
+    if 'gradient' in additions:
+        merged.pop('fill', None)
+    merged.update(additions)
+    return merged
+
+
+def _soft_shadow(shape, enabled):
+    flat(shape)
+    effects = shape._element.spPr.find(qn('a:effectLst'))
+    for child in list(effects):
+        effects.remove(child)
+    if not enabled:
+        return
+    shadow = OxmlElement('a:outerShdw')
+    for key, value in (('blurRad', '76200'), ('dist', '19050'), ('dir', '5400000'), ('algn', 't'), ('rotWithShape', '0')):
+        shadow.set(key, value)
+    color = OxmlElement('a:srgbClr')
+    color.set('val', '000000')
+    alpha = OxmlElement('a:alpha')
+    alpha.set('val', '16000')
+    color.append(alpha)
+    shadow.append(color)
+    effects.append(shadow)
+
+
 def apply_shape(shape, meta, state):
     style = effective_style(meta)
-    if 'fill' in style and meta.get('shape') != 'line':
+    if 'gradient' in style and meta.get('shape') != 'line':
+        gradient = style['gradient']
+        start, end = resolve_color(gradient['start'], state), resolve_color(gradient['end'], state)
+        shape.fill.gradient()
+        shape.fill.gradient_angle = gradient.get('angle', 90)
+        stops = shape.fill.gradient_stops
+        stops[0].color.rgb = RGBColor.from_string(start)
+        stops[0].position = 0
+        stops[-1].color.rgb = RGBColor.from_string(end)
+        stops[-1].position = 1
+        # Contrast checks use the mid colour of the gradient.
+        meta['fill'] = blend(start, end, .5)
+    if 'shadow' in style and meta.get('shape') != 'line':
+        _soft_shadow(shape, style['shadow'] == 'soft')
+    if 'fill' in style and 'gradient' not in style and meta.get('shape') != 'line':
         color = resolve_color(style['fill'], state, allow_none=True)
         if color is None:
             shape.fill.background()

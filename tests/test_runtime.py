@@ -227,6 +227,28 @@ def test_completed_session_journal_retains_streams_and_persisted_timestamps(clie
     assert client.get(f'/api/agent/sessions/{session_id}/journal').json()['events']==events
 
 
+def test_journal_keeps_only_renderable_snapshots(client):
+    session_id = new_session(client)
+    runtime = rt.runtime(session_id)
+    for text in ('思', '思考', '思考完成'):
+        runtime.event({'type':'thinking_delta','content':text})
+    runtime.event({'type':'tool_started','tool_call_id':'a','name':'execute'})
+    runtime.event({'type':'thinking_delta','content':'第二段'})
+    extension = {'feature':'pptx','id':'deck','state_key':'presentations'}
+    for revision in (1, 2):
+        runtime.event({'type':'presentation_revision','presentation_id':'deck','revision':revision,'manifest':{'slides':[revision]},'artifact_extension':extension})
+    events = client.get(f'/api/agent/sessions/{session_id}/journal').json()['events']
+    assert [e['content'] for e in events if e['type']=='thinking_delta'] == ['思考完成', '第二段']
+    assert [('manifest' in e) for e in events if e['type']=='presentation_revision'] == [False, True]
+    assert client.get('/api/agent/sessions/' + session_id).json()['presentations']['deck']['manifest'] == {'slides':[2]}
+    # Rows written before this policy are compacted the same way.
+    for text in ('a', 'ab'):
+        record = rt.find(session_id); seq = record['event_seq'] + 1; record['event_seq'] = seq; rt.d.put('session', record)
+        rt.d.put('event', {'id': f'{session_id}:{seq:010d}', 'session_id': session_id, 'type': 'thinking_delta', 'content': text, 'seq': seq})
+    assert rt.compact_journal(session_id) == {'removed': 1, 'stripped': 0}
+    assert [e['content'] for e in client.get(f'/api/agent/sessions/{session_id}/journal').json()['events'] if e['type']=='thinking_delta'][-1] == 'ab'
+
+
 def test_configuration_snapshot_and_runtime_model_switch(client):
     session_id = new_session(client)
     ws = d.get('settings', 'global')

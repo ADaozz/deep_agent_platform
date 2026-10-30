@@ -105,8 +105,12 @@ function flushEvents() {
   const batch = pendingEvents; pendingEvents = []
   events.value = events.value.concat(batch)
   if (batch.some(e => ['result', 'error', 'usage', 'compacted', 'status', 'permission_selected', 'runtime_config_applied', 'runtime_config_failed','sandbox_selected'].includes(e.type))) refreshSessions().catch(() => {})
-  nextTick(() => { const el = document.querySelector('.transcript'); if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 300) el.scrollTop = el.scrollHeight })
+  nextTick(() => { const el = transcriptEl.value; if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 300) el.scrollTop = el.scrollHeight; updateScrollState() })
 }
+const transcriptEl = ref(null), awayFromBottom = ref(false)
+function updateScrollState() { const el = transcriptEl.value; awayFromBottom.value = !!el && el.scrollHeight - el.scrollTop - el.clientHeight > 80 }
+function scrollToBottom() { const el = transcriptEl.value; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }
+watch(() => [selected.value?.id, events.value.length], () => nextTick(updateScrollState))
 async function api(path, options = {}) {
   const res = await fetch('/api' + path, { ...options, headers: { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...options.headers }, body: options.body === undefined ? undefined : options.body instanceof FormData ? options.body : JSON.stringify(options.body) })
   if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(typeof data.detail === 'string' ? data.detail : '请求失败，请检查输入配置') }
@@ -368,7 +372,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
           <div v-else-if="!dismissed" class="ready-banner"><span class="status-dot completed"></span><span>{{ t("Ready to start") }}</span><button @click="dismissBanner" class="icon-button" :aria-label='t("关闭提示")'><Icon name="X" :size="13" /></button></div>
         </div>
 
-        <div v-if="selected" class="transcript">
+        <div v-if="selected" ref="transcriptEl" class="transcript" @scroll.passive="updateScrollState">
           <div class="session-meta"><span class="status-tag" :class="selected.status">{{ statusLabels[selected.status] }}</span></div>
           <template v-for="b in timeline" :key="b.key">
             <div v-if="b.lead" class="message-label agent-label"><img src="/favicon.svg" alt=""> {{ t("Agent") }}</div>
@@ -388,6 +392,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
         </div>
 
         <div class="composer-area">
+          <button v-if="selected && awayFromBottom" type="button" class="scroll-to-bottom" :aria-label="t('滚动到底部')" :title="t('滚动到底部')" @click="scrollToBottom"><Icon name="ArrowDown" :size="17" /></button>
           <div class="runtime-bar"><div class="popover-anchor"><button class="text-button runtime-select" :aria-label='t("运行环境")' @click.stop="toggle('runtime')"><Icon name="Cloud" :size="15" /><Icon name="ChevronDown" :size="11" /></button><div v-if="popup === 'runtime'" v-popover-placement class="popover runtime-popover" @click.stop><button class="menu-row" @click="showFiles"><Icon name="Monitor" /><span>{{ t("Local environment") }}</span></button></div></div><div v-if="selected" class="composer-spacer"></div><button v-if="selected && !busy && !waiting" class="text-button compact-button" @click="action('compact')"><Icon name="Minimize2" :size="13" />{{ t("Compact context") }}</button></div>
           <form class="composer" :class="{ 'is-dragging-files': fileDragDepth > 0 && !uploadDisabled }" @submit.prevent="send" @dragenter="fileDrag($event, true)" @dragover="fileDrag($event)" @dragleave="fileDragLeave" @drop="dropFiles">
             <div v-if="fileDragDepth > 0 && !uploadDisabled" class="composer-drop-hint" role="status"><Icon name="Upload" :size="22" /><span>{{ t('upload.drop') }}</span></div>

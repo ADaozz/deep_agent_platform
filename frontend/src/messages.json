@@ -1215,6 +1215,10 @@
     "zh": "文件被外部操作修改，当前显示最后有效提交；请恢复或检查新文件后继续。",
     "en": "External file changes detected. Showing the last valid commit; restore or check the new file before continuing."
   },
+  "滚动到底部": {
+    "zh": "滚动到底部",
+    "en": "Scroll to bottom"
+  },
   "pptx.preview": {
     "zh": "PPTX 只读预览",
     "en": "PPTX read-only preview"
@@ -1224,12 +1228,12 @@
     "en": "Close presentation preview"
   },
   "pptx.finalized": {
-    "zh": "全部幻灯片已验收",
-    "en": "All slides accepted"
+    "zh": "已定稿",
+    "en": "Finalized"
   },
   "pptx.draft": {
-    "zh": "草稿 · 尚未完成全部视觉验收",
-    "en": "Draft · visual acceptance incomplete"
+    "zh": "草稿",
+    "en": "Draft"
   },
   "pptx.follow": {
     "zh": "跟随当前幻灯片",
@@ -1256,8 +1260,8 @@
     "en": "Building"
   },
   "pptx.pending": {
-    "zh": "基础检查通过 · 待视觉检查",
-    "en": "Basic checks passed · visual review pending"
+    "zh": "检查通过 · 视觉审查中",
+    "en": "Checks passed · visual review running"
   },
   "pptx.blocked": {
     "zh": "检查失败 · 等待修复",
@@ -1291,13 +1295,69 @@
     "zh": "警告",
     "en": "Warnings"
   },
+  "pptx.aesthetic.suggestions": {
+    "zh": "{count} 条建议，由你决定",
+    "en": "{count} suggestions, your call"
+  },
+  "pptx.otherSuggestions": {
+    "zh": "其他建议（{count} 条，可选）",
+    "en": "Other suggestions ({count}, optional)"
+  },
+  "pptx.noCritical": {
+    "zh": "没有严重问题",
+    "en": "No critical issues"
+  },
+  "pptx.delegate": {
+    "zh": "交给 Agent 修复",
+    "en": "Ask the Agent to fix"
+  },
+  "pptx.delegated": {
+    "zh": "已交给 Agent",
+    "en": "Sent to the Agent"
+  },
+  "pptx.fixRequest": {
+    "zh": "请修复第 {pages} 页的视觉问题 {id}：{observation}。建议：{suggestion}",
+    "en": "Please fix visual issue {id} on slide {pages}: {observation}. Suggestion: {suggestion}"
+  },
+  "pptx.error.no_vision_model": {
+    "zh": "没有可读取图片的模型",
+    "en": "No image-capable model"
+  },
+  "pptx.error.timeout": {
+    "zh": "模型响应超时",
+    "en": "Model timed out"
+  },
+  "pptx.error.invalid_json": {
+    "zh": "模型回复不是可解析的 JSON",
+    "en": "Model reply was not parseable JSON"
+  },
+  "pptx.error.schema_invalid": {
+    "zh": "模型回复缺少必要字段",
+    "en": "Model reply missed required fields"
+  },
+  "pptx.error.provider_error": {
+    "zh": "模型服务调用出错",
+    "en": "Model provider error"
+  },
+  "pptx.error.image_missing": {
+    "zh": "截图缺失",
+    "en": "Screenshot missing"
+  },
+  "pptx.error.render_failed": {
+    "zh": "截图渲染失败",
+    "en": "Screenshot rendering failed"
+  },
+  "pptx.error.snapshot_mismatch": {
+    "zh": "修订文件校验不一致",
+    "en": "Revision hash mismatch"
+  },
   "pptx.advisories": {
     "zh": "建议",
     "en": "Advisories"
   },
   "pptx.needs_attention": {
-    "zh": "视觉审查发现问题 · 待修复或人工确认",
-    "en": "Visual review found issues · fix or confirm"
+    "zh": "存在严重视觉问题 · 不阻塞交付",
+    "en": "Critical visual issue · does not block delivery"
   },
   "pptx.technical": {
     "zh": "确定性检查",
@@ -1324,12 +1384,12 @@
     "en": "Failed"
   },
   "pptx.aesthetic.uncertain": {
-    "zh": "无法确认 · 需人工判断",
-    "en": "Uncertain · human judgement needed"
+    "zh": "无法确认 · 仅供参考",
+    "en": "Uncertain · for reference only"
   },
   "pptx.aesthetic.unavailable": {
-    "zh": "不可用 · 未进行模型审查",
-    "en": "Unavailable · no model review"
+    "zh": "未获得有效审查结果",
+    "en": "No usable review result"
   },
   "pptx.check.passed": {
     "zh": "通过",
@@ -1428,8 +1488,8 @@
     "en": "Reason: {code}"
   },
   "pptx.autoRepairStopped": {
-    "zh": "同一问题已自动修复两轮仍存在，已停止自动修复，等待你的判断。",
-    "en": "The same issue survived two repair rounds; auto-repair stopped and awaits your decision."
+    "zh": "严重问题经两轮修复仍存在，已停止自动修复，等待你的判断。",
+    "en": "A critical issue survived two repair rounds; auto-repair stopped and awaits your decision."
   },
   "pptx.noIssues": {
     "zh": "模型未发现问题",

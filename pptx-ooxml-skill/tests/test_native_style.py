@@ -100,7 +100,7 @@ def test_presets_and_rejected_effects(deck):
     with pytest.raises(ValueError, match='Unsupported text style'):
         op(deck, 'element.set_style', element=dict(id='note', style=dict(letter_case='upper')))
     with pytest.raises(ValueError, match='Decorative effect'):
-        op(deck, 'element.set_style', element=dict(id='note', style=dict(gradient_fill='x')))
+        op(deck, 'element.set_style', element=dict(id='note', style=dict(bevel='x')))
     with pytest.raises(ValueError, match='profile minimum'):
         op(deck, 'element.set_style', element=dict(id='note', style=dict(font_size=6)))
     with pytest.raises(ValueError, match='do not support|does not support'):
@@ -146,3 +146,21 @@ def test_adjusted_slide_renders_with_impress(deck):
     op(deck, 'element.set_style', element=dict(id='table', style=dict(header_fill='246BCE', header_text='FFFFFF')))
     result = deck.check_slide('s1', '标题、图标、折线图、表头均已核对')
     assert result['review']['rendered'] and result['review']['automatic_passed'], result['review']['layout_issues']
+
+
+def test_soft_shadow_and_gradient_are_allowed_on_shapes(deck):
+    op(deck, 'element.add_shape', element=dict(id='card', shape='rounded_rectangle', layer='background', geometry=dict(x=.06, y=.6, w=.2, h=.15)))
+    op(deck, 'element.set_style', element=dict(id='card', style=dict(shadow='soft', gradient=dict(start='card', end='accent_soft', angle=90))))
+    _, after = shapes(deck)
+    xml_text = xml(after['card']).decode()
+    assert '<a:outerShdw' in xml_text and '<a:gradFill' in xml_text
+    meta = m.renderer.metadata(after['card'])
+    assert len(meta['fill']) == 6
+    op(deck, 'element.set_style', element=dict(id='card', style=dict(fill='surface', shadow='none')))
+    _, after = shapes(deck)
+    xml_text = xml(after['card']).decode()
+    assert '<a:outerShdw' not in xml_text and '<a:gradFill' not in xml_text
+    with pytest.raises(ValueError, match='shadow must be none or soft'):
+        op(deck, 'element.set_style', element=dict(id='card', style=dict(shadow='heavy')))
+    with pytest.raises(ValueError, match='Decorative effect'):
+        op(deck, 'element.set_style', element=dict(id='card', style=dict(glow='accent')))

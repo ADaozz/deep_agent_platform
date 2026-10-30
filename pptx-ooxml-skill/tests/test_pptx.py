@@ -108,7 +108,9 @@ def test_actual_impress_render_and_pending_visual(tmp_path):
     result=store.check_slide('s1','逐字检查标题为 AI Agent 平台建设方案。')
     assert result['review']['automatic_passed'],result
     assert result['review']['visual_review']=='pending'
-    with pytest.raises(ValueError):store.finalize(store.status()['revision'])
+    # Visual review is advisory: delivery only needs the automatic and content checks.
+    event=store.finalize(store.status()['revision'])
+    assert event['finalized'] and event['aesthetics']['s1']['status']=='pending' and event['outstanding_critical']=={}
 
 
 def test_targeted_table_chart_data_and_line_updates_remain_native(tmp_path):

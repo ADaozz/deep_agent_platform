@@ -19,9 +19,10 @@ from design import design_quality, diagram_presets
 
 EMU_PER_IN = 914400
 SITES = {'top': 0, 'left': 1, 'bottom': 2, 'right': 3}
-NODE_KEYS = {'id', 'label', 'detail', 'rank', 'emphasis'}
+NODE_KEYS = {'id', 'label', 'detail', 'rank', 'emphasis', 'position', 'shape'}
 EDGE_KEYS = {'id', 'source', 'target', 'relation', 'label'}
-SPEC_KEYS = {'id', 'geometry', 'anchor', 'direction', 'preset', 'nodes', 'edges'}
+SPEC_KEYS = {'id', 'geometry', 'anchor', 'direction', 'preset', 'nodes', 'edges', 'spacing', 'node_size', 'node_shape'}
+NODE_SHAPES = {'rounded_rectangle': MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, 'rectangle': MSO_AUTO_SHAPE_TYPE.RECTANGLE}
 PATCH_KEYS = {'add_nodes', 'remove_nodes', 'update_nodes', 'add_edges', 'remove_edges'}
 TOLERANCE_IN = .01
 
@@ -82,9 +83,20 @@ def normalize(spec):
             if type(item['emphasis']) is not bool:
                 raise ValueError('emphasis must be true or false')
             node['emphasis'] = item['emphasis']
+        if item.get('position') is not None:
+            position = item['position']
+            if not isinstance(position, dict) or set(position) != {'x', 'y'} or any(type(v) not in (int, float) or not 0 <= v <= 1 for v in position.values()):
+                raise ValueError(f'node {node_id} position is {{x, y}} as fractions of the slide')
+            node['position'] = dict(position)
+        if item.get('shape') is not None:
+            if item['shape'] not in NODE_SHAPES:
+                raise ValueError('node shape must be ' + ' or '.join(NODE_SHAPES))
+            node['shape'] = item['shape']
         result_nodes.append(node)
     if 0 < sum('rank' in node for node in result_nodes) < len(result_nodes):
         raise ValueError('Give every node a rank or none; partial ranks are ambiguous')
+    if 0 < sum('position' in node for node in result_nodes) < len(result_nodes):
+        raise ValueError('Give every node a position or none; the engine lays out all nodes or none')
     edges = spec.get('edges', [])
     if not isinstance(edges, list) or len(edges) > limits['edges']:
         raise ValueError(f'A diagram holds at most {limits["edges"]} edges')
@@ -115,6 +127,21 @@ def normalize(spec):
             edge['label'] = _text(item['label'], limits['edge_label_chars'], f'edge {edge_id} label')
         result_edges.append(edge)
     result = dict(id=identity, preset=preset_name, direction=direction, nodes=result_nodes, edges=result_edges)
+    if spec.get('spacing') is not None:
+        spacing = spec['spacing']
+        if not isinstance(spacing, dict) or not spacing or set(spacing) - {'rank_gap_in', 'node_gap_in'} or any(type(v) not in (int, float) or not .15 <= v <= 2 for v in spacing.values()):
+            raise ValueError('spacing is {rank_gap_in?, node_gap_in?} between 0.15 and 2 inches')
+        result['spacing'] = dict(spacing)
+    if spec.get('node_size') is not None:
+        size = spec['node_size']
+        if not isinstance(size, dict) or set(size) - {'w_in', 'h_in'} or not size or any(type(v) not in (int, float) for v in size.values()) \
+                or not .4 <= size.get('w_in', 1) <= 10 or not .3 <= size.get('h_in', 1) <= 5:
+            raise ValueError('node_size is {w_in?: 0.4-10, h_in?: 0.3-5}')
+        result['node_size'] = dict(size)
+    if spec.get('node_shape') is not None:
+        if spec['node_shape'] not in NODE_SHAPES:
+            raise ValueError('node_shape must be ' + ' or '.join(NODE_SHAPES))
+        result['node_shape'] = spec['node_shape']
     if spec.get('anchor'):
         result['anchor'] = spec['anchor']
     elif spec.get('geometry'):
@@ -174,11 +201,30 @@ def text_height(node, label_style, detail_style, width_in):
 
 # ---------------------------------------------------------------- layout
 
+def placed(spec, preset, label_style, detail_style, slide_in=(13.333333, 7.5)):
+    """Caller-chosen node positions (top-left, slide fractions); sizes from node_size or the preset."""
+    width = min(preset['max_node_w_in'], max(preset['min_node_w_in'], 2.4))
+    height = min(preset['max_node_h_in'], max(preset['min_node_h_in'], .8))
+    rects = {}
+    for node in spec['nodes']:
+        x, y = node['position']['x'] * slide_in[0], node['position']['y'] * slide_in[1]
+        rect = (x, y, width, height)
+        if x + width > slide_in[0] + 1e-6 or y + height > slide_in[1] + 1e-6:
+            raise ValueError(f'Node {node["id"]} at its position would leave the slide')
+        if text_height(node, label_style, detail_style, width) > height + 1e-6:
+            raise ValueError(f'Node {node["id"]} text does not fit a {width:.2f} x {height:.2f} in node; shorten it or set node_size')
+        for other_id, other in rects.items():
+            if _overlap(rect, other):
+                raise ValueError(f'Nodes {node["id"]} and {other_id} overlap at the given positions')
+        rects[node['id']] = rect
+    return rects
+
+
 def label_size(text, size_pt):
     return _em(text) * size_pt / 72 + .14, size_pt * 1.3 / 72 + .06
 
 
-def layout(spec, ranks, area, preset, label_style, detail_style, edge_label_pt=12):
+def layout(spec, ranks, area, preset, label_style, detail_style, edge_label_pt=12, slide_in=(13.333333, 7.5)):
     """Node rectangles in inches. Ranks run along the main axis of the direction.
 
     Gaps grow to hold edge labels: same-rank labels widen the node gap, cross-rank
@@ -186,6 +232,15 @@ def layout(spec, ranks, area, preset, label_style, detail_style, edge_label_pt=1
     """
     preset = dict(preset)
     vertical_layout = spec['direction'] == 'TB'
+    spacing = spec.get('spacing') or {}
+    preset.update({key: value for key, value in spacing.items()})
+    size = spec.get('node_size') or {}
+    if 'w_in' in size:
+        preset['min_node_w_in'] = preset['max_node_w_in'] = size['w_in']
+    if 'h_in' in size:
+        preset['min_node_h_in'] = preset['max_node_h_in'] = size['h_in']
+    if all('position' in node for node in spec['nodes']):
+        return placed(spec, preset, label_style, detail_style, slide_in)
     for edge in spec['edges']:
         if not edge.get('label'):
             continue
@@ -329,12 +384,48 @@ def _candidates(edge, rects, ranks, direction):
     return result
 
 
+def _geometric(edge, rects):
+    """Facing sides chosen from where the nodes actually are, for free placements and fallbacks."""
+    s, t = rects[edge['source']], rects[edge['target']]
+    dx = (t[0] + t[2] / 2) - (s[0] + s[2] / 2)
+    dy = (t[1] + t[3] / 2) - (s[1] + s[3] / 2)
+    result = []
+    for orientation in (('v', 'h') if abs(dy) >= abs(dx) else ('h', 'v')):
+        if orientation == 'v':
+            first, last, axis, delta = ('bottom', 'top', 1, dy) if dy > 0 else ('top', 'bottom', 1, dy)
+        else:
+            first, last, axis, delta = ('right', 'left', 0, dx) if dx > 0 else ('left', 'right', 0, dx)
+        a, b = site_point(s, first), site_point(t, last)
+        span = b[axis] - a[axis]
+        if abs(span) < .16 or (span > 0) != (delta > 0):
+            continue
+        lane = a[axis] + span / 2
+        if orientation == 'v':
+            points = [a, b] if abs(a[0] - b[0]) < TOLERANCE_IN else [a, (a[0], lane), (b[0], lane), b]
+        else:
+            points = [a, b] if abs(a[1] - b[1]) < TOLERANCE_IN else [a, (lane, a[1]), (lane, b[1]), b]
+        result.append((first, last, points))
+    return result
+
+
+def _all_candidates(edge, rects, ranks, direction):
+    result, problem = [], None
+    try:
+        result.extend(_candidates(edge, rects, ranks, direction))
+    except ValueError as exc:
+        problem = exc
+    result.extend(item for item in _geometric(edge, rects) if item not in result)
+    if not result:
+        raise problem or ValueError(f'Nodes {edge["source"]} and {edge["target"]} are too close to connect clearly')
+    return result
+
+
 def route(spec, rects, ranks, obstacles):
     """One orthogonal route per edge, or ValueError naming what blocks it."""
     routes = {}
     for edge in spec['edges']:
         blocked = None
-        for first, last, points in _candidates(edge, rects, ranks, spec['direction']):
+        for first, last, points in _all_candidates(edge, rects, ranks, spec['direction']):
             hit = None
             for node_id, rect in rects.items():
                 if node_id in (edge['source'], edge['target']):
@@ -494,6 +585,10 @@ def read_spec(slide, diagram_id):
                     node[key] = meta[key]
             if meta.get('declared_rank') is not None:
                 node['rank'] = meta['declared_rank']
+            if meta.get('declared_position') is not None:
+                node['position'] = meta['declared_position']
+            if meta.get('declared_shape') is not None:
+                node['shape'] = meta['declared_shape']
             nodes.append((meta.get('order', 0), node))
         elif meta.get('diagram_role') == 'edge':
             edge = dict(id=meta['edge_id'], source=meta['source'], target=meta['target'], relation=meta['relation'])
@@ -505,7 +600,7 @@ def read_spec(slide, diagram_id):
     spec = dict(id=diagram_id, preset=frame['preset'], direction=frame['direction'],
         nodes=[node for _, node in sorted(nodes, key=lambda item: item[0])],
         edges=[edge for _, edge in sorted(edges, key=lambda item: item[0])])
-    spec.update({key: frame[key] for key in ('geometry', 'anchor') if frame.get(key)})
+    spec.update({key: frame[key] for key in ('geometry', 'anchor', 'spacing', 'node_size', 'node_shape') if frame.get(key)})
     return spec, metas
 
 
@@ -540,7 +635,8 @@ def build(slide, spec, state, prs, anchors, profile, previous=None, rects=None, 
     ranks = assign_ranks(spec)
     keep_positions = rects is not None
     if rects is None:
-        rects = layout(spec, ranks, area, preset, label_style, detail_style, style_for(state, 'caption')['font_size'])
+        rects = layout(spec, ranks, area, preset, label_style, detail_style, style_for(state, 'caption')['font_size'],
+                       (prs.slide_width / EMU_PER_IN, prs.slide_height / EMU_PER_IN))
     obstacles = obstacles_for(slide, spec['id'])
     for name, rect in obstacles:
         for node_id, node_rect in rects.items():
@@ -554,15 +650,17 @@ def build(slide, spec, state, prs, anchors, profile, previous=None, rects=None, 
     if (design_quality.contrast(connector_color, background) or 0) < 3.0:
         connector_color = _readable(background, [palette['muted'], palette['text']], 3.0)
     frame = dict(id=spec['id'], preset=spec['preset'], direction=spec['direction'])
-    frame.update({key: spec[key] for key in ('geometry', 'anchor') if key in spec})
+    frame.update({key: spec[key] for key in ('geometry', 'anchor', 'spacing', 'node_size', 'node_shape') if key in spec})
     created, by_node = [], {}
     group = 'diagram:' + spec['id']
     radius = (profile.get('shape') or {}).get('corner_radius_in', .08)
     for order, node in enumerate(spec['nodes']):
         x, y, w, h = rects[node['id']]
         element_id = spec['id'] + '.' + node['id']
-        shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
-        shape.adjustments[0] = max(0.0, min(.5, radius / max(min(w, h), .01)))
+        node_shape = node.get('shape') or spec.get('node_shape') or 'rounded_rectangle'
+        shape = slide.shapes.add_shape(NODE_SHAPES[node_shape], Inches(x), Inches(y), Inches(w), Inches(h))
+        if node_shape == 'rounded_rectangle':
+            shape.adjustments[0] = max(0.0, min(.5, radius / max(min(w, h), .01)))
         shape.name = 'da:' + element_id
         fill_token = preset['emphasis_fill'] if node.get('emphasis') else preset['node_fill']
         fill = palette.get(fill_token, palette['card'])
@@ -593,7 +691,7 @@ def build(slide, spec, state, prs, anchors, profile, previous=None, rects=None, 
                 run.font.bold = bold
                 run.font.color.rgb = RGBColor.from_string(color)
         old = previous.get(element_id, {})
-        meta = dict(kind='shape', shape='rounded_rectangle', layer='content', overlap_group=group, diagram_id=spec['id'],
+        meta = dict(kind='shape', shape=node_shape, layer='content', overlap_group=group, diagram_id=spec['id'],
             diagram_role='node', node_id=node['id'], label=node['label'], text='\n'.join(text for text, *_ in blocks),
             text_blocks=[dict(text=text, font_size=style['font_size'], line_height=style.get('line_height', 1.2)) for text, style, *_ in blocks],
             resolved_style=dict(label_style, color=label_color, align='center'), fill=fill, fill_token=fill_token, rank=ranks[node['id']],
@@ -601,6 +699,10 @@ def build(slide, spec, state, prs, anchors, profile, previous=None, rects=None, 
         for key in ('detail', 'emphasis'):
             if node.get(key) is not None:
                 meta[key] = node[key]
+        if node.get('position') is not None:
+            meta['declared_position'] = node['position']
+        if node.get('shape') is not None:
+            meta['declared_shape'] = node['shape']
         if node.get('rank') is not None:
             meta['declared_rank'] = node['rank']
         for key in ('style_overrides', 'preset') + (('manual_geometry',) if keep_positions else ()):
@@ -676,9 +778,12 @@ def _merge(spec, payload):
     unknown = set(payload) - SPEC_KEYS - PATCH_KEYS
     if unknown:
         raise ValueError('Unsupported diagram.update field(s): ' + ', '.join(sorted(unknown)))
-    for key in ('direction', 'preset'):
+    for key in ('direction', 'preset', 'spacing', 'node_size', 'node_shape'):
         if key in payload:
-            spec[key] = payload[key]
+            if payload[key] is None:
+                spec.pop(key, None)
+            else:
+                spec[key] = payload[key]
     if 'geometry' in payload or 'anchor' in payload:
         spec.pop('geometry', None); spec.pop('anchor', None)
         spec.update({key: payload[key] for key in ('geometry', 'anchor') if payload.get(key)})
@@ -787,7 +892,7 @@ def style_element(slide, shape, meta, element, op, state, prs, anchors):
         for key in [key for key, value in (element.get('style') or {}).items() if value is None]:
             overrides.pop(key, None)
         if additions:
-            overrides.update(native_style.validate_style(kind, additions, state))
+            overrides = native_style.merge_overrides(overrides, native_style.validate_style(kind, additions, state))
         if overrides:
             meta['style_overrides'] = overrides
         else:

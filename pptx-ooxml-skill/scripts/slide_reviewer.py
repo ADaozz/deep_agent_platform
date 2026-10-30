@@ -79,11 +79,18 @@ def effective_aesthetic(review):
     return aesthetic.get('status','pending')
 
 
+def outstanding_critical(review):
+    aesthetic=(review or {}).get('aesthetic_review') or {}
+    if (aesthetic.get('human') or {}).get('decision')=='accept':return []
+    return [issue for issue in aesthetic.get('issues',[]) if issue.get('severity')=='critical' and issue.get('confidence') in ('high','medium')
+            and not issue.get('needs_verification') and not issue.get('dismissed')]
+
+
 def derive_status(review):
-    """blocked: deterministic errors; needs_attention: model/human found real defects."""
+    """blocked: deterministic errors; needs_attention: an unresolved critical finding (advisory, never blocks delivery)."""
     if not review.get('automatic_passed'):return 'blocked'
-    value=effective_aesthetic(review)
-    return {'passed':'passed','failed':'needs_attention'}.get(value,'pending')
+    if outstanding_critical(review) or (review.get('aesthetic_review') or {}).get('human',{}).get('decision')=='reject':return 'needs_attention'
+    return 'pending' if effective_aesthetic(review)=='pending' else 'passed'
 
 
 def compat_visual(review):

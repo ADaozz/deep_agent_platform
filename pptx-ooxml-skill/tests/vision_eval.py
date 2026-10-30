@@ -151,7 +151,8 @@ def evaluate(directory, client):
         context = dict(slide=slide, index=index, total=len(slides), profile=profile, intent=case['name'], constraints=case.get('constraints'),
             technical_issues=[])
         try:
-            result = vision.evaluate_slide(client.complete(vision.SLIDE_SYSTEM_PROMPT, vision.slide_request(context), [('image/png', png)]), slide)
+            result, _ = vision.review_with_retry(client, vision.SLIDE_SYSTEM_PROMPT, vision.slide_request(context), [('image/png', png)], vision.SlideReview,
+                lambda answer: vision.evaluate_slide(answer, slide))
         except vision.VisionUnavailable as exc:
             result = vision.failure(exc.code, str(exc))
         blocking = [i for i in result.get('issues', []) if i['severity'] in ('critical', 'major')]
@@ -178,8 +179,8 @@ def evaluate(directory, client):
     images = [(render / f'slide-{slides[sid][0] + 1:03d}.png').read_bytes() for sid in order]
     summary = [dict(page=i + 1, slide_id=sid, layout=slides[sid][1].get('layout')) for i, sid in enumerate(order)]
     try:
-        deck = vision.evaluate_deck(client.complete(vision.DECK_SYSTEM_PROMPT, vision.deck_request(dict(slides=summary, profile=profile)),
-            [('image/png', vision.contact_sheet(images))]), len(order))
+        deck, _ = vision.review_with_retry(client, vision.DECK_SYSTEM_PROMPT, vision.deck_request(dict(slides=summary, profile=profile)),
+            [('image/png', vision.contact_sheet(images))], vision.DeckReview, lambda answer: vision.evaluate_deck(answer, len(order)))
     except vision.VisionUnavailable as exc:
         deck = vision.failure(exc.code, str(exc))
     expected_pages = {order.index(sid) + 1 for sid in repeated}
