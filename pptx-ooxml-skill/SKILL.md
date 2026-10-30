@@ -1,81 +1,76 @@
 ---
 name: pptx-ooxml-author
-description: Build and revise editable PowerPoint presentations incrementally with native charts, shapes, tables, connectors and diagrams first, bounded style presets and natural-language fine-tuning, template-aware layouts, design profiles, reviewed SVG components as a fallback, stable element IDs, actual Impress renders, host-side multimodal aesthetic review and steering-safe operations.
+description: Build and revise editable PowerPoint decks from a template when one fits, otherwise from the design system. Clone slides, fill slots, recolor through a persistent palette, and check real Impress renders. One approved atomic operation at a time.
 compatibility: Optional platform PPTX extension; python-pptx, lxml, Pillow, PyMuPDF, LibreOffice Impress and fonts.
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
-# PPTX authoring protocol
+# PPTX authoring
 
-This feature is optional and independently removable. DeepAgents loads this SKILL.md; use the existing `execute` tool to run the Python CLI located at `/agent-skills/pptx-ooxml-author/scripts/office_pptx.py` (or `scripts/office_pptx.py` relative to this skill outside the platform). Run from the Thread user-file directory. Sandbox `python` includes the required dependencies. Each command is one operation and one normal approval boundary; repeat the absolute script path and working directory on each execute call. Never create another planner, Agent Loop, model worker or free-form SVG generator.
+This skill is optional. DeepAgents loads this file and calls the existing `execute` tool. The CLI is `/agent-skills/pptx-ooxml-author/scripts/office_pptx.py` in the platform, or `scripts/office_pptx.py` beside this file. Run it from the Thread user-file directory. Each command is one operation and one approval. Do not start another planner, Agent Loop, or free-form SVG generator.
 
-1. Template first. Before creating a deck, check files the user uploaded and `list-templates`. When a template fits, `init` from that file and build by `slide.clone`, `slot.fill` and local edits. Do not start from a blank Office file when a cloned layout can hold the content. Keep masters, theme, styles, layouts, native shapes and relationships. A blank deck and the design profiles are the fallback when no template fits. Never flatten a template or a whole slide into an image. Details are in `references/template-rules.md`.
-2. Run `catalog` once per deck when no template fits and the visual direction is unclear: it lists validated profiles, semantic layouts and reviewed components. Pick a profile from task nature (analysis, launch, technical, financial). If undecidable, use `corporate_blue`. A profile is configuration; it never contains page content. A profile never replaces a template theme.
-3. Define a concise narrative and design direction; do not precompute the whole deck body. Run `init deck.pptx --presentation-id project-report [--profile consulting] [--template brand.pptx]`. Each following command is approved independently.
-4. Build one slide at a time with `apply-one deck.pptx --request /path/operation.json`. Decide the page's semantic intent first, then call `plan --request intent.json` to rank layouts for the content, then `slide.add` with that layout and, when the variant matters, its `modules` count. Slots are the starting point, not a cage: use explicit `geometry` when the content or the user's request does not fit the declared slots, keeping elements inside the safe margins.
-5. Prefer declared slots and profile style tokens, but adapt when they get in the way. The six original layouts (`cover`, `section`, `title_body`, `comparison`, `three_columns`, `data`) remain available; additional semantic layouts (`statement`, `hero`, `bento`, `evidence`, `kpi`, `timeline`, `architecture`, `matrix`) must be listed by `layouts` before use. When a slot cannot hold the content, split it, choose another layout or place the element with explicit geometry; only the profile's minimum font size is firm.
-6. Native first. Prefer, in order: native text, native chart (bar/line/pie with a real `unit`), native table, native shapes, and `diagram.add` for any flow, process or architecture relation. Defaults are deliberately plain (no heavy borders, flat fills, light gridlines, labelled data points, thin table dividers); presets are starting points, and any style within the `element.set_style` vocabulary is fine when the page benefits or the user asks. Stable IDs persist in native OOXML metadata; never target the nth textbox.
-7. Diagrams: declare nodes, edges and a `relation` per edge (`flows_to`, `calls`, `data_flow`, `depends_on`, `returns`, `bidirectional`, `association`); the engine chooses connection sites, arrowheads and routes and binds every connector to both nodes. The structure is yours: presets (`layered`, `flow`, `tree`) are defaults, and you may set `spacing`, `node_size`, `node_shape`, per-node `shape`, or give every node a `position` for any arrangement (hub, matrix, free layout) — connectors are still routed and bound for you. Do not draw loose `line`/`arrow` shapes between boxes to suggest a relation; the checker reports unbound connectors bridging two blocks as errors. If an edge cannot be routed, move nodes, re-rank or say it in a note; never change the real relationship to make the picture tidier.
-8. Fine-tuning from natural language maps to bounded operations on the current geometry, never a page re-layout: "缩小 15%" → `element.adjust {scale:0.85}` (icons/images keep aspect and centre), "往右 0.2 英寸" → `element.adjust {dx_in:0.2}`, "旋转 5°" → `{rotate:5}`, "换成折线图" → `chart.change_type {type:"line"}` (data, series, position and ID kept; embedded workbook verified), "表头蓝底白字" → `element.set_style {style:{header_fill:"246BCE",header_text:"FFFFFF"}}`, or a preset via `element.apply_preset` (`style_presets` in `catalog`). Explicit user styles win over presets and survive profile changes. Shapes may use a soft shadow (`shadow:"soft"`) or a two-colour linear gradient (`gradient:{start,end,angle}`) when they help; keep them sparing. Glow, bevel, reflection and 3-D are not available.
-9. SVG components are a fallback for what native objects cannot express, and only from the reviewed registry (`components`): component id, version, allowed variant, bounded params and declared text slots. A component is inserted as a PowerPoint **SVG picture** with a deterministic PNG fallback; it is never converted into native shapes, and its text slots stay native editable text boxes. Never hand-write, patch or download SVG at runtime.
-10. Every successful mutation validates the candidate package, stores an immutable full PPTX revision and atomically publishes it. Failed validation never publishes a partial file. Recovery uses the shared artifact transaction store; restoring creates a NEW revision.
-11. Complete each slide with `check-slide deck.pptx --slide-id slide-001 --notes "specific content checks" [--intent "page purpose"] [--constraint "user-required layout"]`. Actually inspect its structured text/chart values and supply concrete evidence. The engine renders the exact PPTX with Impress and records three results: `technical_review` (bounds, overflow, contrast, font sizes, margins, capacity, chart metadata, profile), `visual_integrity` (render, rendered text, collisions, connector binding) and `aesthetic_review`. Deterministic errors block the next slide; warnings are recorded.
-12. `aesthetic_review` is advice from the platform host and never blocks building or delivering the deck. After each successful check the host re-renders the exact revision and asks a vision-capable model for findings in the background; you cannot record a pass yourself (`review-slide` is only an advisory note). Do not wait slide by slide — keep building, and read results with `review-status deck.pptx [--slide-id …]` when convenient, following `next_action`:
-    - `critical` findings (unreadable, wrong or misleading content) are the only ones you fix without asking: one small local repair, then `check-slide` again. If the same critical finding survives two rounds (`auto_repair: false`), stop and tell the user.
-    - every other finding (`major`, `minor`, deck consistency) is a suggestion for the user. Do not edit for it on your own; list the notable ones briefly when you deliver. The user can send any of them back to you from the preview ("交给 Agent 修复") or by message, and then you act on it.
-    - `pending`, `uncertain` or `unavailable` never delay you; just do not claim visual acceptance you did not get.
-    See `references/aesthetic-review.md`.
-13. At every atomic boundary, prefer steering for the identified slide/viewed revision. Re-read status and repair the intended slide, including historical slides. Layout, profile and component changes invalidate affected reviews; recheck before appending another slide. `follow_up` is a later task, not steering.
-14. Optionally run `request-deck-review deck.pptx --base-revision N` once all slides are built for a cross-slide consistency read (design system, repetition, card overuse, density rhythm, cover/summary); its findings are suggestions for the user. Run `finalize deck.pptx --base-revision N` when every slide has passed the automatic and content checks — visual review state does not gate it. The finalize result lists outstanding critical findings and suggestion counts; report them to the user in one short paragraph and let them decide. Report which objects are native editable PowerPoint objects and which are reviewed SVG picture components, plus any preserved unsupported animations, SmartArt or objects.
-15. Never trade numeric correctness, text readability or native editability for decoration. Do not fabricate data in charts or illustrative components; the reference artwork shipped for design study is not a template enum and must not be copied page-for-page.
+## 1. Template selection
 
-## Commands and operations
+Before creating a deck, look for a user-uploaded PPTX and run `list-templates`. A template that can hold the content is the default. `import-template` only writes a manifest; it does not download a deck or copy an unlicensed file into this skill.
 
-No PPTX-specific tool is registered in the Agent. Examples (one command per execute call, from the file directory):
+- New deck from a template: `init deck.pptx --presentation-id project-report --template brand.pptx --use template_reference`. Sample slides are prototypes. Clone what you need, then `presentation.discard_prototypes` so the delivery contains only generated slides.
+- Edit a file the user already has: `init --template brand.pptx --use edit_existing` (the default). Keep their slides.
+- No suitable template: `init` a blank deck and follow the fallback below.
+
+## 2. Template workflow
+
+`list-templates` → `import-template` or inspect the upload → `init` → `match-template --role …` → `slide.clone` → `slot.fill` → local edit → `check-slide`.
+
+Decide the slide's purpose, then match an existing template slide. Clone and fill it when it fits. Call `plan` and `slide.add` only when no template slide can hold the content.
+
+Keep masters, theme, layouts, native shapes and relationships. Do not flatten a slide into a picture. `slide.clone` shares masters, layouts, theme and pictures; charts get a private workbook; a link to another slide still points at that slide. Notes are omitted and reported. A relationship with no share/copy policy fails the clone.
+
+`slot.fill` replaces slot text and keeps the first run. If the text does not fit, the operation raises `capacity conflict` and changes nothing. Shorten the copy, pick another template slide, or enlarge that one box with `element.adjust`.
+
+## 3. Editing and recolor
+
+Prefer editing the native object that is already on the slide. `element.adjust` moves, scales or rotates that object and does not restyle the page. Imported shapes accept `element.set_style` only for fill, text color, bold, italic, size and alignment. Picture, pattern and gradient-to-artwork fills are rejected rather than discarded. Charts and tables that came from the template use `chart.replace_data` and table-safe updates, not a rebuilt page.
+
+`presentation.recolor` writes `accent`, `background`, `text` and optional `muted` into the theme and into direct colors that belong to that theme. It also stores `effective_palette`. New shapes, charts, tables and backgrounds read that palette before the profile palette. `template_tokens` keeps the original theme and is not overwritten. `presentation.set_profile` changes type scale and layout policy; it does not replace an effective palette. Restoring a revision restores the palette from that revision.
+
+Logo and brand objects are protected by the id recorded at import, including after the shape is renamed to `da:…`. Clones inherit that protection. Pictures are not repainted. A complex object that might be a brand asset is returned as `needs_confirmation` and left unchanged. `recolor_complete: false` means say what was left unchanged.
+
+Explicit styles on one object win over the palette. Do not rebuild a template page to change one color.
+
+## 4. Fallback
+
+Use this only when no template slide fits. Run `catalog` if the visual direction is unclear and pick a profile (`corporate_blue` when nothing else fits). A profile has no page content. Then `plan` ranks layouts and `slide.add` creates a blank slide of that layout. Add native text, charts, tables, shapes, or `diagram.add` for a real relationship. SVG components are a last resort for marks native shapes cannot express; use only the reviewed registry. Layout ids, diagram fields, style keys and component parameters are in `references/`.
+
+## 5. Check and deliver
+
+Every successful mutation validates the package, stores a full PPTX revision and publishes it atomically. A failed operation does not change the file or the revision. Repeat the same `operation_id` after uncertain delivery; do not mint a new id for the same request.
+
+`check-slide` renders the exact PPTX and records technical and integrity results. Deterministic errors block the next content slide. Prototype slides in `template_reference` are not content slides. `aesthetic_review` is advice and does not block delivery. Fix a critical finding once, locally, then check again. Leave other findings for the user. Read `review-status` when convenient; do not wait on it slide by slide.
+
+After the deck is built, run `request-deck-review` once for cross-slide consistency. Its findings are suggestions. `finalize` requires every content slide to have passed the automatic and content checks. Report outstanding critical findings, native objects versus SVG pictures, and anything the clone omitted or refused.
+
+## Commands
+
+One command per execute call:
 
 ```bash
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py list-templates
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py import-template --template brand.pptx --template-id brand --license-note "user file, not redistributed"
-python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py catalog
-python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py init deck.pptx --presentation-id project-report --template brand.pptx --profile consulting
-python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py plan deck.pptx --request ../tmp/plan.json
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py init deck.pptx --presentation-id project-report --template brand.pptx --use template_reference
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py match-template deck.pptx --role data
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.pptx --request ../tmp/operation.json
-python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id slide-001 --notes "Checked title, labels and values" --intent "开篇点题"
-python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py review-status deck.pptx --slide-id slide-001
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id page-1 --notes "Checked title and values" --intent "开篇"
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py request-deck-review deck.pptx --base-revision 12
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py finalize deck.pptx --base-revision 12
 ```
 
-Write request JSON, screenshots and intermediate renders to the Thread temporary directory. A request contains one operation:
-
 ```json
-{"presentation_id":"project-report","operation_id":"op-004","base_revision":3,"slide_id":"slide-001","operation":"element.add_text","element":{"id":"title-001","text":"系统总体架构","style":"slide_title","anchor":"title"}}
+{"presentation_id":"project-report","operation_id":"op-004","base_revision":3,"operation":"slide.clone","source_slide_id":"tpl-004","slide_id":"page-4","insert_after":"page-3"}
 ```
 
-One component call, with text that stays native:
-
 ```json
-{"presentation_id":"project-report","operation_id":"op-009","base_revision":8,"slide_id":"slide-003","operation":"element.add_component","element":{"id":"flow","component":"process.chevron_flow","params":{"steps":4},"texts":{"step1":"需求确认","step2":"方案设计","step3":"试点验证","step4":"规模推广"},"geometry":{"x":0.06,"y":0.58,"w":0.88,"h":0.313}}}
+{"presentation_id":"project-report","operation_id":"op-005","base_revision":4,"slide_id":"page-4","operation":"slot.fill","slots":{"title":"执行架构","subtitle":"基于现有模板"}}
 ```
 
-A native architecture diagram (the engine computes every coordinate of every connector):
-
-```json
-{"presentation_id":"project-report","operation_id":"op-012","base_revision":11,"slide_id":"slide-004","operation":"diagram.add","diagram":{"id":"arch","geometry":{"x":0.06,"y":0.22,"w":0.6,"h":0.68},"preset":"layered","nodes":[{"id":"web","rank":0,"label":"Web 交互层","detail":"任务下达、过程可视"},{"id":"agent","rank":1,"label":"Agent 执行层"},{"id":"tool","rank":2,"label":"Tool 能力层"},{"id":"sandbox","rank":2,"label":"Sandbox"}],"edges":[{"source":"web","target":"agent","relation":"calls"},{"source":"agent","target":"tool","relation":"calls"},{"source":"tool","target":"sandbox","relation":"flows_to","label":"执行"}]}}
-```
-
-Operations: `slide.clone`, `slot.fill`, `chart.replace_data`, `image.replace`, `presentation.recolor`, `slide.add`, `slide.set_layout`, `slide.reorder`, `presentation.set_theme`, `presentation.set_profile`, `element.add_text|shape|image|table|chart|component`, `element.update`, `element.remove`, `element.adjust`, `element.set_style`, `element.apply_preset`, `chart.change_type`, `diagram.add`, `diagram.update`. Prefer the template operations when a manifest slot or source slide exists. Details, capacities and component semantics are in `references/operations.md`, `references/template-rules.md`, `references/layout-rules.md`, `references/design-system.md` and `references/aesthetic-review.md`; the component registry is the authority for ids, versions and parameters.
-
-Template-first authoring:
-
-- Check uploaded files and `list-templates` before creating a deck.
-- Use a matching template instead of a blank Office file.
-- Keep masters, theme, styles, layouts, native graphics and relationships.
-- Clone, fill and adjust. Do not redesign a whole page when a template page already fits.
-- Recolor only through the semantic palette. Do not replace every RGB value.
-- When the template has no suitable structure, use the existing layouts, profiles, native graphics and XML operations.
-- Validate the package after every atomic edit. Render at checkpoints and compare local layout with the template's type, accent, margins and table style.
-- An unverified conversion, a lost format, or a visual difference is not a success. `recolor_complete: false` means say what was left unchanged.
-
-The UI is read-only for content. It shows thumbnails, per-slide technical/integrity/aesthetic status, model findings with severity, region and element IDs, suggestions, re-review, explicit human accept/reject/dismiss, and the deck consistency summary; the formal screenshot is the visual evidence. All final content that can remain native does remain editable; component rasters are declared as such. Removing the feature removes its routes/skill/UI; it does not alter Agent execution or delete generated artifacts.
+Operation names and payloads: `references/operations.md`. Template behavior: `references/template-rules.md`. Layouts, diagrams, components and aesthetic review: `references/layout-rules.md`, `references/design-system.md`, `references/aesthetic-review.md`.

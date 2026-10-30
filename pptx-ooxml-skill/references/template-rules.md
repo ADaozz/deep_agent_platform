@@ -33,6 +33,15 @@ The heuristic is a draft. A `manifest.json` beside the PPTX overrides role and s
 
 `presentation.set_profile` still restyles objects this skill created. It does not replace the template theme, masters, or media.
 
+## Two ways to open a template
+
+- `init --use edit_existing` keeps every sample slide. Use it when the user wants that file edited.
+- `init --use template_reference` records those slides as prototypes. Clone the pages you need, fill them, then `presentation.discard_prototypes`. The delivered file contains only the generated slides.
+
+`effective_palette` is the deck's current color set. Recolor updates it in the same transaction as the PPTX. New native objects use it. The original theme tokens remain available as `template_tokens`.
+
+Logo and brand shapes are recorded from their original name and description before they are given a `da:` id. Protection follows that id through clone and recolor, not the renamed shape.
+
 ## What must remain true
 
 - Masters, layouts, theme parts and image relationships stay in the package.
