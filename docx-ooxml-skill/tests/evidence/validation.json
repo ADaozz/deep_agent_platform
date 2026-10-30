@@ -1,7 +1,7 @@
 {
   "renderer": "LibreOffice Writer",
   "source": "templates/business-report",
-  "pages_after_fill": 4,
+  "pages_after_fill": 8,
   "recolor_complete": false,
   "images": {
     "before.png": {
@@ -19,7 +19,11 @@
     "comparison.png": {
       "sha256": "df6fc471f493931f4f915565e2ab7c2945db1323e654454ed2b5f6a36b61a1fe",
       "bytes": 284144
+    },
+    "final-sheet.png": {
+      "sha256": "c220a31e96975a9d82f9209f70f14a203ee34a8b5e49aafedbad5f95772c55f0",
+      "bytes": 168031
     }
   },
-  "note": "Screenshots are page 1 of a LibreOffice PDF export of the DOCX."
+  "note": "Screenshots are LibreOffice PDF exports of the DOCX. Pagination is engine-driven, not inserted page breaks."
 }

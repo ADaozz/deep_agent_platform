@@ -62,6 +62,32 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _accept(store):
+    with store.locked() as (connection, state):
+        for slide in store.view(connection, state)['manifest']['slides']:
+            state['reviews'][slide['slide_id']] = dict(
+                automatic_passed=True, status='pending', visual_review='pending',
+                revision=state['revision'], content_notes='baseline')
+        store.save_state(connection, state)
+        connection.commit()
+
+
+def _sheet(pages, dest, columns=5):
+    images = [Image.open(path).convert('RGB') for path in pages]
+    width = 240
+    thumbs = [image.resize((width, round(image.height * width / image.width))) for image in images]
+    height = max(thumb.height for thumb in thumbs)
+    rows = (len(thumbs) + columns - 1) // columns
+    canvas = Image.new('RGB', (columns * width + 24, rows * (height + 28) + 24), 'white')
+    drawing = ImageDraw.Draw(canvas)
+    for index, thumb in enumerate(thumbs):
+        row, column = divmod(index, columns)
+        x, y = 12 + column * width, 12 + row * (height + 28)
+        drawing.text((x, y), f'{index + 1:02d}', fill='black')
+        canvas.paste(thumb, (x, y + 16))
+    canvas.save(dest)
+
+
 def main():
     if shutil.which('libreoffice') is None:
         raise SystemExit('LibreOffice is required')
@@ -87,12 +113,29 @@ def main():
         colored_pdf = render_pdf(store.path, root / 'colored')
         save_page(colored_pdf, evidence / 'recolored.png', index=3)
         comparison(evidence / 'before.png', evidence / 'recolored.png', evidence / 'comparison.png')
+        sources = [slide['slide_id'] for slide in store.status()['manifest']['slides'] if slide['slide_id'].startswith('tpl-')]
+        for index in range(10):
+            _accept(store)
+            store.apply_one(dict(presentation_id='deck', operation_id=f'clone-{index}', base_revision=store.status()['revision'],
+                operation='slide.clone', slide_id=f'page-{index + 1}', source_slide_id=sources[index % len(sources)]))
+        store.apply_one(dict(presentation_id='deck', operation_id='discard', base_revision=store.status()['revision'],
+            operation='presentation.discard_prototypes'))
+        delivery_pdf = render_pdf(store.path, root / 'delivery')
+        pages = []
+        thumbs = root / 'thumbs'
+        thumbs.mkdir()
+        for index in range(10):
+            dest = thumbs / f'delivery-{index + 1:02d}.png'
+            save_page(delivery_pdf, dest, index=index)
+            pages.append(dest)
+        _sheet(pages, evidence / 'final-sheet.png')
         report = dict(renderer='LibreOffice Impress', source='templates/consulting-brief',
-            operations=['slot.fill cover', 'presentation.recolor gray'],
+            operations=['slot.fill cover', 'presentation.recolor gray', 'slide.clone x10', 'presentation.discard_prototypes'],
+            slides=[slide['slide_id'] for slide in store.status()['manifest']['slides']],
             images={name: dict(sha256=sha(evidence / name), bytes=(evidence / name).stat().st_size)
-                for name in ('before.png', 'filled.png', 'recolored.png', 'comparison.png')},
+                for name in ('before.png', 'filled.png', 'recolored.png', 'comparison.png', 'final-sheet.png')},
             deck_sha256=sha(store.path), recolor_complete=False,
-            note='before and recolored are the data slide (blue accent bar versus gray). filled is the cover after slot.fill. Logo on the cover stays the original navy. All images are LibreOffice PDF exports.')
+            note='before and recolored are the data slide (blue accent bar versus gray). filled is the cover after slot.fill. final-sheet is the ten generated pages after prototypes were discarded. Logo on the cover stays the original navy. All images are LibreOffice PDF exports.')
         (evidence / 'validation.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         print(evidence)
 

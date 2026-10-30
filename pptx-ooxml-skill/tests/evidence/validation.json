@@ -3,7 +3,21 @@
   "source": "templates/consulting-brief",
   "operations": [
     "slot.fill cover",
-    "presentation.recolor gray"
+    "presentation.recolor gray",
+    "slide.clone x10",
+    "presentation.discard_prototypes"
+  ],
+  "slides": [
+    "page-1",
+    "page-2",
+    "page-3",
+    "page-4",
+    "page-5",
+    "page-6",
+    "page-7",
+    "page-8",
+    "page-9",
+    "page-10"
   ],
   "images": {
     "before.png": {
@@ -21,9 +35,13 @@
     "comparison.png": {
       "sha256": "6fdbe5131f77580ca8f020632e4643c98a6a818b7acb944c8773a0c42a55cb0a",
       "bytes": 29683
+    },
+    "final-sheet.png": {
+      "sha256": "f78c66098d980700cb3a1109bbb45b5fc84efd973a77809c2c8dba3a9c297476",
+      "bytes": 21451
     }
   },
-  "deck_sha256": "5a142dff643a53a300b833155ac5e6a3531111c5b84ad1866af932ac5efbb4a5",
+  "deck_sha256": "296c1b1506c02e90dc11218791b5056ebd9ab495e853af87fde7c63ee5ea2793",
   "recolor_complete": false,
-  "note": "before and recolored are the data slide (blue accent bar versus gray). filled is the cover after slot.fill. Logo on the cover stays the original navy. All images are LibreOffice PDF exports."
+  "note": "before and recolored are the data slide (blue accent bar versus gray). filled is the cover after slot.fill. final-sheet is the ten generated pages after prototypes were discarded. Logo on the cover stays the original navy. All images are LibreOffice PDF exports."
 }
