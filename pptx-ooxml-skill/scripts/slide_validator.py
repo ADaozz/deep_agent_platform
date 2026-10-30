@@ -43,22 +43,24 @@ def validate_package(data):
 
 
 def layout_issues(slide, width_points=960, height_points=540):
+    """Geometry, proven overflow and collision checks. Every issue is an error."""
     issues=[]; elements=slide['elements']
     for element in elements:
         g=element['geometry']; x,y,w,h=(g[k] for k in ('x','y','w','h'))
         if min(x,y)<-.001 or min(w,h)<=0 or x+w>1.001 or y+h>1.001:
-            if element.get('layer') not in ('background','decoration'):issues.append({'type':'out_of_bounds','element_id':element['id']})
+            if element.get('layer') not in ('background','decoration'):issues.append({'type':'out_of_bounds','severity':'error','element_id':element['id']})
         if element['type']=='text' and element.get('text'):
             style=element['style']; size=style['font_size']; font_name=style['font_family']
             try:
                 from PIL import ImageFont
                 result=subprocess.run(['fc-match','-f','%{file}\n%{family}',font_name],capture_output=True,text=True,timeout=5)
                 lines=result.stdout.splitlines(); font=ImageFont.truetype(lines[0],max(1,round(size*2)))
-                if font_name.casefold() not in [f.strip().casefold() for f in lines[1].split(',')]:issues.append({'type':'missing_font','element_id':element['id'],'font':font_name})
+                if font_name.casefold() not in [f.strip().casefold() for f in lines[1].split(',')]:issues.append({'type':'missing_font','severity':'error','element_id':element['id'],'font':font_name})
                 usable=max(1,w*width_points*2-12)
                 count=sum(max(1,math.ceil(font.getlength(line)/usable)) for line in element['text'].split('\n'))
-                if count*size*1.22>h*height_points-4:issues.append({'type':'text_overflow','element_id':element['id']})
-            except (OSError,IndexError,ValueError):issues.append({'type':'font_measurement_unavailable','element_id':element['id']})
+                line_height=float(style.get('line_height',1.22) or 1.22)
+                if count*size*line_height>h*height_points-4:issues.append({'type':'text_overflow','severity':'error','element_id':element['id']})
+            except (OSError,IndexError,ValueError):issues.append({'type':'font_measurement_unavailable','severity':'error','element_id':element['id']})
     for i,a in enumerate(elements):
         if a.get('layer') in ('background','decoration') or a['type']=='complex':continue
         for b in elements[i+1:]:
@@ -66,5 +68,5 @@ def layout_issues(slide, width_points=960, height_points=540):
             if a.get('overlap_group') and a.get('overlap_group')==b.get('overlap_group'):continue
             x,y,w,h=(a['geometry'][k] for k in ('x','y','w','h')); X,Y,W,H=(b['geometry'][k] for k in ('x','y','w','h'))
             area=max(0,min(x+w,X+W)-max(x,X))*max(0,min(y+h,Y+H)-max(y,Y))
-            if area>min(w*h,W*H)*.03:issues.append({'type':'unexpected_overlap','elements':[a['id'],b['id']]})
+            if area>min(w*h,W*H)*.03:issues.append({'type':'unexpected_overlap','severity':'error','elements':[a['id'],b['id']]})
     return issues

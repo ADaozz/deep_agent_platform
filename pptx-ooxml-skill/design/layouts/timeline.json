@@ -1,0 +1,466 @@
+{
+  "schema": 1,
+  "id": "timeline",
+  "version": "1.0.0",
+  "intent": "timeline",
+  "name": {
+    "zh": "时间线",
+    "en": "Timeline"
+  },
+  "purpose": "Three to five sequential phases on one axis with a shared detail band.",
+  "density": "balanced",
+  "blocks": {
+    "min": 3,
+    "max": 6
+  },
+  "modules": {
+    "min": 3,
+    "max": 5
+  },
+  "tags": [
+    "roadmap",
+    "phases",
+    "sequence"
+  ],
+  "default_variant": "4",
+  "slots": {
+    "title": {
+      "rect": [
+        0.06,
+        0.06,
+        0.88,
+        0.12
+      ],
+      "accepts": [
+        "text"
+      ],
+      "role": "title",
+      "style": "slide_title",
+      "capacity": {
+        "chars": 70,
+        "lines": 2
+      }
+    },
+    "phase1": {
+      "rect": [
+        0.06,
+        0.35,
+        0.2,
+        0.22
+      ],
+      "accepts": [
+        "text",
+        "component"
+      ],
+      "role": "module",
+      "style": "card_title",
+      "capacity": {
+        "chars": 60,
+        "lines": 3
+      }
+    },
+    "phase2": {
+      "rect": [
+        0.29,
+        0.35,
+        0.2,
+        0.22
+      ],
+      "accepts": [
+        "text",
+        "component"
+      ],
+      "role": "module",
+      "style": "card_title",
+      "capacity": {
+        "chars": 60,
+        "lines": 3
+      }
+    },
+    "phase3": {
+      "rect": [
+        0.52,
+        0.35,
+        0.2,
+        0.22
+      ],
+      "accepts": [
+        "text",
+        "component"
+      ],
+      "role": "module",
+      "style": "card_title",
+      "capacity": {
+        "chars": 60,
+        "lines": 3
+      }
+    },
+    "phase4": {
+      "rect": [
+        0.75,
+        0.35,
+        0.2,
+        0.22
+      ],
+      "accepts": [
+        "text",
+        "component"
+      ],
+      "role": "module",
+      "style": "card_title",
+      "capacity": {
+        "chars": 60,
+        "lines": 3
+      }
+    },
+    "axis": {
+      "rect": [
+        0.06,
+        0.3,
+        0.88,
+        0.02
+      ],
+      "accepts": [
+        "shape",
+        "component"
+      ],
+      "role": "decoration",
+      "style": "caption",
+      "capacity": {
+        "chars": 0,
+        "lines": 0
+      }
+    },
+    "detail": {
+      "rect": [
+        0.06,
+        0.62,
+        0.88,
+        0.2
+      ],
+      "accepts": [
+        "text"
+      ],
+      "role": "body",
+      "style": "body_small",
+      "capacity": {
+        "chars": 260,
+        "lines": 4
+      }
+    },
+    "footer": {
+      "rect": [
+        0.06,
+        0.92,
+        0.88,
+        0.04
+      ],
+      "accepts": [
+        "text"
+      ],
+      "role": "footer",
+      "style": "caption",
+      "capacity": {
+        "chars": 90,
+        "lines": 1
+      },
+      "absolute": true
+    }
+  },
+  "variants": {
+    "3": {
+      "modules": 3,
+      "slots": {
+        "title": {
+          "rect": [
+            0.06,
+            0.06,
+            0.88,
+            0.12
+          ],
+          "accepts": [
+            "text"
+          ],
+          "role": "title",
+          "style": "slide_title",
+          "capacity": {
+            "chars": 70,
+            "lines": 2
+          }
+        },
+        "phase1": {
+          "rect": [
+            0.06,
+            0.35,
+            0.26,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 70,
+            "lines": 3
+          }
+        },
+        "phase2": {
+          "rect": [
+            0.37,
+            0.35,
+            0.26,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 70,
+            "lines": 3
+          }
+        },
+        "phase3": {
+          "rect": [
+            0.68,
+            0.35,
+            0.26,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 70,
+            "lines": 3
+          }
+        },
+        "axis": {
+          "rect": [
+            0.06,
+            0.3,
+            0.88,
+            0.02
+          ],
+          "accepts": [
+            "shape",
+            "component"
+          ],
+          "role": "decoration",
+          "style": "caption",
+          "capacity": {
+            "chars": 0,
+            "lines": 0
+          }
+        },
+        "detail": {
+          "rect": [
+            0.06,
+            0.62,
+            0.88,
+            0.2
+          ],
+          "accepts": [
+            "text"
+          ],
+          "role": "body",
+          "style": "body_small",
+          "capacity": {
+            "chars": 260,
+            "lines": 4
+          }
+        },
+        "footer": {
+          "rect": [
+            0.06,
+            0.92,
+            0.88,
+            0.04
+          ],
+          "accepts": [
+            "text"
+          ],
+          "role": "footer",
+          "style": "caption",
+          "capacity": {
+            "chars": 90,
+            "lines": 1
+          },
+          "absolute": true
+        }
+      }
+    },
+    "5": {
+      "modules": 5,
+      "slots": {
+        "title": {
+          "rect": [
+            0.06,
+            0.06,
+            0.88,
+            0.12
+          ],
+          "accepts": [
+            "text"
+          ],
+          "role": "title",
+          "style": "slide_title",
+          "capacity": {
+            "chars": 70,
+            "lines": 2
+          }
+        },
+        "phase1": {
+          "rect": [
+            0.06,
+            0.35,
+            0.15,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 48,
+            "lines": 3
+          }
+        },
+        "phase2": {
+          "rect": [
+            0.24,
+            0.35,
+            0.15,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 48,
+            "lines": 3
+          }
+        },
+        "phase3": {
+          "rect": [
+            0.42,
+            0.35,
+            0.15,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 48,
+            "lines": 3
+          }
+        },
+        "phase4": {
+          "rect": [
+            0.6,
+            0.35,
+            0.15,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 48,
+            "lines": 3
+          }
+        },
+        "phase5": {
+          "rect": [
+            0.78,
+            0.35,
+            0.15,
+            0.22
+          ],
+          "accepts": [
+            "text",
+            "component"
+          ],
+          "role": "module",
+          "style": "card_title",
+          "capacity": {
+            "chars": 48,
+            "lines": 3
+          }
+        },
+        "axis": {
+          "rect": [
+            0.06,
+            0.3,
+            0.88,
+            0.02
+          ],
+          "accepts": [
+            "shape",
+            "component"
+          ],
+          "role": "decoration",
+          "style": "caption",
+          "capacity": {
+            "chars": 0,
+            "lines": 0
+          }
+        },
+        "detail": {
+          "rect": [
+            0.06,
+            0.62,
+            0.88,
+            0.2
+          ],
+          "accepts": [
+            "text"
+          ],
+          "role": "body",
+          "style": "body_small",
+          "capacity": {
+            "chars": 260,
+            "lines": 4
+          }
+        },
+        "footer": {
+          "rect": [
+            0.06,
+            0.92,
+            0.88,
+            0.04
+          ],
+          "accepts": [
+            "text"
+          ],
+          "role": "footer",
+          "style": "caption",
+          "capacity": {
+            "chars": 90,
+            "lines": 1
+          },
+          "absolute": true
+        }
+      }
+    }
+  }
+}

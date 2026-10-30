@@ -1,0 +1,1741 @@
+{
+ "schema": 1,
+ "version": "1.0.0",
+ "canvas": {
+  "width": 1600,
+  "height": 900
+ },
+ "license": "Original geometric artwork authored for this project. Sample labels are placeholders only.",
+ "previews": "previews",
+ "compatibility": {
+  "renderer": "mupdf-svg",
+  "fallback": "png",
+  "powerpoint": "2016+ asvg:svgBlip with PNG fallback",
+  "libreoffice": "PNG fallback"
+ },
+ "safety": {
+  "validator": "component_validator.validate_svg",
+  "external_references": false,
+  "scripts": false,
+  "embedded_text": false,
+  "embedded_media": false,
+  "max_source_bytes": 262144
+ },
+ "editing": {
+  "text": "declared text_slots are inserted as native editable text boxes with stable child ids",
+  "graphics": "reviewed SVG paths are rasterised/embedded as a picture and are never editable at runtime"
+ },
+ "components": [
+  {
+   "component_id": "process.chevron_flow",
+   "version": "1.0.0",
+   "name": {
+    "zh": "箭头流程",
+    "en": "Chevron flow"
+   },
+   "category": "process",
+   "intents": [
+    "process",
+    "sequence"
+   ],
+   "tags": [
+    "flow",
+    "steps",
+    "delivery"
+   ],
+   "canvas": {
+    "width": 1600,
+    "height": 320
+   },
+   "aspect_ratio": 5.0,
+   "min_size_in": {
+    "w": 9.0,
+    "h": 1.8
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "accent_soft",
+    "border"
+   ],
+   "params": {
+    "steps": {
+     "type": "enum",
+     "values": [
+      3,
+      4,
+      5
+     ],
+     "default": 4
+    }
+   },
+   "variant_param": "steps",
+   "variants": {
+    "3": {
+     "svg": "process/chevron_flow_3.svg",
+     "preview": "process/chevron_flow_3.png",
+     "text_slots": {
+      "step1": {
+       "rect": [
+        70.0,
+        96,
+        393.33,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step2": {
+       "rect": [
+        603.33,
+        96,
+        393.33,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step3": {
+       "rect": [
+        1136.67,
+        96,
+        393.33,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      }
+     }
+    },
+    "4": {
+     "svg": "process/chevron_flow_4.svg",
+     "preview": "process/chevron_flow_4.png",
+     "text_slots": {
+      "step1": {
+       "rect": [
+        70.0,
+        96,
+        260.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step2": {
+       "rect": [
+        470.0,
+        96,
+        260.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step3": {
+       "rect": [
+        870.0,
+        96,
+        260.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step4": {
+       "rect": [
+        1270.0,
+        96,
+        260.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      }
+     }
+    },
+    "5": {
+     "svg": "process/chevron_flow_5.svg",
+     "preview": "process/chevron_flow_5.png",
+     "text_slots": {
+      "step1": {
+       "rect": [
+        70.0,
+        96,
+        180.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step2": {
+       "rect": [
+        390.0,
+        96,
+        180.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step3": {
+       "rect": [
+        710.0,
+        96,
+        180.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step4": {
+       "rect": [
+        1030.0,
+        96,
+        180.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      },
+      "step5": {
+       "rect": [
+        1350.0,
+        96,
+        180.0,
+        128
+       ],
+       "style": "body_small",
+       "chars": 30,
+       "lines": 2,
+       "align": "center"
+      }
+     }
+    }
+   },
+   "usage": "Sequential delivery or hand-off steps. Labels are native text and stay editable."
+  },
+  {
+   "component_id": "process.timeline_rail",
+   "version": "1.0.0",
+   "name": {
+    "zh": "时间轴",
+    "en": "Timeline rail"
+   },
+   "category": "process",
+   "intents": [
+    "timeline",
+    "roadmap"
+   ],
+   "tags": [
+    "roadmap",
+    "phases",
+    "sequence"
+   ],
+   "canvas": {
+    "width": 1600,
+    "height": 300
+   },
+   "aspect_ratio": 5.333333,
+   "min_size_in": {
+    "w": 10.0,
+    "h": 1.875
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "accent_soft",
+    "border"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "process/timeline_rail.svg",
+     "preview": "process/timeline_rail.png",
+     "text_slots": {
+      "phase1": {
+       "rect": [
+        0,
+        190,
+        260,
+        80
+       ],
+       "style": "body_small",
+       "chars": 8,
+       "lines": 1,
+       "align": "center"
+      },
+      "phase2": {
+       "rect": [
+        423.33,
+        190,
+        260,
+        80
+       ],
+       "style": "body_small",
+       "chars": 8,
+       "lines": 1,
+       "align": "center"
+      },
+      "phase3": {
+       "rect": [
+        916.67,
+        190,
+        260,
+        80
+       ],
+       "style": "body_small",
+       "chars": 8,
+       "lines": 1,
+       "align": "center"
+      },
+      "phase4": {
+       "rect": [
+        1340,
+        190,
+        260,
+        80
+       ],
+       "style": "body_small",
+       "chars": 8,
+       "lines": 1,
+       "align": "center"
+      }
+     }
+    }
+   },
+   "usage": "Four-phase roadmap rail; phase labels are native text."
+  },
+  {
+   "component_id": "process.funnel",
+   "version": "1.0.0",
+   "name": {
+    "zh": "漏斗",
+    "en": "Funnel"
+   },
+   "category": "process",
+   "intents": [
+    "process",
+    "conversion"
+   ],
+   "tags": [
+    "funnel",
+    "stages",
+    "conversion"
+   ],
+   "canvas": {
+    "width": 1200,
+    "height": 760
+   },
+   "aspect_ratio": 1.578947,
+   "min_size_in": {
+    "w": 4.5,
+    "h": 2.85
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "accent_soft",
+    "border"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "process/funnel.svg",
+     "preview": "process/funnel.png",
+     "text_slots": {
+      "stage1": {
+       "rect": [
+        770,
+        80,
+        380,
+        80
+       ],
+       "style": "body_small",
+       "chars": 7,
+       "lines": 1,
+       "align": "left"
+      },
+      "stage2": {
+       "rect": [
+        770,
+        254,
+        380,
+        80
+       ],
+       "style": "body_small",
+       "chars": 7,
+       "lines": 1,
+       "align": "left"
+      },
+      "stage3": {
+       "rect": [
+        770,
+        428,
+        380,
+        80
+       ],
+       "style": "body_small",
+       "chars": 7,
+       "lines": 1,
+       "align": "left"
+      },
+      "stage4": {
+       "rect": [
+        770,
+        602,
+        380,
+        80
+       ],
+       "style": "body_small",
+       "chars": 7,
+       "lines": 1,
+       "align": "left"
+      }
+     }
+    }
+   },
+   "usage": "Four narrowing stages with native labels on the right."
+  },
+  {
+   "component_id": "architecture.layer_stack",
+   "version": "1.0.0",
+   "name": {
+    "zh": "分层架构",
+    "en": "Layer stack"
+   },
+   "category": "architecture",
+   "intents": [
+    "architecture",
+    "layers"
+   ],
+   "tags": [
+    "layers",
+    "platform",
+    "stack"
+   ],
+   "canvas": {
+    "width": 1000,
+    "height": 800
+   },
+   "aspect_ratio": 1.25,
+   "min_size_in": {
+    "w": 5.0,
+    "h": 4.0
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "surface",
+    "border"
+   ],
+   "params": {
+    "layers": {
+     "type": "enum",
+     "values": [
+      3,
+      4
+     ],
+     "default": 4
+    }
+   },
+   "variant_param": "layers",
+   "variants": {
+    "3": {
+     "svg": "architecture/layer_stack_3.svg",
+     "preview": "architecture/layer_stack_3.png",
+     "text_slots": {
+      "layer1": {
+       "rect": [
+        116,
+        125,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      },
+      "layer2": {
+       "rect": [
+        116,
+        345,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      },
+      "layer3": {
+       "rect": [
+        116,
+        565,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      }
+     }
+    },
+    "4": {
+     "svg": "architecture/layer_stack_4.svg",
+     "preview": "architecture/layer_stack_4.png",
+     "text_slots": {
+      "layer1": {
+       "rect": [
+        116,
+        105,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      },
+      "layer2": {
+       "rect": [
+        116,
+        277,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      },
+      "layer3": {
+       "rect": [
+        116,
+        449,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      },
+      "layer4": {
+       "rect": [
+        116,
+        621,
+        724,
+        80
+       ],
+       "style": "body_small",
+       "chars": 18,
+       "lines": 1,
+       "align": "left"
+      }
+     }
+    }
+   },
+   "usage": "Three or four stacked platform layers with native layer names."
+  },
+  {
+   "component_id": "architecture.hub_spoke",
+   "version": "1.0.0",
+   "name": {
+    "zh": "中心辐射",
+    "en": "Hub and spoke"
+   },
+   "category": "architecture",
+   "intents": [
+    "architecture",
+    "system"
+   ],
+   "tags": [
+    "hub",
+    "integration",
+    "system"
+   ],
+   "canvas": {
+    "width": 1000,
+    "height": 800
+   },
+   "aspect_ratio": 1.25,
+   "min_size_in": {
+    "w": 4.2,
+    "h": 3.36
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "accent_soft",
+    "surface",
+    "border"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "architecture/hub_spoke.svg",
+     "preview": "architecture/hub_spoke.png",
+     "text_slots": {
+      "center": {
+       "rect": [
+        380,
+        370,
+        240,
+        70
+       ],
+       "style": "body",
+       "chars": 6,
+       "lines": 1,
+       "align": "center"
+      },
+      "node1": {
+       "rect": [
+        60,
+        116,
+        200,
+        40
+       ],
+       "style": "caption",
+       "chars": 6,
+       "lines": 1,
+       "align": "center"
+      },
+      "node2": {
+       "rect": [
+        740,
+        116,
+        200,
+        40
+       ],
+       "style": "caption",
+       "chars": 6,
+       "lines": 1,
+       "align": "center"
+      },
+      "node3": {
+       "rect": [
+        60,
+        636,
+        200,
+        40
+       ],
+       "style": "caption",
+       "chars": 6,
+       "lines": 1,
+       "align": "center"
+      },
+      "node4": {
+       "rect": [
+        740,
+        636,
+        200,
+        40
+       ],
+       "style": "caption",
+       "chars": 6,
+       "lines": 1,
+       "align": "center"
+      }
+     }
+    }
+   },
+   "usage": "One core platform with four connected capabilities."
+  },
+  {
+   "component_id": "bento.metric_tile",
+   "version": "1.0.0",
+   "name": {
+    "zh": "指标卡",
+    "en": "Metric tile"
+   },
+   "category": "bento",
+   "intents": [
+    "kpi",
+    "metrics"
+   ],
+   "tags": [
+    "metric",
+    "kpi",
+    "card"
+   ],
+   "canvas": {
+    "width": 800,
+    "height": 600
+   },
+   "aspect_ratio": 1.333333,
+   "min_size_in": {
+    "w": 3.2,
+    "h": 2.4
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "card",
+    "border",
+    "accent",
+    "accent_soft"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "bento/metric_tile.svg",
+     "preview": "bento/metric_tile.png",
+     "text_slots": {
+      "value": {
+       "rect": [
+        48,
+        118,
+        700,
+        180
+       ],
+       "style": "metric",
+       "chars": 6,
+       "lines": 1,
+       "align": "left"
+      },
+      "label": {
+       "rect": [
+        48,
+        330,
+        600,
+        60
+       ],
+       "style": "metric_label",
+       "chars": 14,
+       "lines": 1,
+       "align": "left"
+      }
+     }
+    }
+   },
+   "usage": "KPI card surface with a native value and label slot."
+  },
+  {
+   "component_id": "bento.tile_frame",
+   "version": "1.0.0",
+   "name": {
+    "zh": "模块卡片框",
+    "en": "Tile frame"
+   },
+   "category": "bento",
+   "intents": [
+    "modules",
+    "features"
+   ],
+   "tags": [
+    "card",
+    "frame",
+    "bento"
+   ],
+   "canvas": {
+    "width": 800,
+    "height": 600
+   },
+   "aspect_ratio": 1.333333,
+   "min_size_in": {
+    "w": 1.5,
+    "h": 1.125
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "surface",
+    "border",
+    "accent"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "bento/tile_frame.svg",
+     "preview": "bento/tile_frame.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Neutral Bento card frame; add native text inside."
+  },
+  {
+   "component_id": "infographic.progress_bar",
+   "version": "1.0.0",
+   "name": {
+    "zh": "进度条",
+    "en": "Progress bar"
+   },
+   "category": "infographic",
+   "intents": [
+    "kpi",
+    "data"
+   ],
+   "tags": [
+    "progress",
+    "ratio",
+    "metric"
+   ],
+   "canvas": {
+    "width": 1200,
+    "height": 80
+   },
+   "aspect_ratio": 15.0,
+   "min_size_in": {
+    "w": 3.0,
+    "h": 0.2
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "border"
+   ],
+   "params": {
+    "percent": {
+     "type": "integer",
+     "min": 0,
+     "max": 100,
+     "default": 60,
+     "scale": {
+      "extent": 1200,
+      "offset": 0,
+      "min_px": 8
+     }
+    },
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "infographic/progress_bar.svg",
+     "preview": "infographic/progress_bar.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "A single reported ratio; percent must be the real value, not decoration."
+  },
+  {
+   "component_id": "infographic.legend_panel",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图例面板",
+    "en": "Legend panel"
+   },
+   "category": "infographic",
+   "intents": [
+    "data",
+    "legend"
+   ],
+   "tags": [
+    "legend",
+    "chart",
+    "series"
+   ],
+   "canvas": {
+    "width": 600,
+    "height": 480
+   },
+   "aspect_ratio": 1.25,
+   "min_size_in": {
+    "w": 3.2,
+    "h": 2.56
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "border",
+    "series1",
+    "series2",
+    "series3",
+    "series4"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "infographic/legend_panel.svg",
+     "preview": "infographic/legend_panel.png",
+     "text_slots": {
+      "item1": {
+       "rect": [
+        90,
+        36,
+        450,
+        40
+       ],
+       "style": "caption",
+       "chars": 16,
+       "lines": 1,
+       "align": "left"
+      },
+      "item2": {
+       "rect": [
+        90,
+        136,
+        450,
+        40
+       ],
+       "style": "caption",
+       "chars": 16,
+       "lines": 1,
+       "align": "left"
+      },
+      "item3": {
+       "rect": [
+        90,
+        236,
+        450,
+        40
+       ],
+       "style": "caption",
+       "chars": 16,
+       "lines": 1,
+       "align": "left"
+      },
+      "item4": {
+       "rect": [
+        90,
+        336,
+        450,
+        40
+       ],
+       "style": "caption",
+       "chars": 16,
+       "lines": 1,
+       "align": "left"
+      }
+     }
+    }
+   },
+   "usage": "Four-series legend matching the profile chart palette; labels are native."
+  },
+  {
+   "component_id": "infographic.stat_strip",
+   "version": "1.0.0",
+   "name": {
+    "zh": "指标条",
+    "en": "Stat strip"
+   },
+   "category": "infographic",
+   "intents": [
+    "kpi",
+    "data"
+   ],
+   "tags": [
+    "metrics",
+    "headline",
+    "strip"
+   ],
+   "canvas": {
+    "width": 1600,
+    "height": 280
+   },
+   "aspect_ratio": 5.714286,
+   "min_size_in": {
+    "w": 10.0,
+    "h": 1.75
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent",
+    "border"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "infographic/stat_strip.svg",
+     "preview": "infographic/stat_strip.png",
+     "text_slots": {
+      "value1": {
+       "rect": [
+        40,
+        74,
+        453,
+        104
+       ],
+       "style": "metric",
+       "chars": 6,
+       "lines": 1,
+       "align": "left"
+      },
+      "label1": {
+       "rect": [
+        40,
+        186,
+        453,
+        56
+       ],
+       "style": "metric_label",
+       "chars": 14,
+       "lines": 1,
+       "align": "left"
+      },
+      "value2": {
+       "rect": [
+        573,
+        74,
+        453,
+        104
+       ],
+       "style": "metric",
+       "chars": 6,
+       "lines": 1,
+       "align": "left"
+      },
+      "label2": {
+       "rect": [
+        573,
+        186,
+        453,
+        56
+       ],
+       "style": "metric_label",
+       "chars": 14,
+       "lines": 1,
+       "align": "left"
+      },
+      "value3": {
+       "rect": [
+        1106,
+        74,
+        453,
+        104
+       ],
+       "style": "metric",
+       "chars": 6,
+       "lines": 1,
+       "align": "left"
+      },
+      "label3": {
+       "rect": [
+        1106,
+        186,
+        453,
+        56
+       ],
+       "style": "metric_label",
+       "chars": 14,
+       "lines": 1,
+       "align": "left"
+      }
+     }
+    }
+   },
+   "usage": "Three headline metrics with native values and labels."
+  },
+  {
+   "component_id": "illustration.tech_grid",
+   "version": "1.0.0",
+   "name": {
+    "zh": "科技网格",
+    "en": "Technology grid"
+   },
+   "category": "illustration",
+   "intents": [
+    "background",
+    "cover"
+   ],
+   "tags": [
+    "background",
+    "grid",
+    "technology"
+   ],
+   "canvas": {
+    "width": 1600,
+    "height": 900
+   },
+   "aspect_ratio": 1.777778,
+   "min_size_in": {
+    "w": 6.0,
+    "h": 3.375
+   },
+   "layer": "background",
+   "baked_text": false,
+   "tokens": [
+    "border",
+    "accent"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "illustration/tech_grid.svg",
+     "preview": "illustration/tech_grid.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Low-contrast background grid; declare layer background to allow text on top."
+  },
+  {
+   "component_id": "illustration.dot_matrix",
+   "version": "1.0.0",
+   "name": {
+    "zh": "点阵",
+    "en": "Dot matrix"
+   },
+   "category": "illustration",
+   "intents": [
+    "background",
+    "section"
+   ],
+   "tags": [
+    "dots",
+    "matrix",
+    "background"
+   ],
+   "canvas": {
+    "width": 800,
+    "height": 600
+   },
+   "aspect_ratio": 1.333333,
+   "min_size_in": {
+    "w": 2.4,
+    "h": 1.8
+   },
+   "layer": "decoration",
+   "baked_text": false,
+   "tokens": [
+    "muted",
+    "accent"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "illustration/dot_matrix.svg",
+     "preview": "illustration/dot_matrix.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Decorative dot matrix for quiet sections."
+  },
+  {
+   "component_id": "illustration.wave_accent",
+   "version": "1.0.0",
+   "name": {
+    "zh": "波浪装饰",
+    "en": "Accent waves"
+   },
+   "category": "illustration",
+   "intents": [
+    "background",
+    "cover"
+   ],
+   "tags": [
+    "wave",
+    "accent",
+    "background"
+   ],
+   "canvas": {
+    "width": 1600,
+    "height": 400
+   },
+   "aspect_ratio": 4.0,
+   "min_size_in": {
+    "w": 6.0,
+    "h": 1.5
+   },
+   "layer": "decoration",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {},
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "illustration/wave_accent.svg",
+     "preview": "illustration/wave_accent.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Bottom accent waves for covers and dividers."
+  },
+  {
+   "component_id": "icons.check",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 check",
+    "en": "Icon check"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "check"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/check.svg",
+     "preview": "icons/check.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.arrow_right",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 arrow_right",
+    "en": "Icon arrow_right"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "arrow_right"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/arrow_right.svg",
+     "preview": "icons/arrow_right.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.target",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 target",
+    "en": "Icon target"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "target"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/target.svg",
+     "preview": "icons/target.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.shield",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 shield",
+    "en": "Icon shield"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "shield"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/shield.svg",
+     "preview": "icons/shield.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.chart_up",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 chart_up",
+    "en": "Icon chart_up"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "chart_up"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/chart_up.svg",
+     "preview": "icons/chart_up.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.cloud",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 cloud",
+    "en": "Icon cloud"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "cloud"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/cloud.svg",
+     "preview": "icons/cloud.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.users",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 users",
+    "en": "Icon users"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "users"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/users.svg",
+     "preview": "icons/users.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.clock",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 clock",
+    "en": "Icon clock"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "clock"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/clock.svg",
+     "preview": "icons/clock.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.lock",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 lock",
+    "en": "Icon lock"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "lock"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/lock.svg",
+     "preview": "icons/lock.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.spark",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 spark",
+    "en": "Icon spark"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "spark"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/spark.svg",
+     "preview": "icons/spark.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.layers",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 layers",
+    "en": "Icon layers"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "layers"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/layers.svg",
+     "preview": "icons/layers.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  },
+  {
+   "component_id": "icons.settings",
+   "version": "1.0.0",
+   "name": {
+    "zh": "图标 settings",
+    "en": "Icon settings"
+   },
+   "category": "icons",
+   "intents": [
+    "icon",
+    "accent"
+   ],
+   "tags": [
+    "icon",
+    "settings"
+   ],
+   "canvas": {
+    "width": 24,
+    "height": 24
+   },
+   "aspect_ratio": 1.0,
+   "min_size_in": {
+    "w": 0.3,
+    "h": 0.3
+   },
+   "layer": "content",
+   "baked_text": false,
+   "tokens": [
+    "accent"
+   ],
+   "params": {
+    "color": {
+     "type": "color_token",
+     "default": "accent"
+    }
+   },
+   "variant_param": null,
+   "variants": {
+    "default": {
+     "svg": "icons/settings.svg",
+     "preview": "icons/settings.png",
+     "text_slots": {}
+    }
+   },
+   "usage": "Small native-resolution accent icon."
+  }
+ ]
+}

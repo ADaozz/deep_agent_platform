@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "hero",
+  "version": "1.0.0",
+  "intent": "cover",
+  "name": {"zh": "主视觉", "en": "Hero"},
+  "purpose": "Cover variant with a dedicated visual or component column and a small kicker.",
+  "density": "minimal",
+  "blocks": {"min": 2, "max": 4},
+  "modules": {"min": 0, "max": 1},
+  "tags": ["opening", "visual", "keynote"],
+  "slots": {
+    "kicker": {"rect": [0.08, 0.12, 0.5, 0.06], "accepts": ["text"], "role": "kicker", "style": "kicker", "capacity": {"chars": 40, "lines": 1}},
+    "title": {"rect": [0.06, 0.2, 0.62, 0.34], "accepts": ["text"], "role": "title", "style": "cover_title", "capacity": {"chars": 40, "lines": 2}},
+    "subtitle": {"rect": [0.06, 0.56, 0.55, 0.14], "accepts": ["text"], "role": "body", "style": "body", "capacity": {"chars": 100, "lines": 3}},
+    "visual": {"rect": [0.68, 0.12, 0.26, 0.72], "accepts": ["image", "component", "chart"], "role": "visual", "style": "body", "capacity": {"chars": 0, "lines": 0}},
+    "footer": {"rect": [0.06, 0.9, 0.88, 0.05], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  }
+}

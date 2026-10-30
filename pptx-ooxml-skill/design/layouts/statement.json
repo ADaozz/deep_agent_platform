@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "statement",
+  "version": "1.0.0",
+  "intent": "statement",
+  "name": {"zh": "核心论断", "en": "Statement"},
+  "purpose": "A single decisive sentence with optional support; no competing modules.",
+  "density": "minimal",
+  "blocks": {"min": 1, "max": 2},
+  "modules": {"min": 0, "max": 0},
+  "tags": ["takeaway", "keynote", "one-idea"],
+  "slots": {
+    "statement": {"rect": [0.1, 0.3, 0.8, 0.3], "accepts": ["text"], "role": "statement", "style": "statement", "capacity": {"chars": 90, "lines": 3}},
+    "support": {"rect": [0.1, 0.64, 0.7, 0.12], "accepts": ["text"], "role": "body", "style": "body_small", "capacity": {"chars": 120, "lines": 3}},
+    "footer": {"rect": [0.1, 0.9, 0.8, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 80, "lines": 1}, "absolute": true}
+  }
+}

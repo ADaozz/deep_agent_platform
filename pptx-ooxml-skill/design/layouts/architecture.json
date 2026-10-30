@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "architecture",
+  "version": "1.0.0",
+  "intent": "architecture",
+  "name": {"zh": "分层架构", "en": "Architecture"},
+  "purpose": "Three or four stacked layers with a side explanation for system and stack diagrams.",
+  "density": "balanced",
+  "blocks": {"min": 3, "max": 5},
+  "modules": {"min": 3, "max": 4},
+  "tags": ["system", "layers", "platform"],
+  "default_variant": "4",
+  "slots": {
+    "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+    "layer1": {"rect": [0.06, 0.22, 0.6, 0.14], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+    "layer2": {"rect": [0.06, 0.39, 0.6, 0.14], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+    "layer3": {"rect": [0.06, 0.56, 0.6, 0.14], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+    "layer4": {"rect": [0.06, 0.73, 0.6, 0.14], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+    "side": {"rect": [0.7, 0.22, 0.24, 0.6], "accepts": ["text"], "role": "body", "style": "body_small", "capacity": {"chars": 300, "lines": 12}},
+    "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  },
+  "variants": {
+    "3": {"modules": 3, "slots": {
+      "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+      "layer1": {"rect": [0.06, 0.26, 0.6, 0.16], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+      "layer2": {"rect": [0.06, 0.44, 0.6, 0.16], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+      "layer3": {"rect": [0.06, 0.62, 0.6, 0.16], "accepts": ["text", "component"], "role": "module", "style": "body", "capacity": {"chars": 100, "lines": 2}},
+      "side": {"rect": [0.7, 0.26, 0.24, 0.56], "accepts": ["text"], "role": "body", "style": "body_small", "capacity": {"chars": 300, "lines": 12}},
+      "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+    }}
+  }
+}

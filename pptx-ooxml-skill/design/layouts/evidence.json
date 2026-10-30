@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "evidence",
+  "version": "1.0.0",
+  "intent": "evidence",
+  "name": {"zh": "结论与证据", "en": "Evidence"},
+  "purpose": "Consulting-style takeaway headline, one exhibit and the supporting reading.",
+  "density": "balanced",
+  "blocks": {"min": 2, "max": 4},
+  "modules": {"min": 0, "max": 1},
+  "tags": ["takeaway", "exhibit", "analysis"],
+  "slots": {
+    "title": {"rect": [0.06, 0.06, 0.88, 0.14], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 90, "lines": 2}},
+    "chart": {"rect": [0.06, 0.22, 0.54, 0.6], "accepts": ["chart", "table", "image", "component"], "role": "chart", "style": "body", "capacity": {"chars": 0, "lines": 0}},
+    "findings": {"rect": [0.63, 0.24, 0.31, 0.56], "accepts": ["text", "component"], "role": "body", "style": "body_small", "capacity": {"chars": 520, "lines": 14}},
+    "source": {"rect": [0.06, 0.85, 0.54, 0.05], "accepts": ["text"], "role": "caption", "style": "caption", "capacity": {"chars": 100, "lines": 2}},
+    "footer": {"rect": [0.06, 0.94, 0.88, 0.03], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  }
+}

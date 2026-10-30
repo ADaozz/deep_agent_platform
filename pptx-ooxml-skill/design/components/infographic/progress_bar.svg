@@ -1,0 +1,1 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="80" viewBox="0 0 1200 80" role="img" aria-label="infographic / progress bar"><title>infographic / progress bar</title><rect x="0" y="26" width="1200" height="30" rx="15" fill="{{border}}" fill-opacity="0.4"/><rect x="0" y="26" width="{{px:percent}}" height="30" rx="15" fill="{{c:color}}"/></svg>

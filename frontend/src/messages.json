@@ -1275,6 +1275,26 @@
     "zh": "检查正式渲染截图",
     "en": "Inspect formal screenshot"
   },
+  "pptx.layout": {
+    "zh": "版式",
+    "en": "Layout"
+  },
+  "pptx.profile": {
+    "zh": "设计风格",
+    "en": "Profile"
+  },
+  "pptx.errors": {
+    "zh": "错误",
+    "en": "Errors"
+  },
+  "pptx.warnings": {
+    "zh": "警告",
+    "en": "Warnings"
+  },
+  "pptx.advisories": {
+    "zh": "建议",
+    "en": "Advisories"
+  },
   "Features": {
     "zh": "扩展功能",
     "en": "Features"

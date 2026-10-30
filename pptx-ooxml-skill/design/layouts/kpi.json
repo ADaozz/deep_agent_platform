@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "id": "kpi",
+  "version": "1.0.0",
+  "intent": "kpi",
+  "name": {"zh": "指标卡", "en": "KPI cards"},
+  "purpose": "Three or four headline metrics with labels and one supporting note or exhibit.",
+  "density": "balanced",
+  "blocks": {"min": 3, "max": 9},
+  "modules": {"min": 3, "max": 4},
+  "tags": ["metrics", "kpi", "dashboard"],
+  "default_variant": "4",
+  "slots": {
+    "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+    "metric1": {"rect": [0.06, 0.22, 0.2, 0.14], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+    "metric1_label": {"rect": [0.06, 0.37, 0.2, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+    "metric2": {"rect": [0.29, 0.22, 0.2, 0.14], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+    "metric2_label": {"rect": [0.29, 0.37, 0.2, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+    "metric3": {"rect": [0.52, 0.22, 0.2, 0.14], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+    "metric3_label": {"rect": [0.52, 0.37, 0.2, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+    "metric4": {"rect": [0.75, 0.22, 0.2, 0.14], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+    "metric4_label": {"rect": [0.75, 0.37, 0.2, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+    "note": {"rect": [0.06, 0.5, 0.88, 0.32], "accepts": ["text", "chart", "component", "table"], "role": "body", "style": "body_small", "capacity": {"chars": 420, "lines": 10}},
+    "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  },
+  "variants": {
+    "3": {"modules": 3, "slots": {
+      "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+      "metric1": {"rect": [0.06, 0.22, 0.26, 0.16], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+      "metric1_label": {"rect": [0.06, 0.39, 0.26, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+      "metric2": {"rect": [0.37, 0.22, 0.26, 0.16], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+      "metric2_label": {"rect": [0.37, 0.39, 0.26, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+      "metric3": {"rect": [0.68, 0.22, 0.26, 0.16], "accepts": ["text"], "role": "metric", "style": "metric", "capacity": {"chars": 16, "lines": 1}},
+      "metric3_label": {"rect": [0.68, 0.39, 0.26, 0.07], "accepts": ["text"], "role": "caption", "style": "metric_label", "capacity": {"chars": 28, "lines": 2}},
+      "note": {"rect": [0.06, 0.52, 0.88, 0.32], "accepts": ["text", "chart", "component", "table"], "role": "body", "style": "body_small", "capacity": {"chars": 420, "lines": 10}},
+      "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+    }}
+  }
+}

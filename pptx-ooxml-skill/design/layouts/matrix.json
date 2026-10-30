@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "matrix",
+  "version": "1.0.0",
+  "intent": "compare",
+  "name": {"zh": "能力矩阵", "en": "Matrix"},
+  "purpose": "Two-by-two capability or positioning matrix with an explicit horizontal axis label.",
+  "density": "balanced",
+  "blocks": {"min": 4, "max": 5},
+  "modules": {"min": 4, "max": 4},
+  "tags": ["matrix", "segments", "positioning"],
+  "slots": {
+    "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+    "axis_x": {"rect": [0.11, 0.19, 0.78, 0.04], "accepts": ["text"], "role": "kicker", "style": "kicker", "capacity": {"chars": 60, "lines": 1}},
+    "quadrant1": {"rect": [0.11, 0.26, 0.36, 0.25], "accepts": ["text", "component", "image", "chart"], "role": "module", "style": "body", "capacity": {"chars": 200, "lines": 8}},
+    "quadrant2": {"rect": [0.53, 0.26, 0.36, 0.25], "accepts": ["text", "component", "image", "chart"], "role": "module", "style": "body", "capacity": {"chars": 200, "lines": 8}},
+    "quadrant3": {"rect": [0.11, 0.55, 0.36, 0.25], "accepts": ["text", "component", "image", "chart"], "role": "module", "style": "body", "capacity": {"chars": 200, "lines": 8}},
+    "quadrant4": {"rect": [0.53, 0.55, 0.36, 0.25], "accepts": ["text", "component", "image", "chart"], "role": "module", "style": "body", "capacity": {"chars": 200, "lines": 8}},
+    "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  }
+}

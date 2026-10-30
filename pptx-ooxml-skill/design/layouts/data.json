@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "data",
+  "version": "1.0.0",
+  "intent": "data",
+  "name": {"zh": "数据页", "en": "Data page"},
+  "purpose": "One editable chart with a narrow interpretation column.",
+  "density": "balanced",
+  "blocks": {"min": 1, "max": 3},
+  "modules": {"min": 0, "max": 0},
+  "tags": ["chart", "metrics", "evidence"],
+  "slots": {
+    "title": {"rect": [0.06, 0.06, 0.88, 0.14], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+    "chart": {"rect": [0.07, 0.26, 0.58, 0.57], "accepts": ["chart", "table", "image", "component"], "role": "chart", "style": "body", "capacity": {"chars": 0, "lines": 0}},
+    "note": {"rect": [0.7, 0.29, 0.24, 0.5], "accepts": ["text"], "role": "body", "style": "body_small", "capacity": {"chars": 320, "lines": 10}},
+    "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  }
+}

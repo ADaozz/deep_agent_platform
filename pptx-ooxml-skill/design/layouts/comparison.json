@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "id": "comparison",
+  "version": "1.0.0",
+  "intent": "compare",
+  "name": {
+    "zh": "对比",
+    "en": "Comparison"
+  },
+  "purpose": "Two balanced panels for options, before/after or current/target states.",
+  "density": "balanced",
+  "blocks": {
+    "min": 2,
+    "max": 4
+  },
+  "modules": {
+    "min": 2,
+    "max": 2
+  },
+  "tags": [
+    "compare",
+    "tradeoff",
+    "before-after"
+  ],
+  "slots": {
+    "title": {
+      "rect": [
+        0.06,
+        0.06,
+        0.88,
+        0.14
+      ],
+      "accepts": [
+        "text"
+      ],
+      "role": "title",
+      "style": "slide_title",
+      "capacity": {
+        "chars": 70,
+        "lines": 2
+      }
+    },
+    "left": {
+      "rect": [
+        0.06,
+        0.27,
+        0.42,
+        0.54
+      ],
+      "accepts": [
+        "text",
+        "table",
+        "image",
+        "component",
+        "chart"
+      ],
+      "role": "module",
+      "style": "body",
+      "capacity": {
+        "chars": 420,
+        "lines": 12
+      }
+    },
+    "right": {
+      "rect": [
+        0.52,
+        0.27,
+        0.42,
+        0.54
+      ],
+      "accepts": [
+        "text",
+        "table",
+        "image",
+        "component",
+        "chart"
+      ],
+      "role": "module",
+      "style": "body",
+      "capacity": {
+        "chars": 420,
+        "lines": 12
+      }
+    },
+    "footer": {
+      "rect": [
+        0.06,
+        0.92,
+        0.88,
+        0.04
+      ],
+      "accepts": [
+        "text"
+      ],
+      "role": "footer",
+      "style": "caption",
+      "capacity": {
+        "chars": 90,
+        "lines": 1
+      },
+      "absolute": true
+    }
+  }
+}

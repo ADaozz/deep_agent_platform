@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "id": "bento",
+  "version": "1.0.0",
+  "intent": "modules",
+  "name": {"zh": "Bento 模块", "en": "Bento modules"},
+  "purpose": "Three to six parallel capability tiles in a strict grid; supports Bento cards and component tiles.",
+  "density": "balanced",
+  "blocks": {"min": 3, "max": 6},
+  "modules": {"min": 3, "max": 6},
+  "tags": ["bento", "capabilities", "features"],
+  "default_variant": "6",
+  "slots": {
+    "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+    "module1": {"rect": [0.06, 0.22, 0.26, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 220, "lines": 8}},
+    "module2": {"rect": [0.37, 0.22, 0.26, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 220, "lines": 8}},
+    "module3": {"rect": [0.68, 0.22, 0.26, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 220, "lines": 8}},
+    "module4": {"rect": [0.06, 0.56, 0.26, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 220, "lines": 8}},
+    "module5": {"rect": [0.37, 0.56, 0.26, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 220, "lines": 8}},
+    "module6": {"rect": [0.68, 0.56, 0.26, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 220, "lines": 8}},
+    "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+  },
+  "variants": {
+    "4": {"modules": 4, "slots": {
+      "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+      "module1": {"rect": [0.06, 0.22, 0.42, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 260, "lines": 8}},
+      "module2": {"rect": [0.52, 0.22, 0.42, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 260, "lines": 8}},
+      "module3": {"rect": [0.06, 0.56, 0.42, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 260, "lines": 8}},
+      "module4": {"rect": [0.52, 0.56, 0.42, 0.31], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 260, "lines": 8}},
+      "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+    }},
+    "3": {"modules": 3, "slots": {
+      "title": {"rect": [0.06, 0.06, 0.88, 0.12], "accepts": ["text"], "role": "title", "style": "slide_title", "capacity": {"chars": 70, "lines": 2}},
+      "module1": {"rect": [0.06, 0.22, 0.26, 0.62], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 320, "lines": 14}},
+      "module2": {"rect": [0.37, 0.22, 0.26, 0.62], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 320, "lines": 14}},
+      "module3": {"rect": [0.68, 0.22, 0.26, 0.62], "accepts": ["text", "component", "chart", "image", "table"], "role": "module", "style": "body", "capacity": {"chars": 320, "lines": 14}},
+      "footer": {"rect": [0.06, 0.92, 0.88, 0.04], "accepts": ["text"], "role": "footer", "style": "caption", "capacity": {"chars": 90, "lines": 1}, "absolute": true}
+    }}
+  }
+}
