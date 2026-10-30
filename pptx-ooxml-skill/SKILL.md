@@ -3,15 +3,15 @@ name: pptx-ooxml-author
 description: Build and revise editable PowerPoint presentations incrementally with native charts, shapes, tables, connectors and diagrams first, bounded style presets and natural-language fine-tuning, template-aware layouts, design profiles, reviewed SVG components as a fallback, stable element IDs, actual Impress renders, host-side multimodal aesthetic review and steering-safe operations.
 compatibility: Optional platform PPTX extension; python-pptx, lxml, Pillow, PyMuPDF, LibreOffice Impress and fonts.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # PPTX authoring protocol
 
 This feature is optional and independently removable. DeepAgents loads this SKILL.md; use the existing `execute` tool to run the Python CLI located at `/agent-skills/pptx-ooxml-author/scripts/office_pptx.py` (or `scripts/office_pptx.py` relative to this skill outside the platform). Run from the Thread user-file directory. Sandbox `python` includes the required dependencies. Each command is one operation and one normal approval boundary; repeat the absolute script path and working directory on each execute call. Never create another planner, Agent Loop, model worker or free-form SVG generator.
 
-1. Inspect explicit uploaded PPTX templates first and reuse their masters, layouts, placeholders, theme and resources. Uploaded template rules outrank any built-in profile. Never flatten a template or a whole slide into an image.
-2. Run `catalog` once per deck when the visual direction is unclear: it lists validated profiles, semantic layouts and reviewed components. Pick a profile from task nature (analysis, launch, technical, financial). If undecidable, use `corporate_blue`. A profile is configuration; it never contains page content.
+1. Template first. Before creating a deck, check files the user uploaded and `list-templates`. When a template fits, `init` from that file and build by `slide.clone`, `slot.fill` and local edits. Do not start from a blank Office file when a cloned layout can hold the content. Keep masters, theme, styles, layouts, native shapes and relationships. A blank deck and the design profiles are the fallback when no template fits. Never flatten a template or a whole slide into an image. Details are in `references/template-rules.md`.
+2. Run `catalog` once per deck when no template fits and the visual direction is unclear: it lists validated profiles, semantic layouts and reviewed components. Pick a profile from task nature (analysis, launch, technical, financial). If undecidable, use `corporate_blue`. A profile is configuration; it never contains page content. A profile never replaces a template theme.
 3. Define a concise narrative and design direction; do not precompute the whole deck body. Run `init deck.pptx --presentation-id project-report [--profile consulting] [--template brand.pptx]`. Each following command is approved independently.
 4. Build one slide at a time with `apply-one deck.pptx --request /path/operation.json`. Decide the page's semantic intent first, then call `plan --request intent.json` to rank layouts for the content, then `slide.add` with that layout and, when the variant matters, its `modules` count. Slots are the starting point, not a cage: use explicit `geometry` when the content or the user's request does not fit the declared slots, keeping elements inside the safe margins.
 5. Prefer declared slots and profile style tokens, but adapt when they get in the way. The six original layouts (`cover`, `section`, `title_body`, `comparison`, `three_columns`, `data`) remain available; additional semantic layouts (`statement`, `hero`, `bento`, `evidence`, `kpi`, `timeline`, `architecture`, `matrix`) must be listed by `layouts` before use. When a slot cannot hold the content, split it, choose another layout or place the element with explicit geometry; only the profile's minimum font size is firm.
@@ -35,8 +35,10 @@ This feature is optional and independently removable. DeepAgents loads this SKIL
 No PPTX-specific tool is registered in the Agent. Examples (one command per execute call, from the file directory):
 
 ```bash
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py list-templates
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py import-template --template brand.pptx --template-id brand --license-note "user file, not redistributed"
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py catalog
-python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py init deck.pptx --presentation-id project-report --profile consulting
+python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py init deck.pptx --presentation-id project-report --template brand.pptx --profile consulting
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py plan deck.pptx --request ../tmp/plan.json
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py apply-one deck.pptx --request ../tmp/operation.json
 python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py check-slide deck.pptx --slide-id slide-001 --notes "Checked title, labels and values" --intent "开篇点题"
@@ -63,6 +65,17 @@ A native architecture diagram (the engine computes every coordinate of every con
 {"presentation_id":"project-report","operation_id":"op-012","base_revision":11,"slide_id":"slide-004","operation":"diagram.add","diagram":{"id":"arch","geometry":{"x":0.06,"y":0.22,"w":0.6,"h":0.68},"preset":"layered","nodes":[{"id":"web","rank":0,"label":"Web 交互层","detail":"任务下达、过程可视"},{"id":"agent","rank":1,"label":"Agent 执行层"},{"id":"tool","rank":2,"label":"Tool 能力层"},{"id":"sandbox","rank":2,"label":"Sandbox"}],"edges":[{"source":"web","target":"agent","relation":"calls"},{"source":"agent","target":"tool","relation":"calls"},{"source":"tool","target":"sandbox","relation":"flows_to","label":"执行"}]}}
 ```
 
-Operations: `slide.add`, `slide.set_layout`, `slide.reorder`, `presentation.set_theme`, `presentation.set_profile`, `element.add_text|shape|image|table|chart|component`, `element.update`, `element.remove`, `element.adjust`, `element.set_style`, `element.apply_preset`, `chart.change_type`, `diagram.add`, `diagram.update`. Details, capacities and component semantics are in `references/operations.md`, `references/layout-rules.md`, `references/design-system.md` and `references/aesthetic-review.md`; the component registry is the authority for ids, versions and parameters.
+Operations: `slide.clone`, `slot.fill`, `chart.replace_data`, `image.replace`, `presentation.recolor`, `slide.add`, `slide.set_layout`, `slide.reorder`, `presentation.set_theme`, `presentation.set_profile`, `element.add_text|shape|image|table|chart|component`, `element.update`, `element.remove`, `element.adjust`, `element.set_style`, `element.apply_preset`, `chart.change_type`, `diagram.add`, `diagram.update`. Prefer the template operations when a manifest slot or source slide exists. Details, capacities and component semantics are in `references/operations.md`, `references/template-rules.md`, `references/layout-rules.md`, `references/design-system.md` and `references/aesthetic-review.md`; the component registry is the authority for ids, versions and parameters.
+
+Template-first authoring:
+
+- Check uploaded files and `list-templates` before creating a deck.
+- Use a matching template instead of a blank Office file.
+- Keep masters, theme, styles, layouts, native graphics and relationships.
+- Clone, fill and adjust. Do not redesign a whole page when a template page already fits.
+- Recolor only through the semantic palette. Do not replace every RGB value.
+- When the template has no suitable structure, use the existing layouts, profiles, native graphics and XML operations.
+- Validate the package after every atomic edit. Render at checkpoints and compare local layout with the template's type, accent, margins and table style.
+- An unverified conversion, a lost format, or a visual difference is not a success. `recolor_complete: false` means say what was left unchanged.
 
 The UI is read-only for content. It shows thumbnails, per-slide technical/integrity/aesthetic status, model findings with severity, region and element IDs, suggestions, re-review, explicit human accept/reject/dismiss, and the deck consistency summary; the formal screenshot is the visual evidence. All final content that can remain native does remain editable; component rasters are declared as such. Removing the feature removes its routes/skill/UI; it does not alter Agent execution or delete generated artifacts.

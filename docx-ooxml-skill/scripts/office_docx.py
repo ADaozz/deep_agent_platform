@@ -608,6 +608,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest='command', required=True)
     x = sub.add_parser('init'); x.add_argument('--output', required=True); x.add_argument('--template'); x.add_argument('--document-id'); x.add_argument('--mode', choices=['normal','strict'], default='normal')
+    x = sub.add_parser('import-template'); x.add_argument('--template', required=True); x.add_argument('--template-id'); x.add_argument('--output'); x.add_argument('--license-note', default='')
     x = sub.add_parser('inspect'); x.add_argument('docx'); x.add_argument('--output')
     x = sub.add_parser('discover'); x.add_argument('--templates', required=True); x.add_argument('--query', required=True); x.add_argument('--limit', type=int, default=15)
     x = sub.add_parser('apply'); x.add_argument('docx'); x.add_argument('plan'); x.add_argument('--output', required=True); x.add_argument('--asset-root', default='.')
@@ -624,6 +625,13 @@ def main(argv=None):
     x = sub.add_parser('publish'); x.add_argument('docx'); x.add_argument('--base-revision', type=int, required=True)
     a = p.parse_args(argv)
     try:
+        if a.command == 'import-template':
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('docx_template_importer', Path(__file__).with_name('template_importer.py'))
+            importer = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(importer)
+            json_print(importer.import_template(a.template, a.template_id, a.output, a.license_note))
+            return 0
         if a.command in ('apply-one', 'status', 'restore', 'checkpoint', 'review-page', 'publish') or (a.command == 'init' and a.document_id) or (a.command == 'finalize' and a.base_revision is not None):
             from atomic_docx import DocumentStore
             store = DocumentStore(a.output if a.command == 'init' else a.docx)

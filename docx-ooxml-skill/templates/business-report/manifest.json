@@ -1,0 +1,257 @@
+{
+  "schema": "deep-agent-template/v1",
+  "kind": "docx",
+  "template_id": "business-report",
+  "source": "/workspace/docx-ooxml-skill/templates/business-report/template.docx",
+  "license": {
+    "status": "recorded",
+    "redistributable": true,
+    "note": "Original project template created for technical verification. Not a third-party design."
+  },
+  "styles": [
+    {
+      "style_id": "Normal",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Title",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Heading1",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Heading2",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Header",
+      "type": "paragraph"
+    },
+    {
+      "style_id": "Footer",
+      "type": "paragraph"
+    }
+  ],
+  "tokens": {
+    "dk1": "20242A",
+    "lt1": "FFFFFF",
+    "dk2": "5C6B7A",
+    "lt2": "F4F6F8",
+    "accent1": "1F4E79",
+    "accent2": "5C6B7A",
+    "accent3": "1F4E79",
+    "accent4": "1F4E79",
+    "accent5": "1F4E79",
+    "accent6": "1F4E79",
+    "hlink": "1F4E79",
+    "folHlink": "5C6B7A"
+  },
+  "content_controls": [
+    {
+      "tag": "project_title",
+      "text": "项目总结"
+    }
+  ],
+  "sections": [
+    {
+      "block_id": "template-0013",
+      "style": "Heading1",
+      "text": "项目背景"
+    },
+    {
+      "block_id": "template-0030",
+      "style": "Heading1",
+      "text": "进度"
+    },
+    {
+      "block_id": "template-0086",
+      "style": "Heading1",
+      "text": "篇幅"
+    },
+    {
+      "block_id": "template-0133",
+      "style": "Heading1",
+      "text": "结尾"
+    }
+  ],
+  "tables": [
+    {
+      "block_id": "template-0037",
+      "text": "事项状态范围沿用模板"
+    }
+  ],
+  "headers": [
+    "word/header1.xml"
+  ],
+  "footers": [
+    "word/footer1.xml"
+  ],
+  "precheck": {
+    "blocks": 21,
+    "headings": 4,
+    "tables": 1,
+    "content_controls": 1,
+    "fonts": [
+      "Liberation Sans",
+      "Noto Sans CJK SC"
+    ],
+    "missing_fonts": [
+      "Liberation Sans",
+      "Noto Sans CJK SC"
+    ],
+    "warnings": [
+      "missing fonts: Liberation Sans, Noto Sans CJK SC"
+    ]
+  },
+  "blocks": [
+    {
+      "block_id": "template-0006",
+      "type": "paragraph",
+      "style": "Title",
+      "text": "项目总结",
+      "heading": false
+    },
+    {
+      "block_id": "template-0013",
+      "type": "paragraph",
+      "style": "Heading1",
+      "text": "项目背景",
+      "heading": true
+    },
+    {
+      "block_id": "template-0020",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "本段保留模板正文样式，用于复制章节。",
+      "heading": false
+    },
+    {
+      "block_id": "template-0025",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "第二段说明范围、进度和需要沿用的表格样式。",
+      "heading": false
+    },
+    {
+      "block_id": "template-0030",
+      "type": "paragraph",
+      "style": "Heading1",
+      "text": "进度",
+      "heading": true
+    },
+    {
+      "block_id": "template-0037",
+      "type": "table",
+      "style": null,
+      "text": "事项状态范围沿用模板",
+      "heading": false
+    },
+    {
+      "block_id": "template-0057",
+      "type": "paragraph",
+      "style": null,
+      "text": "事项",
+      "heading": false
+    },
+    {
+      "block_id": "template-0066",
+      "type": "paragraph",
+      "style": null,
+      "text": "状态",
+      "heading": false
+    },
+    {
+      "block_id": "template-0075",
+      "type": "paragraph",
+      "style": null,
+      "text": "范围",
+      "heading": false
+    },
+    {
+      "block_id": "template-0082",
+      "type": "paragraph",
+      "style": null,
+      "text": "沿用模板",
+      "heading": false
+    },
+    {
+      "block_id": "template-0086",
+      "type": "paragraph",
+      "style": "Heading1",
+      "text": "篇幅",
+      "heading": true
+    },
+    {
+      "block_id": "template-0093",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0098",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0103",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0108",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0113",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0118",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0123",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0128",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题样式、正文样式和页眉页脚，由排版引擎重新分页，而不是把每一页画成图片。模板章节沿用标题",
+      "heading": false
+    },
+    {
+      "block_id": "template-0133",
+      "type": "paragraph",
+      "style": "Heading1",
+      "text": "结尾",
+      "heading": true
+    },
+    {
+      "block_id": "template-0140",
+      "type": "paragraph",
+      "style": "Normal",
+      "text": "例外色",
+      "heading": false
+    }
+  ]
+}

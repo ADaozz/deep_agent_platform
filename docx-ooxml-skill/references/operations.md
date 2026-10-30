@@ -85,6 +85,16 @@ Applies to final section only. 1 inch = 1440 twips. Does not reconfigure interme
 
 `path` must remain inside `--asset-root`; supports PNG/JPEG with engine-created image part, relationship and inline drawing. SVG, GIF, chart OLE, floating wraps and precise text wrapping are intentionally not supported yet.
 
+## Atomic template operations
+
+These are `apply-one` operations (`operation.type`), not the legacy batch plan.
+
+- `section.clone`: copy a heading and the blocks that follow it until the next same-or-higher heading. `paragraphs` must match the body paragraphs in that section. `tables` is optional and must match the tables in that section.
+- `block.clone`: copy one top-level paragraph or table. `rows` on a table keeps the column count and the header row's properties.
+- `slot.fill`: `{tag}` for one content control, or `{block_id}` for one paragraph, plus `text` of at most 3000 characters.
+- `part.replace_text`: `{part: header|footer, old, new}` with exactly one match.
+- `document.recolor`: `{palette:{accent, background, text, muted?}}`. Theme and named styles change. Unmatched direct colors are returned in `unhandled`.
+
 ## Security and package limits
 
 Rejects relative traversal, duplicate ZIP entries, XML DTD/ENTITY, oversized archive entries, arbitrary relationship attributes in generated fragments and source overwrites. An untrusted template may still contain external links or macros/ActiveX not understood by this subset: quarantine such files and do not invoke Office macros.

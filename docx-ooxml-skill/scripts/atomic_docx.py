@@ -103,12 +103,14 @@ class DocumentStore(_shared.ArtifactStore):
     def _publish(self, path, data):
         publish(path, data)
 
-    def commit(self, c, state, data, operation_id, request, changed, kind='document_revision'):
+    def commit(self, c, state, data, operation_id, request, changed, kind='document_revision', extra=None):
         revision = state['revision'] + 1
         digest = hashlib.sha256(data).hexdigest()
         result = dict(status='committed', document_id=state['document_id'], revision=revision,
             sha256=digest, operation_id=operation_id, changed_blocks=changed, needs_preview=True,
             path=self.path.name, preview_ready=False, committed_at=time.time())
+        if extra:
+            result.update(extra)
         dirty = state.get('dirty', 0) + 1
         gate = state.get('gate', 'open')
         if gate == 'open' and dirty >= MAX_DIRTY:
@@ -132,8 +134,11 @@ class DocumentStore(_shared.ArtifactStore):
             if self.path.exists():
                 raise ValueError('Document exists; use track_external or a different output path')
             parts = o.read_parts(template) if template else o.default_package()
-            data = packed(mark_blocks(parts))
-            state = dict(document_id=document_id, revision=-1, mode=mode, dirty=-1, pages=[], gate='open')
+            parts = mark_blocks(parts)
+            manifest = _template_manifest(parts, template) if template else None
+            data = packed(parts)
+            state = dict(document_id=document_id, revision=-1, mode=mode, dirty=-1, pages=[], gate='open',
+                template_manifest=manifest)
             self.commit(c, state, data, '__init__', {'template': str(template)}, [], 'document_initialized')
             return state
 
@@ -181,17 +186,18 @@ class DocumentStore(_shared.ArtifactStore):
             self.assert_current(state, request['base_revision'])
             op = request['operation']
             kind = op.get('type')
-            repairs = {'replace_text', 'set_paragraph_style', 'set_paragraph_format', 'delete_block', 'set_table_format', 'set_page'}
+            repairs = {'replace_text', 'set_paragraph_style', 'set_paragraph_format', 'delete_block', 'set_table_format', 'set_page',
+                'slot.fill', 'document.recolor', 'part.replace_text'}
             if state['gate'] != 'open' and kind not in repairs:
                 raise ValueError('Page checkpoint required before adding content: ' + state['gate'])
             if state['dirty'] >= MAX_DIRTY * 2:
                 raise ValueError('Repair budget exhausted; checkpoint before further changes')
             parts = o.read_parts(self.path)
             try:
-                parts, changed = mutate(parts, op, Path(asset_root or self.path.parent))
+                parts, changed, extra = mutate(parts, op, Path(asset_root or self.path.parent))
             except (o.etree.XMLSyntaxError, KeyError, TypeError) as exc:
                 raise ValueError('Invalid atomic operation: ' + str(exc)) from exc
-            return self.commit(c, state, packed(parts), request['operation_id'], request, changed)
+            return self.commit(c, state, packed(parts), request['operation_id'], request, changed, extra=extra)
 
     def track_external(self, document_id=None):
         """Observe native write/execute changes without calling them reviewed/atomic."""
@@ -353,9 +359,14 @@ def mutate(parts, op, asset_root):
     if not isinstance(op, dict) or len(json.dumps(op, ensure_ascii=False)) > 24000:
         raise ValueError('Operation exceeds bounded payload')
     parts = mark_blocks(parts)
+    kind = op.get('type')
+    if kind in ('block.clone', 'section.clone', 'slot.fill', 'part.replace_text'):
+        updated, changed, extra = _template_blocks().apply(parts, op, o, BLOCK_ID)
+        return mark_blocks(updated), changed, extra
+    if kind == 'document.recolor':
+        return _template_styles().recolor(parts, op, o)
     root = o.parse_xml(parts[o.MAIN])
     body = root.find(o.q(o.W, 'body'))
-    kind = op.get('type')
     block_id = identifier(op.get('block_id', 'page-layout'))
     matches = root.xpath('//*[@b:id=$id]', namespaces={'b': BLOCK_NS}, id=block_id)
     target = matches[0] if len(matches) == 1 else None
@@ -438,7 +449,7 @@ def mutate(parts, op, asset_root):
     elif kind == 'set_page':
         # Reuse the conservative existing layout implementation.
         updated = o.apply_plan(parts, {'operations': [dict(op, op='set_page')]}, asset_root)
-        return updated, ['page-layout']
+        return updated, ['page-layout'], None
     else:
         if target is None:
             raise ValueError('Unknown or ambiguous block_id')
@@ -471,4 +482,34 @@ def mutate(parts, op, asset_root):
         else:
             raise ValueError('Unsupported atomic operation: ' + str(kind))
     parts[o.MAIN] = o.xml_bytes(root)
-    return mark_blocks(parts), [block_id]
+    return mark_blocks(parts), [block_id], None
+
+
+def _sibling(name):
+    spec = importlib.util.spec_from_file_location('docx_skill_' + name, Path(__file__).with_name(name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _template_blocks():
+    return _sibling('template_blocks')
+
+
+def _template_styles():
+    return _sibling('template_styles')
+
+
+def _template_manifest(parts, template):
+    manifest = _sibling('template_importer').analyze(parts, o, source=str(template))
+    sidecar = Path(template).parent / 'manifest.json'
+    if sidecar.is_file():
+        recorded = json.loads(sidecar.read_text(encoding='utf-8'))
+        if isinstance(recorded, dict):
+            manifest['template_id'] = recorded.get('template_id') or manifest['template_id']
+            if recorded.get('license'):
+                manifest['license'] = recorded['license']
+            for key in ('sections', 'tables', 'content_controls'):
+                if recorded.get(key):
+                    manifest[key] = recorded[key]
+    return manifest

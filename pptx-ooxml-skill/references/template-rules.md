@@ -1,9 +1,42 @@
-# Template handling
+# Template-first handling
 
-Templates remain editable packages. Masters, layouts, theme parts, relationships, placeholders and existing resources are retained by python-pptx; complex objects are not reconstructed. Native numeric slide/shape IDs provide stable fallback identifiers for untouched template objects. New objects receive explicit stable names and metadata.
+Create from a template when one fits. A blank deck is the fallback, used when the user did not supply a template and none of the recorded templates has a layout for the content.
 
-Template accent/font tokens are read from its theme and take precedence over the selected design profile; the rest of the profile (type scale, spacing, density, layout policy, component policy) still applies. Explicit layout_index selects a real template layout. Inspect actual placeholder geometry and use it as the first choice; declared layouts serve blank decks or missing anchors. Template complex objects use formal screenshots, including during later edits; the UI must not guess their quick appearance.
+## Where a template comes from
 
-Design profiles are configuration. Switching a profile never rewrites the template theme part, never replaces masters/layouts/media, and never rasterises template content. A profile change restyles generated objects only; untouched complex template objects stay untouched and are marked complex instead of being silently approximated.
+1. A file the user uploaded or named by path. Load it with `init deck.pptx --template /path/to/file.pptx`. Do not copy it into this skill.
+2. A directory under `templates/` whose `manifest.json` says `license.redistributable` is true. `list-templates` shows those directories.
+3. `import-template --template file.pptx` writes a manifest only. It never downloads a deck and it refuses to write that manifest into `templates/` unless the license record allows redistribution.
 
-Some advanced objects may not be safely editable in v1 (SmartArt, embedded OLE, advanced animations/transitions). Preserve untouched XML/relationships; verify package parts in template regression tests. If python-pptx changes unsupported material, stop and report the limitation rather than replacing it with a raster image. Microsoft PowerPoint compatibility requires opening in PowerPoint on the target environment; LibreOffice alone cannot prove absence of a Microsoft repair prompt.
+Third-party files (including consulting decks that require attribution or forbid redistribution) stay outside the repository. The bundled `templates/consulting-brief/` deck is original project content for technical verification, not a substitute for a licensed brand template.
+
+## Manifest
+
+`import-template` and `init --template` record:
+
+- `slides[].role`: `cover`, `section`, `comparison`, `data`, `table` or `content`
+- `slides[].slots`: slot name to stable element id (`title`, `left_body`, `chart`, …)
+- theme tokens, fonts, and precheck warnings (missing fonts, SmartArt, no LibreOffice)
+
+The heuristic is a draft. A `manifest.json` beside the PPTX overrides role and slots. Stable names are `da-slide:{slide_id}` and `da:{element_id}`. Later edits use those ids; they do not re-parse the whole package on every turn.
+
+`match-template deck.pptx --role comparison` returns the template slides of that role. Pick one and `slide.clone` it. Do not start from `slide.add` when a cloned layout already fits.
+
+## Operations that keep the template
+
+- `slide.clone`: copies the slide, its layout relationship, pictures (shared), and a **new** chart part plus workbook. Editing the clone's chart must not change the source chart. `insert_after` places the new slide. The same slide-acceptance gate as `slide.add` applies.
+- `slot.fill`: replaces text in the named slot and keeps the first run's paragraph and character properties. If the text does not fit the box, the operation raises `capacity conflict` and changes nothing. Shorten the copy, choose another layout, or enlarge that one box with `element.adjust`. Do not shrink every font on the page.
+- `chart.replace_data`: replaces categories and series on a native chart, including a chart that came from the template. Type changes still go through `chart.change_type`.
+- `image.replace`: points one picture at a new PNG/JPEG of the same aspect ratio. Other slides that share the old image keep it.
+- `presentation.recolor`: writes the semantic palette (`accent`, `background`, `text`, optional `muted`) into the theme color scheme and remaps direct RGB values that belong to that scheme. Pictures are not repainted. Shapes whose name contains `logo` keep their previous color. Any other direct color is left unchanged and listed in `recolor.unhandled`. A result with `recolor_complete: false` is not a finished global recolor.
+- `element.adjust` and a limited `element.set_style` work on imported shapes by id. They change geometry or existing run/fill properties only. They do not rebuild the shape, and they do not mark it as a generated object that a profile change would restyle. `element.update` text and chart payloads on an imported object are rejected; use `slot.fill` and `chart.replace_data`.
+
+`presentation.set_profile` still restyles objects this skill created. It does not replace the template theme, masters, or media.
+
+## What must remain true
+
+- Masters, layouts, theme parts and image relationships stay in the package.
+- A failed operation does not publish a new revision.
+- Charts, tables and pictures stay native. Do not flatten a slide or a template object into a picture.
+- SmartArt, OLE and animations are preserved when present. If a clone cannot duplicate a mutable part safely, the operation fails instead of sharing that part.
+- After a batch of template edits, compare geometry, text, chart values and picture counts. A recolor that moves a box, or a clone whose chart workbook is still the source workbook, is a failure.

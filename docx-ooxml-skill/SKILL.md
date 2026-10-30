@@ -4,7 +4,7 @@ name: docx-ooxml-author
 description: Generate and revise complex editable DOCX files from user-provided templates or a blank OOXML package. Use for Word reports, proposals, specifications, tables, template-based writing, precise XML layout edits, iterative render-review, and final DOCX validation.
 compatibility: Python 3.10+, lxml, Pillow, PyMuPDF, LibreOffice. Runs through execute; no separate Agent or MCP server required.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   maintainer: "local"
 ---
 
@@ -13,6 +13,15 @@ metadata:
 ## Goal
 
 Produce *editable DOCX* from a template if available, otherwise from a blank OOXML package. Have the model author **local WordprocessingML XML fragments and a declarative edit plan**, never the ZIP package or relationship IDs. **Do not claim to have checked a page unless you actually inspected its rendering.**
+
+Template-first authoring:
+
+- Before creating a document, check uploaded files and `import-template`. A matching template is the starting point; a blank package is the fallback.
+- Keep named styles, theme colors, headers, footers and table formatting. Clone a heading section or a table instead of assembling a new paragraph from scratch.
+- Word is a flow. Do not clone by page number. Add body content and let LibreOffice paginate. Do not insert page breaks only to manufacture a page count.
+- `document.recolor` changes theme and named-style colors, plus direct colors that belong to that theme. Other direct colors stay and are reported. Do not walk the document setting a color on every paragraph.
+- Fill content controls (`slot.fill` with `tag`) or an existing paragraph. Copy run properties; do not rebuild the paragraph XML.
+- A failed edit must not replace the last good revision. An unverified conversion or a dropped header is not a success.
 
 ## Non-negotiable rules
 
@@ -34,7 +43,12 @@ The DeepAgents skill loader discovers this file; it does not register extra Agen
 
 Initialize with `init --document-id report --output report.docx`, read `status report.docx`, and use `apply-one report.docx /path/to/temporary-operation.json --asset-root .` for each edit. Put request JSON in the Thread temporary directory, not the output library. One execute invocation performs ONE operation; do not loop or batch commands. Every execute call follows the ordinary approval and network policy. Supported atomic operation types:
 
-- `append_paragraph`: `block_id`, `text` (≤3000 characters; no newline), optional existing `style`, `after_block_id`.
+- `section.clone`: `source_block_id` of a Heading paragraph, new `block_id`, optional `heading`, `paragraphs` (one string per body paragraph in that section) and `tables`. Copies the heading and following blocks up to the next heading of the same or higher level, including their styles.
+- `block.clone`: copies one top-level paragraph or table. A table `rows` matrix keeps the template column count and the first row's cell properties, then adds body rows from the template body row.
+- `slot.fill`: `tag` of one `w:sdt` content control, or `block_id` of one paragraph, plus `text`. The first run's properties stay.
+- `part.replace_text`: `part` `header` or `footer`, one `old` occurrence and `new` text. Other header and footer parts stay as they are.
+- `document.recolor`: `palette` with `accent`, `background`, `text` and optional `muted`. Updates `word/theme/theme1.xml` and named styles. Direct colors outside that palette are listed in `unhandled` and left unchanged. `recolor_complete: false` is not a finished recolor.
+- `append_paragraph`: `block_id`, `text` (≤3000 characters; no newline), optional existing `style`, `after_block_id`. Use the template's existing style ids.
 - `append_table`: `block_id`, uniform string `rows` (≤10 rows, ≤8 columns, ≤300 characters/cell), optional `column_widths_twips`, `header`, `keep_together`, `after_block_id`. The bounded table has borders and a repeating bold shaded header by default.
 - `insert_image`: `block_id`, workspace-relative PNG/JPEG `path`, optional `width_cm`, `alt`, `after_block_id`. Engine generates relationships.
 - `insert_block`: one self-contained paragraph XML fragment (`xml`), never a list or table.
