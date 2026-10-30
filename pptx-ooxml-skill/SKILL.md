@@ -3,7 +3,7 @@ name: pptx-ooxml-author
 description: Build and revise editable PowerPoint decks from a template when one fits, otherwise from the design system. Clone slides, fill slots, recolor through a persistent palette, and check real Impress renders. One approved atomic operation at a time.
 compatibility: Optional platform PPTX extension; python-pptx, lxml, Pillow, PyMuPDF, LibreOffice Impress and fonts.
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 ---
 
 # PPTX authoring
@@ -20,11 +20,11 @@ Before creating a deck, look for a user-uploaded PPTX and run `list-templates`. 
 
 ## 2. Template workflow
 
-`list-templates` → `import-template` or inspect the upload → `init` → `match-template --role …` → `slide.clone` → `slot.fill` → local edit → `check-slide`.
+`list-templates` / `import-template` → `init --use template_reference` → `match-template --role …` → `slide.clone` → `slot.fill` / local edit → `presentation.discard_prototypes` → `check-slide` on every remaining page → `request-deck-review` → `finalize`.
 
-Decide the slide's purpose, then match an existing template slide. Clone and fill it when it fits. Call `plan` and `slide.add` only when no template slide can hold the content.
+Decide the slide's purpose, then match an existing template slide. Clone and fill it when it fits. Call `plan` and `slide.add` only when no template slide can hold the content. Prototype slides are layout sources, not delivery pages. Do not claim the deck is finished while they remain.
 
-Keep masters, theme, layouts, native shapes and relationships. Do not flatten a slide into a picture. `slide.clone` shares masters, layouts, theme and pictures; charts get a private workbook; a link to another slide still points at that slide. Notes are omitted and reported. A relationship with no share/copy policy fails the clone.
+Keep masters, theme, layouts and native objects. Do not flatten a slide into a picture. Clone, relationship and recolor rules are in `references/operations.md` and `references/template-rules.md`.
 
 `slot.fill` replaces slot text and keeps the first run. If the text does not fit, the operation raises `capacity conflict` and changes nothing. Shorten the copy, pick another template slide, or enlarge that one box with `element.adjust`.
 
@@ -46,9 +46,9 @@ Use this only when no template slide fits. Run `catalog` if the visual direction
 
 Every successful mutation validates the package, stores a full PPTX revision and publishes it atomically. A failed operation does not change the file or the revision. Repeat the same `operation_id` after uncertain delivery; do not mint a new id for the same request.
 
-`check-slide` renders the exact PPTX and records technical and integrity results. Deterministic errors block the next content slide. Prototype slides in `template_reference` are not content slides. `aesthetic_review` is advice and does not block delivery. Fix a critical finding once, locally, then check again. Leave other findings for the user. Read `review-status` when convenient; do not wait on it slide by slide.
+You may render while building, but `presentation.discard_prototypes` changes the page set. The last `check-slide` pass must cover every remaining generated slide of that exact revision. Prototype slides in `template_reference` are not content slides. `aesthetic_review` is advice and does not block delivery. A deck review for an older revision is stale history; it is not a pass for the current file. Fix a critical finding once, locally, then check again. Leave other findings for the user. Read `review-status` when convenient; do not wait on it slide by slide.
 
-After the deck is built, run `request-deck-review` once for cross-slide consistency. Its findings are suggestions. `finalize` requires every content slide to have passed the automatic and content checks. Report outstanding critical findings, native objects versus SVG pictures, and anything the clone omitted or refused.
+After prototypes are gone, run `request-deck-review` once for cross-slide consistency. Its findings are suggestions. `finalize` requires every remaining slide to have passed the automatic and content checks, and it refuses `template_reference` decks that still contain prototypes. Report outstanding critical findings, native objects versus SVG pictures, and anything the clone omitted or refused.
 
 ## Commands
 
@@ -71,6 +71,10 @@ python /agent-skills/pptx-ooxml-author/scripts/office_pptx.py finalize deck.pptx
 
 ```json
 {"presentation_id":"project-report","operation_id":"op-005","base_revision":4,"slide_id":"page-4","operation":"slot.fill","slots":{"title":"执行架构","subtitle":"基于现有模板"}}
+```
+
+```json
+{"presentation_id":"project-report","operation_id":"discard-001","base_revision":32,"operation":"presentation.discard_prototypes","redirects":{"tpl-001":"page-001","tpl-002":"page-004","tpl-003":"page-007"}}
 ```
 
 Operation names and payloads: `references/operations.md`. Template behavior: `references/template-rules.md`. Layouts, diagrams, components and aesthetic review: `references/layout-rules.md`, `references/design-system.md`, `references/aesthetic-review.md`.

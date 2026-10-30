@@ -557,6 +557,7 @@ class PresentationStore(shared.ArtifactStore):
     def commit(self,c,state,data,operation_id,request,changed,kind='presentation_revision',extra=None):
         validator.validate_package(data)
         state.update(revision=state['revision']+1,sha256=hashlib.sha256(data).hexdigest(),pending_publish=True,finalized=False)
+        self._invalidate_deck_review(state)
         prs=Presentation(io.BytesIO(data))
         if changed==['*']:
             state['reviews']={}; state['last_reviews']={}; state['renders']={}; state['repair_attempts']={}
@@ -627,7 +628,7 @@ class PresentationStore(shared.ArtifactStore):
         return dict(presentation_id=state['presentation_id'],revision=state['revision'],sha256=state['sha256'],path=self.path.name,
             manifest=renderer.manifest(Presentation(io.BytesIO(data)),state),active_slide=state.get('active_slide'),finalized=state.get('finalized',False),
             mode=state['mode'],theme=state['theme'],profile_id=state.get('profile_id'),deck_review=state.get('deck_review'),
-            template_index=_template_index(state),
+            template_index=_template_index(state),template_use=state.get('template_use'),prototype_slides=list(state.get('prototype_slides') or []),
             history=[{key:value for key,value in json.loads(r[0]).items() if key in ('revision','operation_id','sha256','slide_id','status')} for r in c.execute('SELECT result FROM revisions ORDER BY revision')])
     def status(self):
         with self.locked() as (c,state):return self.view(c,state)
@@ -708,13 +709,18 @@ class PresentationStore(shared.ArtifactStore):
                 changed=['*']
             elif op=='presentation.discard_prototypes':
                 if state.get('template_use')!='template_reference':raise ValueError('discard_prototypes applies to a template_reference deck')
-                for prototype in list(state.get('prototype_slides') or []):
-                    template_clone.remove_slide(prs,find_slide(prs,prototype))
+                redirects=request.get('redirects') or {}
+                if not isinstance(redirects,dict):raise ValueError('redirects must be a mapping of prototype slide_id to destination slide_id')
+                for source,dest in redirects.items():
+                    identifier(source);identifier(dest)
+                removed=list(state.get('prototype_slides') or [])
+                extra=dict(discard=template_clone.discard_prototypes(prs,removed,redirects,renderer.slide_identity))
+                extra['discarded_prototypes']=removed
+                for prototype in removed:
                     for bucket in ('reviews','template_slots','protected_elements','layouts','layout_slots','backgrounds'):
                         state.get(bucket,{}).pop(prototype,None)
-                removed=list(state.get('prototype_slides') or [])
                 state['prototype_slides']=[]
-                changed=['*']; extra=dict(discarded_prototypes=removed)
+                changed=['*']
             elif op=='slide.clone':
                 _require_checked(state,prs)
                 identifier(sid)
@@ -1069,17 +1075,55 @@ class PresentationStore(shared.ArtifactStore):
             missing=[s['slide_id'] for s in slides if not (state['reviews'].get(s['slide_id']) or {}).get('automatic_passed')]
             if missing:raise ValueError('Run check-slide successfully for every slide first: '+', '.join(missing))
             previous=state.get('deck_review') or {}
-            if previous.get('status')=='pending' and previous.get('revision')==base_revision:return dict(previous,status='pending')
+            if previous.get('status')=='pending' and previous.get('revision')==base_revision and previous.get('request_id'):
+                return dict(previous,status='pending')
+            history=list(previous.get('history') or state.get('deck_review_history') or [])
+            if previous and previous.get('request_id'):
+                history.append({key:value for key,value in previous.items() if key!='history'})
+            state['deck_review_history']=history[-32:]
+            fingerprints={s['slide_id']:(state['reviews'][s['slide_id']] or {}).get('fingerprint') for s in slides}
             state['deck_review']=dict(status='pending',revision=base_revision,request_id=hashlib.sha256(f'{state["presentation_id"]}:{base_revision}:{time.time()}'.encode()).hexdigest()[:16],
-                requested_at=time.time(),slide_fingerprints={s['slide_id']:state['reviews'][s['slide_id']].get('fingerprint') for s in slides})
+                requested_at=time.time(),sha256=state['sha256'],slide_fingerprints=fingerprints,history=state['deck_review_history'])
             return self.review_event(c,state,'presentation_deck_review_requested')
     def record_deck_review(self,request_id,result):
         with self.locked() as(c,state):
             deck=state.get('deck_review') or {}
-            if deck.get('request_id')!=request_id or deck.get('status')!='pending':return dict(applied=False,reason='stale')
+            if not self._deck_review_matches(c,state,deck,request_id):
+                return dict(applied=False,reason='stale')
             state['deck_review']=dict(deck,**result)
             self.review_event(c,state,'presentation_deck_review')
             return dict(applied=True)
+    def _invalidate_deck_review(self,state):
+        """A new document revision cannot inherit the previous revision's deck review."""
+        deck=state.get('deck_review')
+        if not deck or deck.get('status')=='stale':
+            return
+        archived={key:value for key,value in deck.items() if key!='history'}
+        history=list(deck.get('history') or state.get('deck_review_history') or [])
+        history.append(archived)
+        state['deck_review_history']=history[-32:]
+        state['deck_review']=dict(status='stale',revision=deck.get('revision'),request_id=deck.get('request_id'),
+            sha256=deck.get('sha256'),slide_fingerprints=deck.get('slide_fingerprints'),
+            history=state['deck_review_history'],previous=archived,stale_at_revision=state['revision'])
+    def _deck_review_matches(self,c,state,deck,request_id):
+        if not deck or deck.get('request_id')!=request_id or deck.get('status')!='pending':
+            return False
+        if deck.get('revision')!=state.get('revision'):
+            return False
+        if deck.get('sha256')!=state.get('sha256'):
+            return False
+        if not self.path.exists() or hashlib.sha256(self.path.read_bytes()).hexdigest()!=state.get('sha256'):
+            return False
+        slides=self.current_manifest(c,state)['slides']
+        current_ids=[s['slide_id'] for s in slides]
+        fingerprints=deck.get('slide_fingerprints') or {}
+        if set(current_ids)!=set(fingerprints):
+            return False
+        reviews=state.get('reviews') or {}
+        for sid in current_ids:
+            if (reviews.get(sid) or {}).get('fingerprint')!=fingerprints.get(sid):
+                return False
+        return True
     def record_human_decision(self,revision,decision,notes,decision_id,slide_id=None,issue_ids=()):
         """Host only: an explicit, recorded human acceptance, rejection or issue dismissal."""
         if decision not in ('accept','reject','dismiss_issues'):raise ValueError('Unknown human decision')
@@ -1090,7 +1134,8 @@ class PresentationStore(shared.ArtifactStore):
             record=dict(decision=decision,notes=notes.strip()[:2000],decision_id=decision_id,decided_at=time.time(),reviewer='human',issue_ids=list(issue_ids))
             if slide_id is None:
                 deck=state.get('deck_review')
-                if not deck or deck.get('status')=='pending' and decision=='dismiss_issues':raise ValueError('No deck review to decide on')
+                if not deck or deck.get('status')=='stale':raise ValueError('No current deck review to decide on')
+                if deck.get('status')=='pending' and decision=='dismiss_issues':raise ValueError('No deck review to decide on')
                 target=deck
             else:
                 review=state.get('reviews',{}).get(slide_id)
@@ -1128,6 +1173,8 @@ class PresentationStore(shared.ArtifactStore):
         with self.locked() as(c,state):
             self.assert_current(state,base_revision); prs=Presentation(io.BytesIO(self.snapshot_unlocked(c,base_revision)))
             if not len(prs.slides):raise ValueError('Empty presentation')
+            if state.get('template_use')=='template_reference' and state.get('prototype_slides'):
+                raise ValueError('Discard prototype slides before finalize; template_reference delivery cannot include sample pages')
             # Delivery needs intact, content-checked slides. Visual review is advice and never holds it up.
             problems=[];aesthetics={}
             for slide in prs.slides:
@@ -1191,7 +1238,7 @@ def review_summary(slide_id,review):
 
 
 def deck_summary(deck):
-    return {key:deck.get(key) for key in ('status','revision','summary','issues','rejected_issues','model_id','prompt_version','error','human','review_id') if key in deck}
+    return {key:deck.get(key) for key in ('status','revision','request_id','summary','issues','rejected_issues','model_id','prompt_version','error','human','review_id','stale_at_revision') if key in deck}
 
 
 def _template_index(state):

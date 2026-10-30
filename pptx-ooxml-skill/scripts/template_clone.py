@@ -138,6 +138,97 @@ def remove_slide(prs, slide):
     prs.part.drop_rel(rel_id)
 
 
+def discard_prototypes(prs, prototype_ids, redirects, identity):
+    """Retarget remaining internal slide jumps, then drop the prototype slides.
+
+    ``redirects`` maps a discarded prototype id to a slide that will remain.
+    Jumps that already point at a remaining slide are left alone. A jump to a
+    prototype with no mapping, or to a missing slide, fails before anything is
+    removed. Clone order is never used to guess a destination.
+    """
+    removing = list(prototype_ids or [])
+    mapping = dict(redirects or {})
+    by_id = {}
+    for slide in prs.slides:
+        sid = identity(slide)
+        if sid in by_id:
+            raise ValueError('Duplicate slide ID')
+        by_id[sid] = slide
+    missing = [sid for sid in removing if sid not in by_id]
+    if missing:
+        raise ValueError('Unknown prototype slide: ' + ', '.join(missing))
+    for source, dest in mapping.items():
+        if not isinstance(source, str) or not isinstance(dest, str):
+            raise ValueError('redirects keys and values must be slide ids')
+        if source not in removing:
+            raise ValueError('redirects source is not a discarded prototype: ' + source)
+        if dest not in by_id:
+            raise ValueError('redirects target does not exist: ' + dest)
+        if dest in removing:
+            raise ValueError('redirects target is being discarded: ' + dest)
+    redirected = retarget_internal_jumps(prs, set(removing), mapping, identity, by_id)
+    for prototype in removing:
+        remove_slide(prs, by_id[prototype])
+    assert_internal_jumps(prs, identity)
+    return dict(discarded=removing, redirected=redirected)
+
+
+def retarget_internal_jumps(prs, removing, mapping, identity, by_id):
+    """Rewrite RT.SLIDE relationships on slides that will remain."""
+    redirected = []
+    remaining = [slide for slide in prs.slides if identity(slide) not in removing]
+    for slide in remaining:
+        source_id = identity(slide)
+        for rel in list(_internal_slide_rels(slide)):
+            target = _slide_for_part(prs, rel.target_part)
+            if target is None:
+                raise ValueError('Internal slide jump points at a missing slide on ' + source_id)
+            target_id = identity(target)
+            if target_id not in removing:
+                continue
+            dest_id = mapping.get(target_id)
+            if not dest_id:
+                raise ValueError('Internal jump to prototype ' + target_id + ' has no redirect')
+            dest = by_id[dest_id]
+            old_rid = rel.rId
+            new_rid = slide.part.relate_to(dest.part, RT.SLIDE)
+            if new_rid != old_rid:
+                _rewrite_rel_ids(slide._element, {old_rid: new_rid})
+                _drop_unused_rel(slide.part, old_rid)
+            redirected.append(dict(from_slide=source_id, prototype=target_id, to_slide=dest_id))
+    return redirected
+
+
+def assert_internal_jumps(prs, identity):
+    """Fail if any remaining slide jump targets a part that is not in the deck."""
+    known = {slide.part for slide in prs.slides}
+    for slide in prs.slides:
+        for rel in _internal_slide_rels(slide):
+            if rel.target_part not in known:
+                raise ValueError('Dangling internal slide jump on ' + identity(slide))
+
+
+def _internal_slide_rels(slide):
+    for rel in list(slide.part.rels.values()):
+        if not rel.is_external and rel.reltype == RT.SLIDE:
+            yield rel
+
+
+def _slide_for_part(prs, part):
+    for slide in prs.slides:
+        if slide.part is part:
+            return slide
+    return None
+
+
+def _drop_unused_rel(part, rId):
+    if rId not in part.rels:
+        return
+    if rId in _relationship_ids(part._element):
+        raise ValueError('Internal jump relationship ' + rId + ' is still referenced')
+    part.rels.pop(rId)
+
+
 def _duplicate_part(package, part, memo, reserved):
     key = str(part.partname)
     if key in memo:
