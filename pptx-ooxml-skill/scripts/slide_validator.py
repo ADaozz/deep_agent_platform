@@ -70,9 +70,9 @@ def layout_issues(slide, width_points=960, height_points=540):
                 if needed>h*height_points-4-inset_y*2:issues.append({'type':'text_overflow','severity':'error','element_id':element['id']})
             except (OSError,IndexError,ValueError):issues.append({'type':'font_measurement_unavailable','severity':'error','element_id':element['id']})
     for i,a in enumerate(elements):
-        if a.get('layer') in ('background','decoration') or a['type'] in ('complex','connector'):continue
+        if a.get('layer') in ('background','decoration') or a['type']=='connector' or (a['type']=='complex' and not a.get('overlap_candidate')):continue
         for b in elements[i+1:]:
-            if b.get('layer') in ('background','decoration') or b['type'] in ('complex','connector'):continue
+            if b.get('layer') in ('background','decoration') or b['type']=='connector' or (b['type']=='complex' and not b.get('overlap_candidate')):continue
             if a.get('overlap_group') and a.get('overlap_group')==b.get('overlap_group'):continue
             x,y,w,h=(a['geometry'][k] for k in ('x','y','w','h')); X,Y,W,H=(b['geometry'][k] for k in ('x','y','w','h'))
             area=max(0,min(x+w,X+W)-max(x,X))*max(0,min(y+h,Y+H)-max(y,Y))

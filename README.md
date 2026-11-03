@@ -25,9 +25,15 @@ PLATFORM_DATA_DIR=.platform-thread .venv/bin/uvicorn platform_app.main:app --hos
 
 右上角提供浅色／夜间模式与中文／English 切换。首次打开跟随系统配色和浏览器语言，手动选择保存在本地浏览器，刷新后继续生效。界面标签、菜单、配置弹窗、状态提示和日期随语言更新；用户的会话内容与配置保持原文。侧栏文件入口为 Filebase（文件库）。
 
-会话文件页展示当前 Thread 的私有文件并提供下载；聊天附件和输出文件块可点击直接下载。DOCX 和 PPTX 是两个独立、可卸载的扩展，可在侧栏「扩展功能」中分别启用、停用或卸载，不与主 Agent 执行逻辑耦合；卸载不删除产物与版本。部署方式见 [可选 Office 功能](docs/optional-office-features.md)。
+会话文件页展示当前 Thread 的私有文件并提供下载；聊天输出文件块点击打开支持格式的预览，下载按钮保留原文件下载。DOCX 和 PPTX 是两个独立、可卸载的扩展，可在侧栏「扩展功能」中分别启用、停用或卸载；卸载不删除产物与版本。通用文本、PDF 和图片预览不依赖 Office 扩展。部署方式见 [可选 Office 功能](docs/optional-office-features.md)。
 
-DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PPTX 逐元素构建，提供缩略图、即时原生元素预览及完成页的正式渲染。两者只读、支持运行中纠偏，最终文件保持可编辑。未完成实际视觉审查时标记草稿。详见 [DOCX 说明](docs/docx-streaming.md) 和 [PPTX Skill](pptx-ooxml-skill/README.md)。
+DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PPTX 提供缩略图、即时原生元素预览及后台正式渲染；脚本覆盖文件后自动登记新版本并更新预览，保留当前及前一版文件快照。两者预览只读、支持运行中纠偏，最终文件保持可编辑。详见 [DOCX 说明](docs/docx-streaming.md) 和 [PPTX Skill](pptx-ooxml-skill/README.md)。
+
+点击聊天文件块可在右侧预览 Markdown、TXT、YAML/YML、JSON、CSV、LOG、TOML、INI、XML、PDF 和 PNG/JPEG/GIF/WebP/AVIF/BMP/SVG 图片，并通过顶部文件列表切换。Markdown 支持排版与源码切换、本地图片及文件链接；图片支持缩放，PDF 使用浏览器阅读器。文本预览上限为 2 MB，超限文件仍可下载。
+
+PPT 新建从 [60 套风格资料](pptx-ooxml-skill/templates/README.md) 中选择设计 Markdown 与参考图，结合用户指定的颜色、受众和主题统一整稿风格；导入、克隆与填槽用于修改已有 PPT。统计图表优先使用 PowerPoint 原生 chart 和嵌入式工作簿，仅缺少图型时才允许说明原因后自绘。分式、矩阵、积分等公式使用原生 Office Math，预览渲染与 PowerPoint 实机编辑验证分别记录。
+
+全部幻灯片完成后统一进行遮挡检查与视觉审查。Agent 局部修复真实遮挡并复检，视觉审查由平台单独调用支持图片输入的模型 API，只提供建议，不自动修改文件。缺少可用视觉 API 时不阻塞生成或交付，也不标为视觉通过。审查默认折叠并显示问题数及等级，展开直接列出当前问题；保留驳回问题、交给 Agent 修复，不提供人工通过、不通过或单页重新审查入口。真实风格及用户调整会进入审查上下文，详见 [PPTX 主说明](pptx-ooxml-skill/SKILL.md)。
 
 - 参考页面的浅色布局、可折叠侧栏、运行环境菜单和文件上传；适配手机屏幕。`Ctrl+Alt+B` 切换侧栏，Enter 发送，Shift+Enter 换行。
 - 统一 Agent 设置，可编辑系统提示词、规则、原生工具开关、额外 Office 工具和 Skill。
@@ -37,9 +43,11 @@ DOCX 逐块提交，右侧提供真实分页、页码与整页/页宽缩放。PP
 - 原生文件读写、搜索、命令执行、子 Agent、提问、工具审批、暂停/继续、取消、运行中追加指令、后续任务排队、上下文压缩。网页会话启用原生 `task` / `read_subagent_log`，按内置运行时策略委派子 Agent，并保留并发控制、取消传播与结果返回。
 - 输入框加号直接上传文件，每条消息最多 10 个文件、每个 20MB。文件存入当前 Thread 的私有文件库，随消息传入可供 Agent 读取的路径；若模型支持图片输入，则最多 4 张符合条件的图片同时通过内核图片附件接口发送。
 - 默认使用 `ask` 审批模式。模型旁的 Permission 菜单可切换 `ask / allow`；新会话发送前也可选择。切换到 `allow` 需输入 `ALLOW` 确认。运行中的切换显示待生效状态，并由内核在安全边界应用。`allow` 自动批准工具，不改变文件系统隔离模式；ask 模式下 execute 默认无网，申请 `network=true` 并获批后可联网，restricted 同样生效；allow 模式沿用命令默认联网。未提供 Thread 作用域适配的宿主 MCP 服务不会启动。
-- 文件浏览/下载及真实 DOCX / PPTX / XLSX 文件下载；每轮结束后，本轮新增或修改的文件以文件块展示，点击直接下载。
+- 每轮结束后，本轮新增或修改的文件以紧凑文件块展示；支持的格式点击预览，其余格式点击下载。文件名和独立下载按钮始终可用。
 
 ## 工具、Skill 和 MCP
+
+只想使用 PPT 技能，无需启动平台：完整复制 `pptx-ooxml-skill/`、安装其 requirements.txt，再让支持读文件和执行 Python 的 Agent 读取 SKILL.md。详见 [独立使用 PPT Skill 的完整指南](pptx-ooxml-skill/references/standalone.md)，包含可运行的两页示例、风格选择、原生图表/公式、检查与本地预览，以及独立模式和平台功能的边界。
 
 侧栏「Agent 设置」统一配置提示词、规则、工具、Skill 和 MCP。所有新会话使用这份配置，已有会话保留各自的配置快照。平台不再提供工作区创建、切换、资源聚合、按工作区筛选或独立文件目录。
 
@@ -108,15 +116,25 @@ Default 思考强度表示不向模型端点发送强度参数；其余选项来
 - `platform_app/models.py`：平台模型配置、密钥加密与脱敏。
 - `platform_app/main.py`：FastAPI 入口、全局配置与扩展路由。
 
-`.platform/` 保存数据库、加密密钥、会话 checkpoint、事件日志、Skill 快照、文件库文件和 Office 产物。可用 `PLATFORM_DATA_DIR` 指定外部持久目录。请将 `.platform/model-config.key` 与数据库一起备份；它不替代生产密钥服务。服务重启不会自动重试未完成的写操作，原生 checkpoint 支持后续恢复。
+主要目录：
 
-参考压缩包包含捕获账户的页面内容，已加入 `.gitignore`；页面使用真实平台数据，没有导入参考页面中的账户历史。
+| 目录 | 用途 |
+| --- | --- |
+| `frontend/src/` | 聊天页面、通用文件预览和可选 Office 面板 |
+| `platform_app/` | HTTP 服务、内置 Agent 运行时和扩展注册 |
+| `docx-ooxml-skill/` | DOCX 技能、脚本与测试 |
+| `pptx-ooxml-skill/` | 可独立使用的 PPTX 技能、原生图表/公式与风格资料 |
+| `scripts/import_pptx_styles/` | 风格资料导入工具、来源映射与裁切审计 |
+| `tests/`、`docs/` | 平台回归测试与部署、隔离、验收说明 |
+
+数据目录保存数据库、加密密钥、会话 checkpoint、事件日志、Skill 快照、文件库文件和 Office 产物，不提交到 Git。默认目录为 `.platform/`，上面的启动示例显式使用 `.platform-thread/`；可用 `PLATFORM_DATA_DIR` 指定其他持久目录。请将该目录中的 `model-config.key` 与数据库一起备份。服务重启不会自动重试未完成的写操作，原生 checkpoint 支持后续恢复。新会话采用最新 Skill 快照，已有会话保留原快照。
 
 ## 验证
 
 ```bash
 .venv/bin/pip install pytest httpx
 .venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q pptx-ooxml-skill/tests
 node --test tests/*.test.mjs
 npm --prefix frontend run build
 ```
@@ -127,4 +145,4 @@ npm --prefix frontend run build
 
 Agent 设置中的 Skills 页用于配置已安装技能的启用状态，不再手动新增或编辑 Markdown。平台从 `$PLATFORM_DATA_DIR/skills/*/SKILL.md` 发现技能；通过 `skill_bindings` 按技能目录标识全局启用或停用。新会话将启用技能的完整目录（含脚本与参考资料）复制到只读快照，供原生技能加载器发现。已有配置技能只提供启用开关。
 
-完整 Office 浏览器验收建议串行执行，避免 LibreOffice 同时渲染争用资源；慢速测试机器可用 `OFFICE_E2E_TIMEOUT_SCALE=3` 放大轮询等待预算。此设置只影响测试，不改变生产质量门禁或性能指标。
+完整 Office 浏览器验收建议串行执行，避免 LibreOffice 同时渲染争用资源；慢速测试机器可用 `OFFICE_E2E_TIMEOUT_SCALE=3` 放大轮询等待预算。此设置只影响测试，不改变生产质量门禁或性能指标。正式渲染需要 LibreOffice、fontconfig 和文档字体；Office 依赖安装见 [可选 Office 功能](docs/optional-office-features.md)。

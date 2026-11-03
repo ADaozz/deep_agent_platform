@@ -101,6 +101,8 @@ def review(slide, profile=None, components=None, slots=None, width_points=960, h
     style_tokens = profile.get('type_scale', {})
     margin_x = float(profile.get('spacing', {}).get('margin_x', .06))
     margin_y = float(profile.get('spacing', {}).get('margin_y', .06))
+    spacing=profile.get('spacing') or {}
+    left,right,top,bottom=(float(spacing.get('margin_'+key,default)) for key,default in (('left',margin_x),('right',margin_x),('top',margin_y),('bottom',margin_y)))
     issues = []
 
     generated_fonts = set()
@@ -164,7 +166,7 @@ def review(slide, profile=None, components=None, slots=None, width_points=960, h
                     f'chart is {width_in:.1f} x {height_in:.1f} in; below 3.0 x 2.0 in it stops being readable', element.get('id')))
             categories = chart.get('categories') or []
             series = chart.get('series') or []
-            if not categories:
+            if not categories and not any(item.get('points') for item in series):
                 issues.append(_issue('chart_without_categories', ERROR, 'chart has no categories', element.get('id')))
             if not series or any(not str(item.get('name', '')).strip() for item in series):
                 issues.append(_issue('chart_series_unlabeled', ERROR, 'every chart series needs a name', element.get('id')))
@@ -196,12 +198,15 @@ def review(slide, profile=None, components=None, slots=None, width_points=960, h
         if not quality.get('safe_area', True):
             continue
         x, y, w, h = geometry
-        if x < margin_x - .012 or y < margin_y - .012 or x + w > 1 - margin_x + .012 or y + h > 1 - margin_y + .012:
+        if x < left - .012 or y < top - .012 or x + w > 1 - right + .012 or y + h > 1 - bottom + .012:
             if not any(issue.get('type') == 'safe_area_violation' and issue.get('element_id') == element.get('id') for issue in issues):
                 issues.append(_issue('safe_area_violation', WARNING,
-                    f'element overlaps the {margin_x:.0%} safe margin', element.get('id')))
+                    f'element overlaps the safe margins (left {left:.1%}, right {right:.1%}, top {top:.1%}, bottom {bottom:.1%})', element.get('id')))
 
-    if len(generated_fonts) > 1:
+    declared=profile.get('fonts') or {}
+    allowed_fonts={v for v in declared.values() if isinstance(v,str)}
+    allowed_fonts.update(v for v in declared.get('fallback',[]) if isinstance(v,str))
+    if len(generated_fonts) > 1 and not generated_fonts.issubset(allowed_fonts):
         issues.append(_issue('mixed_font_family', ERROR, 'generated text mixes font families: ' + ', '.join(sorted(generated_fonts))))
 
     issues.extend(_alignment_issues(elements))

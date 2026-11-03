@@ -85,12 +85,13 @@ class ArtifactStore:
     def save_state(self, c, state):
         c.execute('INSERT OR REPLACE INTO state VALUES (1,?)', (json.dumps(state, ensure_ascii=False),))
 
-    def persist_revision(self,c,state,data,result,request,operation_id,kind):
+    def persist_revision(self,c,state,data,result,request,operation_id,kind,*,publish=True):
+        if not publish:state['pending_publish']=False
         c.execute('INSERT INTO revisions VALUES (?,?,?,?,?)',(state['revision'],operation_id,json.dumps(request,sort_keys=True),json.dumps(result),data))
         c.execute('INSERT INTO events(data) VALUES (?)',(json.dumps(dict(type=kind,**result)),))
         self.save_state(c,state)
         c.commit()
-        self._publish(self.path,data)
+        if publish:self._publish(self.path,data)
         state['pending_publish']=False
         self.save_state(c,state)
         c.commit()
@@ -107,7 +108,7 @@ class ArtifactStore:
             if state is None or type(base_revision) is not int or state['revision'] != base_revision:
                 raise ValueError('Revision conflict')
             row = c.execute('SELECT docx FROM revisions WHERE revision=?', (revision,)).fetchone()
-            if row is None:
+            if row is None or row[0] is None:
                 raise ValueError('Unknown historical revision')
             state=self.prepare_restore(c,state,revision)
             return self.commit(c, state, row[0], operation_id, request, ['*'])
@@ -119,7 +120,7 @@ class ArtifactStore:
     def snapshot(self, revision):
         with self.locked() as (c, state):
             row = c.execute('SELECT docx FROM revisions WHERE revision=?', (revision,)).fetchone()
-            if row is None:
+            if row is None or row[0] is None:
                 raise ValueError('Unknown revision')
             return row[0]
 

@@ -1,0 +1,56 @@
+{
+  "category": "work-supplement",
+  "theme_id": "warm-jade-annual-report",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/03_work/03/en/warm-jade-annual-report.md",
+  "reference_repo_path": "docs/themes/work/warm-jade-annual-report.jpg",
+  "provenance": "original",
+  "original_design_sha256": "bb853f698050186f6753473d3447bcf99b8df0241622b9f645cc14dfdbe5d250",
+  "reference_sha256": "2438cb77f8969d1de6c11825f2f8c3b3f81a91ca7e59afbba727c95bafaea069",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "5f31718068ada221d929505d2ab3bae7b2c15a44c61c78ed0a253bc2e3436f3b",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "03_work"
+}

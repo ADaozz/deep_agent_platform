@@ -31,17 +31,17 @@ from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from lxml import etree
 
 SKILL_ROOT=Path(__file__).resolve().parents[1]
+if str(Path(__file__).parent) not in sys.path:sys.path.insert(0,str(Path(__file__).parent))
 if str(SKILL_ROOT) not in sys.path:sys.path.insert(0,str(SKILL_ROOT))
 from design import design_quality, diagram_presets, layout_registry, layout_resolver, profile_registry
 
 
 def load(name):
     path=Path(__file__).with_name(name+'.py')
-    if name=='artifact_runtime' and not path.exists():path=Path(__file__).resolve().parents[2]/'platform_app'/'artifact_runtime.py'
     spec=importlib.util.spec_from_file_location(name,path); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
 
 shared=load('artifact_runtime'); renderer=load('slide_renderer'); validator=load('slide_validator'); component_renderer=load('component_renderer')
-native_style=load('native_style'); native_diagram=load('native_diagram')
+style_library=load('style_library'); review_design=load('review_design'); native_charts=load('native_charts'); native_math=load('native_math'); native_style=load('native_style'); native_diagram=load('native_diagram')
 template_importer=load('template_importer'); template_clone=load('template_clone')
 template_slide_import=load('template_slide_import')
 template_recolor=load('template_recolor'); template_fill=load('template_fill')
@@ -116,6 +116,24 @@ def apply_effective_palette(state,palette):
     state['effective_palette']={key:theme[key] for key in ('accent','background','text','muted','card','border') if key in theme}
 
 
+def adopt_template_visual_system(state, visual):
+    """Keep the first template's authored palette/font for subsequent native additions."""
+    if not visual or state.get('template_visual_system'):
+        return
+    palette = {key:visual[key] for key in ('accent','background','text','muted','card','border') if key in visual}
+    if any(not isinstance(value,str) or len(value)!=6 or any(c not in '0123456789abcdefABCDEF' for c in value)
+           for value in palette.values()):
+        raise ValueError('Template visual_system palette must use RRGGBB colours')
+    family = visual.get('font_family')
+    if not isinstance(family,str) or not family.strip():
+        raise ValueError('Template visual_system requires font_family')
+    state['template_visual_system']=copy.deepcopy(visual)
+    state['template_font']=family
+    state['font_family']=family
+    if not state.get('effective_palette'):
+        apply_effective_palette(state,palette)
+
+
 def apply_profile(state,profile_id):
     profile=profiles().get(profile_id)
     kept=dict(state.get('effective_palette') or {})
@@ -172,6 +190,8 @@ def set_slide_layout(state,sid,layout_id,modules):
 
 
 def check_anchor_content(state,sid,anchor,content):
+    # Equations occupy text slots, but TeX source length is not a text capacity.
+    if content.get('type')=='equation':content=dict(content,type='text',text='')
     """Reject content that the declared slot cannot hold, before mutating."""
     layout_id=state.get('layouts',{}).get(sid)
     if not layout_id or not anchor:return
@@ -243,15 +263,7 @@ def apply_text(shape,text,style):
 
 
 def chart_data(chart):
-    categories=chart['categories'];series=chart['series']
-    if not 1<=len(categories)<=12 or any(not isinstance(label,str) or len(label)>80 for label in categories) or not 1<=len(series)<=4:
-        raise ValueError('Bounded chart categories/series required')
-    values=CategoryChartData();values.categories=categories
-    for item in series:
-        if not isinstance(item.get('name'),str) or len(item['name'])>80 or len(item['values'])!=len(categories) or any(type(n)not in (int,float) or not math.isfinite(n) for n in item['values']):
-            raise ValueError('Bounded finite chart series required')
-        values.add_series(item['name'],item['values'])
-    return values
+    return native_charts.chart_data(chart)
 
 
 def positions(g,prs):return (round(g['x']*prs.slide_width),round(g['y']*prs.slide_height),round(g['w']*prs.slide_width),round(g['h']*prs.slide_height))
@@ -269,14 +281,28 @@ def serialize(prs):
 
 
 def _require_checked(state,prs):
-    """Content slides must pass check-slide before another one is added or imported."""
+    """Generation is checked as a complete deck, not between slide additions."""
     if state.get('prototype_slides') or state.get('template_use')=='template_reference':
         raise ValueError('Legacy template_reference session is not supported; start a new deck and import pages with slide.import')
+
+
+def slide_signatures(prs):
+    """Include referenced images, workbooks and themes, not just slide XML."""
+    result={}
     for slide in prs.slides:
-        sid=renderer.slide_identity(slide)
-        review=state['reviews'].get(sid,{})
-        if review.get('status')=='blocked' or not review.get('automatic_passed') or (state['mode']=='strict' and review.get('visual_review')!='passed'):
-            raise ValueError('Check all affected slides before creating the next slide')
+        parts={}
+        def visit(part):
+            name=str(part.partname)
+            if name in parts:return
+            parts[name]=hashlib.sha256(part.blob).hexdigest()
+            links=[]
+            for rel in part.rels.values():
+                links.append((rel.rId,rel.reltype,rel.target_ref,rel.is_external))
+                if not rel.is_external and rel.reltype!=RT.SLIDE:visit(rel.target_part)
+            parts[name]+=':'+json.dumps(sorted(links))
+        visit(slide.part)
+        result[renderer.slide_identity(slide)]=hashlib.sha256(json.dumps(parts,sort_keys=True).encode()).hexdigest()
+    return result
 
 
 def _place_slide(prs,dest,insert_after):
@@ -313,6 +339,7 @@ def _resolve_import_source(request,asset_root):
 
 
 def _adopt_imported_slide(state,sid,source_slide_id,template_id,digest,manifest,entry):
+    adopt_template_visual_system(state,(manifest or {}).get('visual_system') or (entry or {}).get('visual_system'))
     spec=next((slide for slide in (manifest.get('slides') or []) if slide.get('slide_id')==source_slide_id),None)
     if spec is None and entry:
         spec=next((slide for slide in entry.get('slides') or [] if slide.get('slide_id')==source_slide_id),None)
@@ -505,11 +532,16 @@ def apply_chart_style(shape,state,unit=None,meta=None):
 def apply_element_style(shape,meta,state,views=None):
     """Re-apply profile defaults, then preset and explicit overrides, for one element."""
     kind=meta.get('kind')
-    if kind=='text':
+    if kind in ('text','equation'):
         meta['resolved_style']=resolve_style(state,meta,views)
-        if meta.get('align'):meta['resolved_style']['align']=meta['align']
+        if kind=='equation':meta['resolved_style']['align']=meta.get('equation_align','center')
+        elif meta.get('align'):meta['resolved_style']['align']=meta['align']
         meta['resolved_style']=native_style.text_style(meta,state)
-        apply_text(shape,meta.get('text') or shape.text,meta['resolved_style'])
+        if kind=='equation':
+            style=meta['resolved_style']
+            data=native_math.replace(shape,meta['latex'],font_size=style['font_size'],color=style['color'],align=style.get('align','center'))
+            meta.update(latex=data['latex'],mathml=data['mathml'],align=data['align'],resolved_style=dict(style,font_family='Cambria Math'))
+        else:apply_text(shape,meta.get('text') or shape.text,meta['resolved_style'])
     elif kind=='shape':
         if meta.get('fill_token'):
             meta['fill']=state['theme'].get(meta['fill_token'],meta.get('fill'))
@@ -583,7 +615,7 @@ def restyle_presentation(prs,state):
             if not meta.get('kind'):continue
             if meta.get('diagram_id'):
                 diagrams.add(meta['diagram_id']);continue
-            if meta['kind'] in ('text','shape','table','chart'):apply_element_style(shape,meta,state,views)
+            if meta['kind'] in ('text','equation','shape','table','chart'):apply_element_style(shape,meta,state,views)
             elif meta['kind']=='component':components_to_rebuild.append(shape)
             if meta.get('anchor') and meta['anchor'] in anchors and not meta.get('manual_geometry'):set_geometry(shape,geometry(meta,anchors),prs)
         for diagram_id in sorted(diagrams):native_diagram.rebuild(slide,diagram_id,state,prs,anchors)
@@ -598,6 +630,27 @@ native_diagram.configure(renderer=renderer,native_style=native_style,style_for=s
 
 class PresentationStore(shared.ArtifactStore):
     def __init__(self,path,temporary_root=None):super().__init__(path,'.pptx','.pptx-state',temporary_root)
+    def deck_plan(self):
+        files=next((p for p in self.path.parents if p.name=='files'),None)
+        if files is None:return None
+        plan_path=files.parent/'tmp'/'deck-plan.json'
+        try:
+            if not plan_path.resolve().is_relative_to(files.parent.resolve()) or plan_path.stat().st_size>1024*1024:return None
+            plan=json.loads(plan_path.read_text())
+            if not isinstance(plan,dict):return None
+            output=plan.get('pptx') or plan.get('output')
+            if output:
+                if not isinstance(output,str):return None
+                target=Path(output)
+                matches=(target.resolve()==self.path.resolve() if target.is_absolute()
+                         else (files.parent/target).resolve()==self.path.resolve() or (files/target).resolve()==self.path.resolve())
+                if not matches:return None
+            elif len(list(files.glob('*.pptx')))!=1:return None
+            return plan
+        except (OSError,ValueError):return None
+    def plan_style_reference(self):
+        plan=self.deck_plan() or {}
+        return style_library.reference(plan.get('style_id') or plan.get('style'))
     def assert_current(self,state,base_revision=None):
         if state is None:raise ValueError('Presentation not initialized')
         if base_revision is not None and (type(base_revision) is not int or base_revision!=state['revision']):raise ValueError('Revision conflict')
@@ -607,31 +660,43 @@ class PresentationStore(shared.ArtifactStore):
             layouts=state.get('layouts',{}),layout_variants=state.get('layout_variants',{}),layout_modules=state.get('layout_modules',{}),
             layout_slots=state.get('layout_slots',{}),backgrounds=state.get('backgrounds',{}),
             template_font=state.get('template_font'),template_accent=state.get('template_accent'),
+            template_visual_system=state.get('template_visual_system'),
             conflicts=state.get('design_conflicts',[]),
             template_manifest=state.get('template_manifest'),template_slots=state.get('template_slots',{}),
             effective_palette=state.get('effective_palette'),template_tokens=state.get('template_tokens'),
             protected_elements=state.get('protected_elements'),
             imported_slides=state.get('imported_slides'),imported_parts=state.get('imported_parts'))
-    def commit(self,c,state,data,operation_id,request,changed,kind='presentation_revision',extra=None):
+    def commit(self,c,state,data,operation_id,request,changed,kind='presentation_revision',extra=None,*,publish=True):
         validator.validate_package(data)
         state.update(revision=state['revision']+1,sha256=hashlib.sha256(data).hexdigest(),pending_publish=True,finalized=False)
         self._invalidate_deck_review(state)
         prs=Presentation(io.BytesIO(data))
+        if request.get('external') and state['revision']>0:
+            previous=Presentation(io.BytesIO(self.snapshot_unlocked(c,state['revision']-1)))
+            before,after=slide_signatures(previous),slide_signatures(prs)
+            changed=[sid for sid in dict.fromkeys([*before,*after]) if before.get(sid)!=after.get(sid)]
+        selected=style_library.presentation_reference(prs) or self.plan_style_reference()
+        if selected:state['style_reference']=selected
+        elif request.get('external'):state.pop('style_reference',None)
+        plan=self.deck_plan() if request.get('external') or state['revision']==0 else None
+        state['review_design']=review_design.resolve(prs,selected,plan,state.get('review_design'),existing_ppt=bool(state.get('template')))
         if changed==['*']:
-            state['reviews']={}; state['last_reviews']={}; state['renders']={}; state['repair_attempts']={}
+            state.setdefault('last_reviews',{}).update(state.get('reviews',{}))
+            state['reviews']={}; state['renders']={}; state['repair_attempts']={}
         else:
             for sid in changed:
                 old=state.setdefault('reviews',{}).pop(sid,None)
                 if old:state.setdefault('last_reviews',{})[sid]=old
         view=renderer.manifest(prs,state)
         event=dict(status='committed',presentation_id=state['presentation_id'],revision=state['revision'],sha256=state['sha256'],operation_id=operation_id,
+            preview_error=None,external_conflict=False,
             slide_id=request.get('slide_id') or state.get('active_slide'),changed_elements=[request.get('element',{}).get('id','*')],changed_slides=changed,
             manifest=view,path=self.path.name,theme=state['theme'],font_family=state['font_family'],profile_id=state.get('profile_id'),
             design=self.design_event(state),committed_at=time.time())
         if extra:event.update(extra)
-        self.persist_revision(c,state,data,event,request,operation_id,kind)
+        self.persist_revision(c,state,data,event,request,operation_id,kind,publish=publish)
         return event
-    def init(self,presentation_id,template=None,mode='normal',theme=DEFAULT_PROFILE,profile=None):
+    def init(self,presentation_id,template=None,mode='normal',theme=DEFAULT_PROFILE,profile=None,style_id=None):
         identifier(presentation_id)
         profile_id=profile or theme
         if mode not in ('normal','strict'):raise ValueError('Unknown review mode')
@@ -645,6 +710,7 @@ class PresentationStore(shared.ArtifactStore):
                 validator.validate_package(Path(template).read_bytes()); prs=Presentation(template)
             else:
                 prs=Presentation(); prs.slide_width=Inches(13.333333); prs.slide_height=Inches(7.5)
+            if style_id:style_library.apply_reference(prs,style_id)
             state=dict(presentation_id=presentation_id,revision=-1,mode=mode,slots={},layouts={},layout_variants={},layout_modules={},
                 layout_slots={},backgrounds={},reviews={},renders={},repair_attempts={},template=bool(template),template_complex={},
                 protected_elements={},imported_slides={},imported_parts={})
@@ -664,10 +730,11 @@ class PresentationStore(shared.ArtifactStore):
                 state['template_manifest']=manifest
                 state['template_slots']=manifest.get('slots_by_slide') or {}
                 state['template_tokens']=dict(manifest.get('tokens') or {})
+                adopt_template_visual_system(state,manifest.get('visual_system'))
                 state['protected_elements']={slide['slide_id']:list(slide.get('preserve') or []) for slide in manifest.get('slides') or []}
                 # An unreadable template accent stays recorded in template_tokens. The profile
                 # accent remains the effective color and the existing contrast conflict is kept.
-                if not state.get('design_conflicts'):
+                if not state.get('design_conflicts') and not state.get('effective_palette'):
                     derived=semantic_palette(state['template_tokens'])
                     if derived:
                         state['effective_palette']=derived
@@ -680,41 +747,93 @@ class PresentationStore(shared.ArtifactStore):
     def view(self,c,state):
         if state is None:raise ValueError('Presentation not initialized')
         data=c.execute('SELECT docx FROM revisions WHERE revision=?',(state['revision'],)).fetchone()[0]
+        view_state=dict(state)
+        if not view_state.get('style_reference'):view_state['style_reference']=self.plan_style_reference()
+        prs=Presentation(io.BytesIO(data))
+        if not view_state.get('review_design'):
+            view_state['review_design']=review_design.resolve(prs,view_state.get('style_reference'),self.deck_plan(),existing_ppt=bool(state.get('template')))
         return dict(presentation_id=state['presentation_id'],revision=state['revision'],sha256=state['sha256'],path=self.path.name,
-            manifest=renderer.manifest(Presentation(io.BytesIO(data)),state),active_slide=state.get('active_slide'),finalized=state.get('finalized',False),
+            manifest=renderer.manifest(prs,view_state),active_slide=state.get('active_slide'),finalized=state.get('finalized',False),
             mode=state['mode'],theme=state['theme'],profile_id=state.get('profile_id'),deck_review=state.get('deck_review'),
             template_index=_template_index(state),imported_slides=dict(state.get('imported_slides') or {}),
-            history=[{key:value for key,value in json.loads(r[0]).items() if key in ('revision','operation_id','sha256','slide_id','status')} for r in c.execute('SELECT result FROM revisions ORDER BY revision')])
+            template_slots=copy.deepcopy(state.get('template_slots') or {}),
+            template_visual_system=copy.deepcopy(state.get('template_visual_system') or {}),
+            history=[{key:value for key,value in json.loads(r[0]).items() if key in ('revision','operation_id','sha256','slide_id','status')} for r in c.execute('SELECT result FROM revisions WHERE docx IS NOT NULL ORDER BY revision')])
     def status(self):
         with self.locked() as (c,state):return self.view(c,state)
     def track_external(self, presentation_id):
-        """Index a valid existing PPTX without changing its package bytes."""
+        """Snapshot a complete external write without ever publishing over its writer."""
         with self.locked() as (c, state):
-            if state is not None:
-                return None
             data = self.path.read_bytes()
+            digest=hashlib.sha256(data).hexdigest()
+            if state is not None and state['sha256']==digest:return None
             validator.validate_package(data)
+            shared.validate_embedded_resources(io.BytesIO(data))
             prs = Presentation(io.BytesIO(data))
-            state = dict(presentation_id=identifier(presentation_id), revision=-1, mode='normal',
-                slots={}, layouts={}, layout_variants={}, layout_modules={}, layout_slots={}, backgrounds={},
-                reviews={}, renders={}, repair_attempts={}, template=True,
-                template_complex={renderer.slide_identity(slide): True for slide in prs.slides},
-                active_slide=renderer.slide_identity(prs.slides[0]) if len(prs.slides) else None)
-            apply_profile(state,DEFAULT_PROFILE)
-            return self.commit(c, state, data, '__external__', {'external': True}, ['*'], 'presentation_initialized')
+            initial=state is None
+            if initial:
+                state=dict(presentation_id=identifier(presentation_id),revision=-1,mode='normal',reviews={},renders={},repair_attempts={})
+                apply_profile(state,DEFAULT_PROFILE)
+            else:state=copy.deepcopy(state)
+            ids=[renderer.slide_identity(slide) for slide in prs.slides]
+            for name in ('slots','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_slots','protected_elements','imported_slides'):
+                state[name]={k:v for k,v in (state.get(name) or {}).items() if k in ids}
+            state.update(template=True,template_complex={sid:True for sid in ids},active_slide=ids[0] if ids else None,external_conflict=False)
+            # The writer does not take our sidecar lock. Ignore files which changed
+            # while being validated, and catch them at the next tool boundary.
+            if hashlib.sha256(self.path.read_bytes()).hexdigest()!=digest:return None
+            operation='__external__' if initial else f'__external__{state["revision"]+1}-{digest[:16]}'
+            return self.commit(c,state,data,operation,{'external':True},['*'],
+                'presentation_initialized' if initial else 'presentation_revision',extra={'external':True,'render_error':None,'preview_error':None},publish=False)
+
+    def retain_recent_history(self,limit=2):
+        """Retain two file snapshots; keep operation IDs and audit metadata for retries."""
+        with self.locked() as(c,state):
+            if not state:return []
+            kept=[r[0] for r in c.execute('SELECT revision FROM revisions WHERE docx IS NOT NULL ORDER BY revision DESC LIMIT ?',(limit,))]
+            if not kept:return []
+            c.execute('UPDATE revisions SET docx=NULL WHERE revision<? AND docx IS NOT NULL',(min(kept),))
+            state_changed=False
+            for sid,render in list(state.get('renders',{}).items()):
+                if render.get('revision') not in kept:
+                    del state['renders'][sid];state_changed=True
+            for review in state.get('reviews',{}).values():
+                if review.get('revision') not in kept and (review.get('aesthetic_review') or {}).get('status')=='pending':
+                    review['aesthetic_review']=dict(status='unavailable',error=dict(code='snapshot_expired',message='The reviewed snapshot is outside the two-version history window'))
+                    review['status']=reviewer().derive_status(review);state_changed=True
+            self.save_state(c,state);c.commit()
+            if state_changed:self.review_event(c,state,'presentation_history_pruned')
+        self.prune_render_cache(kept)
+        return kept
+
+    def prune_render_cache(self,kept):
+        import fcntl,shutil
+        if not self.render_root.exists():return
+        for directory in self.render_root.glob('render-*'):
+            if directory.is_symlink() or not directory.is_dir():continue
+            try:revision=int(directory.name.removeprefix('render-'))
+            except ValueError:continue
+            if revision in kept:continue
+            try:
+                with (directory/'render.lock').open('a') as lock:
+                    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    shutil.rmtree(directory)
+            except (BlockingIOError,FileNotFoundError):continue
     def preview(self):
         """Generate display images while retaining pending content/visual checks."""
-        current = self.status()
+        with self.locked() as (c, state):
+            self.assert_current(state)
+            current = self.view(c, state)
         revision = current['revision']
-        reviewer = load('slide_reviewer')
-        reviewer.render_snapshot(self, revision)
+        render_module = reviewer()
+        render_module.render_snapshot(self, revision)
         with self.locked() as (c, state):
             self.assert_current(state, revision)
             for index, slide in enumerate(current['manifest']['slides']):
                 state['renders'][slide['slide_id']] = dict(revision=revision, image=f'slide-{index+1:03d}.png')
             return self.emit_state(c, state, dict(type='presentation_preview',
                 presentation_id=state['presentation_id'], revision=revision, path=self.path.name,
-                manifest=self.view(c, state)['manifest']))
+                preview_error=None,manifest=self.view(c, state)['manifest']))
     def apply_one(self,request,asset_root=None):
         identifier(request['operation_id'])
         if len(json.dumps(request,ensure_ascii=False))>30000:raise ValueError('Bounded operation payload exceeded')
@@ -776,6 +895,9 @@ class PresentationStore(shared.ArtifactStore):
                 source_prs=Presentation(str(source_path))
                 manifest=template_importer.index_loaded(source_prs,source_path)
                 source=find_slide(source_prs,source_slide_id)
+                if not prs.slides:
+                    prs.slide_width=source_prs.slide_width
+                    prs.slide_height=source_prs.slide_height
                 dest,report=template_slide_import.import_slide(
                     prs,source_prs,source,sid,template_id,_imported_targets(state,template_id),
                     state.setdefault('imported_parts',{}),renderer.slide_identity)
@@ -806,7 +928,6 @@ class PresentationStore(shared.ArtifactStore):
                 changed=['*']; extra=dict(recolor=report)
             else:
                 slide=find_slide(prs,sid)
-                if state.get('repair_attempts',{}).get(sid,0)>=3 and state.get('reviews',{}).get(sid,{}).get('status')=='blocked':raise ValueError('Slide repair budget exhausted; restore a known version or request review')
                 views=None
                 if state.get('layouts',{}).get(sid):
                     views=slot_views(state,state['layouts'][sid],state.get('layout_modules',{}).get(sid,0))[1]
@@ -844,7 +965,13 @@ class PresentationStore(shared.ArtifactStore):
                         except KeyError:pass
                 elif op=='element.update':
                     element=request['element']; shape=find_element(slide,element['id']); meta=renderer.metadata(shape)
-                    if set(element)-{'id','text','geometry','anchor','fill','style','layer','overlap_group','rows','chart','params','texts','component_version'}:raise ValueError('Unsupported element update field')
+                    if set(element)-{'id','text','latex','geometry','anchor','fill','style','layer','overlap_group','rows','chart','params','texts','component_version'}:raise ValueError('Unsupported element update field')
+                    if 'latex' in element:
+                        if meta.get('kind')!='equation':raise ValueError('latex update requires a native equation')
+                        current=meta.get('resolved_style') or resolve_style(state,meta,views)
+                        data=native_math.replace(shape,element['latex'],font_size=current['font_size'],color=current['color'],align=meta.get('align','center'))
+                        meta.update(latex=data['latex'],mathml=data['mathml'])
+                    if meta.get('kind')=='equation' and 'text' in element:raise ValueError('Use latex to update an equation; plain text would destroy its native math structure')
                     if meta.get('diagram_id'):raise ValueError('Diagram nodes and edges are changed through diagram.update so relations stay consistent')
                     target_anchor=element.get('anchor') or meta.get('anchor')
                     if 'text' in element and not meta.get('kind'):raise ValueError('Imported text keeps its formatting through slot.fill')
@@ -879,9 +1006,9 @@ class PresentationStore(shared.ArtifactStore):
                                     for run in paragraph.runs:run.font.name=state['font_family'];run.font.size=Pt(profile_of(state)['tables']['font_size'])
                         meta['rows']=rows;apply_table_style(shape,state,meta)
                     if 'chart' in element:
-                        if not shape.has_chart:raise ValueError('Chart data update requires a native chart')
+                        if not native_charts.is_chart(shape):raise ValueError('Chart data update requires a native chart')
                         if element['chart'].get('type','bar')!=meta.get('chart',{}).get('type','bar'):raise ValueError('Changing chart type uses chart.change_type, which replaces the chart object and keeps its data')
-                        shape.chart.replace_data(chart_data(element['chart']));meta['chart']=element['chart'];apply_chart_style(shape,state,meta=meta)
+                        native_charts.replace_data(shape,element['chart']);meta['chart']=element['chart'];apply_chart_style(shape,state,meta=meta)
                     if element.get('geometry') or element.get('anchor'):
                         if meta.get('kind')=='component':check_component_geometry(component_validator_get(meta['component']['component_id']),geometry(element,anchors),prs)
                         set_geometry(shape,geometry(element,anchors),prs)
@@ -908,7 +1035,10 @@ class PresentationStore(shared.ArtifactStore):
                         else:shape.line.color.rgb=RGBColor.from_string(color)
                         meta['fill']=color
                     if 'style'in element and shape.has_text_frame:
-                        meta['style']=element['style']; meta['resolved_style']=native_style.text_style(dict(meta,resolved_style=resolve_style(state,meta,views)),state); apply_text(shape,shape.text,meta['resolved_style'])
+                        meta['style']=element['style']
+                        if meta.get('kind')=='equation':apply_element_style(shape,meta,state,views)
+                        else:
+                            meta['resolved_style']=native_style.text_style(dict(meta,resolved_style=resolve_style(state,meta,views)),state);apply_text(shape,shape.text,meta['resolved_style'])
                     meta.update({k:element[k] for k in ('anchor','layer','overlap_group') if k in element}); renderer.set_metadata(shape,meta)
                 elif op=='element.adjust':
                     adjust_element(slide,request['element'],state,prs,anchors)
@@ -940,13 +1070,13 @@ class PresentationStore(shared.ArtifactStore):
                                 overrides={key:value for key,value in (meta.get('style_overrides') or {}).items() if key not in preset}
                                 if overrides:meta['style_overrides']=overrides
                                 else:meta.pop('style_overrides',None)
-                        if kind not in ('text','shape','connector','table','chart'):raise ValueError(f'{kind} elements do not support native style changes')
+                        if kind not in ('text','equation','shape','connector','table','chart'):raise ValueError(f'{kind} elements do not support native style changes')
                         apply_element_style(shape,meta,state,views)
                 elif op=='chart.change_type':
                     element=request['element']
                     if set(element)-{'id','type'}:raise ValueError('chart.change_type accepts id and type only')
                     shape=find_element(slide,element['id']); meta=renderer.metadata(shape)
-                    if meta.get('kind')!='chart' or not shape.has_chart:raise ValueError('chart.change_type requires a native chart')
+                    if meta.get('kind')!='chart' or not native_charts.is_chart(shape):raise ValueError('chart.change_type requires a native chart')
                     replacement,meta=native_style.replace_chart(slide,shape,element['type'],meta)
                     renderer.set_metadata(replacement,meta);apply_element_style(replacement,meta,state,views)
                     native_style.verify_workbook(replacement,meta['chart'])
@@ -966,6 +1096,13 @@ class PresentationStore(shared.ArtifactStore):
                     if 'preset' in element:native_style.preset_style(element['preset'],native_style.style_kind(meta))
                     if kind=='text':
                         shape=slide.shapes.add_textbox(*pos); apply_text(shape,element['text'],meta['resolved_style'])
+                    elif kind=='equation':
+                        if 'font_size' in element:
+                            meta['style_overrides']=native_style.validate_style('equation',{'font_size':element['font_size']},state)
+                        resolved=native_style.text_style(meta,state)
+                        shape=native_math.create(slide,element.get('latex'),pos,font_size=resolved['font_size'],color=resolved['color'],align=element.get('align','center'))
+                        meta.update(renderer.metadata(shape))
+                        meta['style_overrides'].pop('color',None)  # Inherit the deck palette.
                     elif kind=='shape' and element.get('shape')=='line':
                         if g['w']>=g['h']:x1,y1,x2,y2=pos[0],pos[1]+pos[3]//2,pos[0]+pos[2],pos[1]+pos[3]//2
                         else:x1,y1,x2,y2=pos[0]+pos[2]//2,pos[1],pos[0]+pos[2]//2,pos[1]+pos[3]
@@ -998,12 +1135,8 @@ class PresentationStore(shared.ArtifactStore):
                                     for run in paragraph.runs:run.font.name=state['font_family']; run.font.size=Pt(profile_of(state)['tables']['font_size'])
                         apply_table_style(shape,state,meta)
                     elif kind=='chart':
-                        chart=element['chart']; categories=chart['categories']; series=chart['series']
-                        if not 1<=len(categories)<=12 or any(not isinstance(label,str) or len(label)>80 for label in categories) or not 1<=len(series)<=4 or any(not isinstance(item.get('name'),str) or len(item['name'])>80 for item in series) or any(len(s['values'])!=len(categories) or any(type(n)not in (int,float) or not math.isfinite(n) for n in s['values']) for s in series):raise ValueError('Bounded finite editable chart data required')
-                        chart_type=native_style.CHART_TYPES.get(chart.get('type','bar'))
-                        if chart_type is None:raise ValueError('Unsupported native chart')
-                        if chart.get('type')=='pie' and (len(series)!=1 or any(v<0 for v in series[0]['values'])):raise ValueError('A pie chart shows one non-negative series')
-                        shape=slide.shapes.add_chart(chart_type,*pos,chart_data(chart)); apply_chart_style(shape,state,meta=meta)
+                        chart=element['chart']
+                        shape=native_charts.create(slide,chart,pos); apply_chart_style(shape,state,meta=meta)
                     else:raise ValueError('Unsupported native element type')
                     shape.name='da:'+element['id']
                     if meta.get('preset'):apply_element_style(shape,meta,state,views)
@@ -1017,6 +1150,10 @@ class PresentationStore(shared.ArtifactStore):
                 elif op=='chart.replace_data':
                     shape=find_element(slide,request.get('element_id') or request.get('element',{}).get('id'))
                     extra=dict(chart=template_fill.replace_chart_data(shape,request['chart'],chart_data))
+                    chart_meta=renderer.metadata(shape)
+                    if chart_meta.get('kind')=='chart':
+                        chart_meta['chart']=dict(request['chart'],type=request['chart'].get('type',chart_meta['chart'].get('type','bar')))
+                        apply_chart_style(shape,state,meta=chart_meta);renderer.set_metadata(shape,chart_meta)
                 elif op=='image.replace':
                     shape=find_element(slide,request.get('element_id') or request.get('element',{}).get('id'))
                     asset=(Path(asset_root or self.path.parent)/request['path']).resolve(); assets=Path(asset_root or self.path.parent).resolve()
@@ -1027,8 +1164,9 @@ class PresentationStore(shared.ArtifactStore):
     def prepare_restore(self,c,state,revision):
         prior=json.loads(c.execute('SELECT result FROM revisions WHERE revision=?',(revision,)).fetchone()[0])
         state=copy.deepcopy(state);design=prior.get('design') or {}
+        state['review_design']=(prior.get('manifest') or {}).get('review_design')
         if design:
-            for key in ('theme','font_family','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_font','template_accent','design_conflicts','template_manifest','template_slots','effective_palette','template_tokens','protected_elements','imported_slides','imported_parts'):
+            for key in ('theme','font_family','layouts','layout_variants','layout_modules','layout_slots','backgrounds','template_font','template_accent','template_visual_system','design_conflicts','template_manifest','template_slots','effective_palette','template_tokens','protected_elements','imported_slides','imported_parts'):
                 if key in design:state[key]=design[key]
             state['profile_id']=design.get('profile_id',state.get('profile_id',DEFAULT_PROFILE));state['theme_name']=state['profile_id']
             try:state['profile']=profiles().get(state['profile_id'])
@@ -1048,13 +1186,55 @@ class PresentationStore(shared.ArtifactStore):
         state['active_slide']=prior.get('slide_id')
         return state
 
-    def snapshot_unlocked(self,c,revision):return c.execute('SELECT docx FROM revisions WHERE revision=?',(revision,)).fetchone()[0]
+    def snapshot_unlocked(self,c,revision):
+        row=c.execute('SELECT docx FROM revisions WHERE revision=?',(revision,)).fetchone()
+        if row is None or row[0] is None:raise ValueError('Snapshot is outside the retained history window')
+        return row[0]
     def emit_state(self,c,state,event):
         self.save_state(c,state); c.execute('INSERT INTO events(data) VALUES (?)',(json.dumps(event),)); c.commit(); return event
     def check_slide(self,slide_id,content_notes,intent=None,constraints=None):
         return reviewer().check(self,slide_id,content_notes,intent,constraints)
+    def check_deck(self,content_notes):
+        """End-of-generation checks; release visual advice only after integrity passes."""
+        if not isinstance(content_notes,dict):raise ValueError('content_notes must map slide IDs to concrete content-review notes')
+        with self.locked() as(c,state):
+            self.assert_current(state);revision=state['revision']
+            manifest=self.current_manifest(c,state);slides=manifest['slides']
+            design_sha=(manifest.get('review_design') or {}).get('sha256')
+            if not slides:raise ValueError('Empty presentation')
+            existing=copy.deepcopy(state.get('reviews',{}))
+        notes={s['slide_id']:content_notes.get(s['slide_id']) or (existing.get(s['slide_id']) or {}).get('content_notes') for s in slides}
+        if any(not isinstance(n,str) or not n.strip() for n in notes.values()):
+            raise ValueError('Provide concrete content_notes for every unchecked slide')
+        for slide in slides:
+            sid=slide['slide_id'];old=existing.get(sid) or {}
+            if old.get('automatic_passed') and old.get('content_notes')==notes[sid] and old.get('review_design_sha256')==design_sha:continue
+            with self.locked() as(c,state):self.assert_current(state,revision)
+            reviewer().check(self,sid,notes[sid],defer_vision=True)
+        targets=[];blockers=[]
+        with self.locked() as(c,state):
+            self.assert_current(state,revision)
+            for slide in slides:
+                sid=slide['slide_id'];review=state['reviews'][sid]
+                for issue in review.get('layout_issues',[]):
+                    if issue.get('severity','error')!='error':continue
+                    item=dict(slide_id=sid,**issue)
+                    (targets if issue.get('type')=='unexpected_overlap' else blockers).append(item)
+            if not targets and not blockers:
+                for slide in slides:
+                    sid=slide['slide_id'];review=state['reviews'][sid]
+                    aesthetic=review.get('aesthetic_review') or {}
+                    if aesthetic.get('reason')=='deferred_until_deck_checked':
+                        aesthetic['reason']='awaiting_vision_review'
+                        self.review_event(c,state,'presentation_review_requested',sid,requested_by='deck_check')
+        if not targets and not blockers and len(slides)>1:self.request_deck_review(revision)
+        return dict(revision=revision,status='needs_repair' if targets or blockers else 'passed',
+            overlap_passed=not targets,repair_targets=targets,other_errors=blockers,
+            next_action=('Fix only listed overlapping elements on the listed slides, preserve all other slides, then run check-deck again. Repeat until overlap_passed. Never regenerate the whole deck.' if targets else
+                         'Resolve the listed check errors locally and run check-deck again.' if blockers else
+                         'Checks passed. Visual review is advice only; report suggestions without modifying the PPT.'))
     def current_manifest(self,c,state):
-        return renderer.manifest(Presentation(io.BytesIO(self.snapshot_unlocked(c,state['revision']))),state)
+        return self.view(c,state)['manifest']
     def review_event(self,c,state,kind,slide_id=None,**extra):
         event=dict(type=kind,presentation_id=state['presentation_id'],revision=state['revision'],path=self.path.name,
             manifest=self.current_manifest(c,state),deck_review=state.get('deck_review'),**extra)
@@ -1065,6 +1245,8 @@ class PresentationStore(shared.ArtifactStore):
         with self.locked() as(c,state):
             if state is None:return dict(applied=False,reason='uninitialized')
             review=state.get('reviews',{}).get(slide_id)
+            if review and review.get('review_design_sha256')!=(state.get('review_design') or {}).get('sha256'):
+                return dict(applied=False,reason='stale_design')
             if not review or review.get('revision')!=check_revision or review.get('fingerprint')!=fingerprint or not review.get('automatic_passed'):
                 return dict(applied=False,reason='stale')
             current=review.get('aesthetic_review') or {}
@@ -1072,20 +1254,10 @@ class PresentationStore(shared.ArtifactStore):
             if current.get('status') not in ('pending',None) and current.get('reviewed_at',0)>result.get('reviewed_at',0):
                 return dict(applied=False,reason='newer_review_present')
             aesthetic=dict(result,revision=check_revision)
-            # A person's decision on this same check outranks a model answer that arrives later.
-            for key in ('human','dismissals'):
+            # Keep issue-dismissal history; model answers own the visual verdict.
+            for key in ('dismissals',):
                 if current.get(key):aesthetic[key]=current[key]
-            attempts=state.setdefault('aesthetic_attempts',{}).setdefault(slide_id,{})
-            if aesthetic['status']=='failed':
-                escalated=[]
-                # Only critical findings are repaired without asking; the rest wait for the user's decision.
-                for issue in aesthetic.get('issues',[]):
-                    if issue['severity']=='critical' and issue['confidence'] in ('high','medium') and not issue.get('needs_verification'):
-                        key=issue.get('fingerprint') or issue['category']
-                        attempts[key]=attempts.get(key,0)+1;issue['attempt']=attempts[key]
-                        if attempts[key]>CRITICAL_REPAIR_ROUNDS:escalated.append(issue['id'])
-                aesthetic['escalated_issues']=escalated;aesthetic['auto_repair']=not escalated
-            elif aesthetic['status']=='passed':state['aesthetic_attempts'][slide_id]={}
+            aesthetic.update(auto_repair=False,advisory_only=True)
             review['aesthetic_review']=aesthetic
             review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
             self.review_event(c,state,'presentation_aesthetic_review',slide_id)
@@ -1099,19 +1271,10 @@ class PresentationStore(shared.ArtifactStore):
             if aesthetic.get('status') not in ('unavailable',):
                 raise ValueError(f'Vision review is {aesthetic.get("status","pending")}; only an unavailable review may be re-requested. Fix reported issues and run check-slide, or ask the user')
             requests=aesthetic.get('requests',0)+1
-            if requests>3:raise ValueError('Vision review re-request limit reached for this check; request human visual review in the UI')
+            if requests>3:raise ValueError('Vision review re-request limit reached for this check; report the visual review as unavailable')
             review['aesthetic_review']=dict(status='pending',reason='re_requested',requests=requests,previous_error=aesthetic.get('error'))
             review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
             return self.review_event(c,state,'presentation_review_requested',slide_id,requested_by='agent')
-    def host_request_review(self,slide_id,revision):
-        """User-initiated re-review from the UI; allowed in any state of a current, passed check."""
-        with self.locked() as(c,state):
-            self.assert_current(state,revision);review=state.get('reviews',{}).get(slide_id)
-            if not review or not review.get('automatic_passed') or not review.get('rendered'):raise ValueError('The slide needs a successful formal check first')
-            previous=review.get('aesthetic_review') or {}
-            review['aesthetic_review']=dict(status='pending',reason='user_requested',requests=previous.get('requests',0))
-            review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
-            return self.review_event(c,state,'presentation_review_requested',slide_id,requested_by='human')
     def review_status(self,slide_id=None,wait=0):
         """Agent: read (optionally wait for) aesthetic results and the next permitted action."""
         if type(wait) not in (int,float) or not 0<=wait<=180:raise ValueError('wait must be 0 to 180 seconds')
@@ -1183,50 +1346,35 @@ class PresentationStore(shared.ArtifactStore):
             if (reviews.get(sid) or {}).get('fingerprint')!=fingerprints.get(sid):
                 return False
         return True
-    def record_human_decision(self,revision,decision,notes,decision_id,slide_id=None,issue_ids=()):
-        """Host only: an explicit, recorded human acceptance, rejection or issue dismissal."""
-        if decision not in ('accept','reject','dismiss_issues'):raise ValueError('Unknown human decision')
-        notes=notes if isinstance(notes,str) else ''
-        if decision=='reject' and not notes.strip():raise ValueError('判定不通过时请填写修改意见')
+    def dismiss_issues(self,revision,issue_ids,decision_id,notes='',slide_id=None):
+        """Hide selected advice without replacing the model's verdict."""
         with self.locked() as(c,state):
             self.assert_current(state,revision)
-            record=dict(decision=decision,notes=notes.strip()[:2000],decision_id=decision_id,decided_at=time.time(),reviewer='human',issue_ids=list(issue_ids))
             if slide_id is None:
-                deck=state.get('deck_review')
-                if not deck or deck.get('status')=='stale':raise ValueError('No current deck review to decide on')
-                if deck.get('status')=='pending' and decision=='dismiss_issues':raise ValueError('No deck review to decide on')
-                target=deck
+                target=state.get('deck_review')
+                if not target or target.get('status') in ('stale','pending'):raise ValueError('No current deck findings to dismiss')
             else:
                 review=state.get('reviews',{}).get(slide_id)
-                if not review or not review.get('automatic_passed'):raise ValueError('Human visual acceptance requires a successful formal check')
-                formal=state.get('renders',{}).get(slide_id)
-                if not formal or formal.get('revision',-1)<review.get('revision',0):raise ValueError('Formal screenshot of the checked revision is missing')
-                target=review.setdefault('aesthetic_review',dict(status='pending'))
-            if decision=='dismiss_issues':
-                known={issue['id'] for issue in target.get('issues',[])}
-                if not issue_ids or set(issue_ids)-known:raise ValueError('Dismiss existing issue ids only')
-                for issue in target.get('issues',[]):
-                    if issue['id'] in issue_ids:issue.update(dismissed=True,dismissed_by=decision_id)
-                remaining=[issue for issue in target.get('issues',[]) if issue['severity'] in ('critical','major') and not issue.get('dismissed')]
-                target.setdefault('dismissals',[]).append(record)
-                if not remaining and target.get('status') in ('failed','uncertain'):target['human']=dict(record,decision='accept',via='dismissal')
-            else:
-                target['human']=record
+                if not review or not review.get('automatic_passed'):raise ValueError('A successful automatic check is required')
+                target=review.get('aesthetic_review') or {}
+            known={issue['id'] for issue in target.get('issues',[])}
+            if not issue_ids or set(issue_ids)-known:raise ValueError('Dismiss existing issue ids only')
+            record=dict(decision='dismiss_issues',notes=str(notes)[:2000],decision_id=decision_id,decided_at=time.time(),issue_ids=list(issue_ids))
+            for issue in target.get('issues',[]):
+                if issue['id'] in issue_ids:issue.update(dismissed=True,dismissed_by=decision_id)
+            target.setdefault('dismissals',[]).append(record)
             if slide_id is not None:
                 review['status']=reviewer().derive_status(review);review['visual_review']=reviewer().compat_visual(review)
-                review['visual_evidence']=dict(reviewer='human',notes=record['notes'])
             return self.review_event(c,state,'presentation_review' if slide_id else 'presentation_deck_review',slide_id,decision=record)
     def review(self,slide_id,revision,passed,notes,reviewer_kind='vision_model'):
-        """Legacy entry point. Human: recorded decision. Agent: self-inspection notes only, never acceptance."""
+        """Agent self-inspection notes only; never acceptance or rejection."""
         if type(passed)is not bool or not isinstance(notes,str) or not notes.strip():raise ValueError('Actual visual inspection and evidence required')
-        if reviewer_kind=='human':
-            return self.record_human_decision(revision,'accept' if passed else 'reject',notes,'legacy-'+hashlib.sha256(f'{slide_id}:{revision}:{time.time()}'.encode()).hexdigest()[:12],slide_id)
-        if reviewer_kind!='vision_model':raise ValueError('Unknown reviewer')
+        if reviewer_kind!='vision_model':raise ValueError('Manual visual verdicts are no longer supported')
         with self.locked() as(c,state):
             self.assert_current(state,revision);review=state['reviews'].get(slide_id)
             if not review or not review['automatic_passed'] or review['revision']>revision:raise ValueError('Exact-revision successful formal check required')
             review['agent_inspection']=dict(passed=passed,notes=notes.strip()[:2000],recorded_at=time.time(),
-                note='Agent self-inspection is advisory; acceptance comes from the host vision review or a human decision')
+                note='Agent self-inspection is advisory; visual verdicts come only from the host API review')
             return self.review_event(c,state,'presentation_review',slide_id)
     def finalize(self,base_revision):
         with self.locked() as(c,state):
@@ -1239,7 +1387,7 @@ class PresentationStore(shared.ArtifactStore):
                 if not review.get('automatic_passed') or not review.get('content_notes'):problems.append(f'{sid}: automatic and content checks required');continue
                 aesthetic=review.get('aesthetic_review') or {}
                 aesthetics[sid]=dict(status=reviewer().effective_aesthetic(review),review_id=aesthetic.get('review_id'),
-                    decision_id=(aesthetic.get('human') or {}).get('decision_id'),critical=[i['id'] for i in reviewer().outstanding_critical(review)],
+                    critical=[i['id'] for i in reviewer().outstanding_critical(review)],
                     suggestions=len([i for i in aesthetic.get('issues',[]) if not i.get('dismissed')]))
             if problems:raise ValueError('Finalize blocked: '+'; '.join(problems))
             validator.validate_package(self.snapshot_unlocked(c,base_revision)); state['finalized']=True
@@ -1249,7 +1397,6 @@ class PresentationStore(shared.ArtifactStore):
                 note='Report outstanding critical findings and the number of suggestions to the user; they decide what to change.'))
 
 
-CRITICAL_REPAIR_ROUNDS=2
 _REVIEWER=None
 
 
@@ -1265,19 +1412,14 @@ def critical_issues(aesthetic):
 
 
 def next_action(review):
-    """Aesthetic review is advice: only critical findings are repaired unasked, nothing waits on it."""
-    if not review:return 'Run check-slide for this slide.'
-    if not review.get('automatic_passed'):return 'Fix the automatic check errors with atomic operations, then run check-slide again.'
+    """Only structural failures permit automatic local repairs; vision is advice."""
+    if not review:return 'Finish generating all slides, then run check-deck.'
+    if not review.get('automatic_passed'):return 'Fix only the listed automatic check errors on this slide, preserve other pages, then run check-deck again until checks pass.'
     aesthetic=review.get('aesthetic_review') or {}
     status=reviewer().effective_aesthetic(review)
-    critical=critical_issues(aesthetic) if (aesthetic.get('human') or {}).get('decision')!='accept' else []
-    if critical and not aesthetic.get('auto_repair',True):
-        return 'A critical issue survived '+str(CRITICAL_REPAIR_ROUNDS)+' repair rounds: stop editing it and tell the user; delivery is not blocked.'
-    if critical:
-        return 'Fix the critical issue(s) with small local edits, then run check-slide again. Do not act on other suggestions unless the user asks.'
-    if status=='pending':return 'Vision review runs in the background; continue with the next slide, do not wait for it.'
+    if status=='pending':return 'Complete check-deck after generation. Visual review is advisory; never change the PPT based on it unless the user asks.'
     if status in ('unavailable','uncertain'):return 'No usable visual verdict; continue. Do not claim visual acceptance; mention it when you deliver.'
-    if aesthetic.get('issues'):return 'No critical issue. Leave the suggestions to the user: list them briefly when you deliver and change nothing unless asked.'
+    if aesthetic.get('issues'):return 'Leave the suggestions to the user, including critical findings: list them briefly when you deliver and change nothing unless asked.'
     return 'No issues. Continue.'
 
 
@@ -1288,14 +1430,14 @@ def review_summary(slide_id,review):
     issues=aesthetic.get('issues') or []
     return dict(slide_id=slide_id,revision=review.get('revision'),status=review.get('status'),automatic_passed=review.get('automatic_passed'),
         technical_review=review.get('technical_review'),visual_integrity=review.get('visual_integrity'),
-        aesthetic_review={key:aesthetic.get(key) for key in ('status','summary','issues','model_id','prompt_version','error','auto_repair','escalated_issues','human','review_id','reason') if key in aesthetic},
+        aesthetic_review={key:aesthetic.get(key) for key in ('status','summary','issues','model_id','prompt_version','error','auto_repair','advisory_only','escalated_issues','review_id','reason') if key in aesthetic},
         critical_issues=[issue for issue in issues if issue['id'] in critical],
         suggestions=[{key:issue.get(key) for key in ('id','severity','category','element_ids','observation','suggestion')} for issue in issues if issue['id'] not in critical and not issue.get('dismissed')],
         effective_aesthetic=reviewer().effective_aesthetic(review),next_action=next_action(review))
 
 
 def deck_summary(deck):
-    return {key:deck.get(key) for key in ('status','revision','request_id','summary','issues','rejected_issues','model_id','prompt_version','error','human','review_id','stale_at_revision') if key in deck}
+    return {key:deck.get(key) for key in ('status','revision','request_id','summary','issues','rejected_issues','model_id','prompt_version','error','review_id','stale_at_revision') if key in deck}
 
 
 def _template_index(state):
@@ -1307,7 +1449,7 @@ def _template_index(state):
 
 def catalog():
     return dict(profiles=profiles().summary(),layouts=layouts().summary(),components=component_renderer.catalog(registry()),
-        style_presets=native_style.catalog(),diagrams=diagram_presets.catalog())
+        style_presets=native_style.catalog(),diagrams=diagram_presets.catalog(),charts=native_charts.catalog(),equations=native_math.catalog())
 
 
 def plan_request(store,request):
@@ -1316,10 +1458,12 @@ def plan_request(store,request):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','plan','import-template','list-templates','match-template']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--template-id'); parser.add_argument('--output'); parser.add_argument('--license-note',default=''); parser.add_argument('--role'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['human','vision_model'],default='vision_model'); args=parser.parse_args()
-    if args.command in ('profiles','layouts','components','catalog'):
+    parser=argparse.ArgumentParser(); parser.add_argument('command',choices=['init','apply-one','status','restore','check-deck','check-slide','review-slide','review-status','request-review','request-deck-review','finalize','profiles','layouts','components','catalog','charts','audit-charts','plan','import-template','list-templates','list-styles','match-template']); parser.add_argument('pptx',nargs='?'); parser.add_argument('--request'); parser.add_argument('--presentation-id'); parser.add_argument('--template'); parser.add_argument('--template-id'); parser.add_argument('--category'); parser.add_argument('--style-id'); parser.add_argument('--output'); parser.add_argument('--license-note',default=''); parser.add_argument('--role'); parser.add_argument('--profile'); parser.add_argument('--theme'); parser.add_argument('--slide-id'); parser.add_argument('--revision',type=int); parser.add_argument('--base-revision',type=int); parser.add_argument('--operation-id'); parser.add_argument('--notes',default=''); parser.add_argument('--intent'); parser.add_argument('--constraint',action='append',default=[]); parser.add_argument('--wait',type=float,default=0); parser.add_argument('--passed',action='store_true'); parser.add_argument('--reviewer',choices=['vision_model'],default='vision_model'); args=parser.parse_args()
+    if args.command in ('profiles','layouts','components','catalog','charts'):
         result=catalog() if args.command=='catalog' else {args.command:catalog()[args.command]}
         print(json.dumps(result,ensure_ascii=False)); return
+    if args.command=='list-styles':
+        print(json.dumps(style_library.list_styles(args.category,args.style_id),ensure_ascii=False)); return
     if args.command=='list-templates':
         print(json.dumps(template_importer.list_templates(),ensure_ascii=False)); return
     if args.command=='import-template':
@@ -1328,16 +1472,21 @@ def main():
     if args.command=='match-template':
         print(json.dumps(template_importer.match_library(args.template_id,args.role),ensure_ascii=False)); return
     if not args.pptx:parser.error('a presentation path is required')
+    if args.command=='audit-charts':
+        plan=json.loads(Path(args.request).read_text()) if args.request else None
+        result=native_charts.audit(Presentation(args.pptx),plan)
+        print(json.dumps(result,ensure_ascii=False))
+        if result['status']=='failed':sys.exit(1)
+        return
     store=PresentationStore(args.pptx)
     if args.command=='plan':result=plan_request(store,json.loads(Path(args.request).read_text()))
-    elif args.command=='init':result=store.init(args.presentation_id,args.template,theme=args.theme or args.profile or DEFAULT_PROFILE,profile=args.profile)
+    elif args.command=='init':result=store.init(args.presentation_id,args.template,theme=args.theme or args.profile or DEFAULT_PROFILE,profile=args.profile,style_id=args.style_id)
     elif args.command=='apply-one':result=store.apply_one(json.loads(Path(args.request).read_text()),Path(args.pptx).parent)
     elif args.command=='status':result=store.status()
     elif args.command=='restore':result=store.restore(args.revision,args.base_revision,args.operation_id)
+    elif args.command=='check-deck':result=store.check_deck(json.loads(Path(args.request).read_text()).get('content_notes',{}))
     elif args.command=='check-slide':result=store.check_slide(args.slide_id,args.notes,args.intent,args.constraint)
     elif args.command=='review-slide':
-        # Human decisions are recorded by the platform UI, never by a script in the sandbox.
-        if args.reviewer=='human':raise ValueError('Human visual decisions are recorded in the platform preview, not from the sandbox')
         result=store.review(args.slide_id,args.revision,args.passed,args.notes,'vision_model')
     elif args.command=='review-status':result=store.review_status(args.slide_id,args.wait)
     elif args.command=='request-review':result=store.request_review(args.slide_id)

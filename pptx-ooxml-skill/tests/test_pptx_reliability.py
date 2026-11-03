@@ -17,7 +17,7 @@ A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location('pptx_rel_' + name, SCRIPTS / f'{name}.py')
+    spec = importlib.util.spec_from_file_location('pptx_rel_' + name, (SCRIPTS.parent/'tests'/'helpers' if name in ('sample_template','render_baseline','template_stage') else SCRIPTS) / f'{name}.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -48,6 +48,24 @@ def apply(store, kind, **kwargs):
 
 def solid_values(shape):
     return [node.get('val').upper() for node in shape._element.iter(A + 'srgbClr') if node.get('val')]
+
+
+def test_preview_rejects_external_changes_before_rendering(tmp_path, monkeypatch):
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck')
+    initial = store.snapshot(0)
+    presentation = Presentation(store.path)
+    presentation.slides.add_slide(presentation.slide_layouts[6])
+    presentation.save(store.path)
+    changed = store.path.read_bytes()
+    assert changed != initial
+    def no_render(*args, **kwargs):
+        pytest.fail('Do not render a stale snapshot after detecting an external edit')
+    monkeypatch.setattr(office, 'load', no_render)
+    with pytest.raises(ValueError, match='External modification'):
+        store.preview()
+    assert store.path.read_bytes() == changed
+    assert store.snapshot(0) == initial
 
 
 def test_shape_fill_keeps_schema_order_geometry_and_line():
@@ -209,8 +227,9 @@ def test_blank_init_has_no_template_pages(tmp_path):
     assert 'template_use' not in status
 
 
-def test_import_from_public_library_does_not_touch_source(tmp_path):
-    library = Path(__file__).resolve().parents[1] / 'templates' / 'consulting-brief' / 'template.pptx'
+def test_import_from_public_library_does_not_touch_source(tmp_path, monkeypatch):
+    library = sample.build(tmp_path / 'templates' / 'consulting-brief')
+    monkeypatch.setattr(office.template_importer, 'SKILL_ROOT', tmp_path)
     before = library.read_bytes()
     store = office.PresentationStore(tmp_path / 'deck.pptx')
     store.init('deck')
@@ -224,16 +243,126 @@ def test_import_from_public_library_does_not_touch_source(tmp_path):
     office.validator.validate_package(store.path.read_bytes())
 
 
-def test_library_match_does_not_need_a_working_pptx():
+def test_library_match_does_not_need_a_working_pptx(tmp_path):
     importer = load('template_importer')
-    listed = importer.list_templates()
+    sample.build(tmp_path / 'consulting-brief')
+    listed = importer.list_templates(tmp_path)
     brief = next(item for item in listed if item['template_id'] == 'consulting-brief')
     assert brief['source_sha256']
     assert brief['slides'][0]['preview']
-    matched = importer.match_library('consulting-brief', 'data')
+    matched = importer.match_library('consulting-brief', 'data', tmp_path)
     assert matched['template_id'] == 'consulting-brief'
     assert matched['slides'][0]['slide_id'] == 'tpl-004'
     assert matched['slides'][0]['slots']['chart'] == 'chart'
+
+
+def test_first_import_adopts_size_and_exposes_slots_but_later_size_mismatch_is_atomic(tmp_path):
+    source = sample.build(tmp_path / 'source')
+    presentation = Presentation(source)
+    presentation.slide_width = Inches(10)
+    presentation.slide_height = Inches(5.625)
+    presentation.save(source)
+    before = source.read_bytes()
+    other = sample.build(tmp_path / 'other')
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck')
+    apply(store, 'slide.import', slide_id='p1', source_slide_id='tpl-001',
+          template_id='local', template_path='source/template.pptx')
+    opened = Presentation(store.path)
+    assert (opened.slide_width, opened.slide_height) == (Inches(10), Inches(5.625))
+    assert store.status()['template_slots']['p1']['title'] == 'title'
+    apply(store, 'slot.fill', slide_id='p1', slots={'title': 'AI Agent'})
+    assert next(s for s in Presentation(store.path).slides[0].shapes if s.name == 'da:title').text == 'AI Agent'
+    accept_all(store)
+    revision = store.status()['revision']
+    snapshot = store.path.read_bytes()
+    with pytest.raises(ValueError, match='Slide size is incompatible'):
+        apply(store, 'slide.import', slide_id='p2', source_slide_id='tpl-001',
+              template_id='other', template_path='other/template.pptx')
+    assert store.status()['revision'] == revision
+    assert store.path.read_bytes() == snapshot
+    assert source.read_bytes() == before
+    assert other.is_file()
+
+
+def test_local_template_copy_removes_internal_navigation_and_preserves_original(tmp_path, monkeypatch):
+    import zipfile
+    monkeypatch.syspath_prepend(str(SCRIPTS))
+    registration = load('template_stage')
+    original = sample.build(tmp_path / 'source')
+    presentation = Presentation(original)
+    _add_jump(presentation.slides[0], presentation.slides[1], 'navigation')
+    presentation.save(original)
+    before = original.read_bytes()
+    prepared = tmp_path / 'prepared.pptx'
+    assert registration.stage(original, prepared) == 1
+    assert original.read_bytes() == before
+    assert any(rel.reltype == RT.SLIDE for rel in Presentation(original).slides[0].part.rels.values())
+    assert not any(rel.reltype == RT.SLIDE for rel in Presentation(prepared).slides[0].part.rels.values())
+    with zipfile.ZipFile(original) as source, zipfile.ZipFile(prepared) as result:
+        assert source.namelist() == result.namelist()
+        for name in source.namelist():
+            if name.startswith('ppt/media/'):
+                assert source.read(name) == result.read(name)
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck')
+    apply(store, 'slide.import', slide_id='p1', source_slide_id='tpl-001',
+          template_id='local-test', template_path='prepared.pptx')
+    assert len(Presentation(store.path).slides) == 1
+
+
+def test_template_fill_measures_latin_width_and_preserves_explicit_line_spacing():
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    shape = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4.5), Inches(.85))
+    frame = shape.text_frame
+    frame.margin_left = frame.margin_right = frame.margin_top = frame.margin_bottom = 0
+    paragraph = frame.paragraphs[0]
+    paragraph.line_spacing = .6
+    run = paragraph.add_run()
+    run.text = 'Template title'
+    run.font.size = Pt(48)
+    fill.fill_shape_text(shape, 'AI Agent\n未来办公')
+    assert shape.text == 'AI Agent\n未来办公'
+    assert shape.text_frame.paragraphs[0].runs[0].font.size == Pt(48)
+    assert shape.text_frame.paragraphs[0].line_spacing == .6
+    with pytest.raises(ValueError, match='capacity conflict'):
+        fill.fill_shape_text(shape, '长文本' * 100)
+
+
+@pytest.mark.parametrize('whole_deck', [False, True])
+def test_curated_visual_system_survives_native_edits_profile_changes_and_restore(tmp_path, whole_deck):
+    import json
+    source = sample.build(tmp_path / 'source')
+    path = source.parent / 'manifest.json'
+    manifest = json.loads(path.read_text())
+    visual = dict(background='070B18', text='FFFFFF', accent='4DE8FF', muted='9FB4CE',
+                  card='0F1B33', border='16233D', font_family='Montserrat')
+    manifest['visual_system'] = visual
+    path.write_text(json.dumps(manifest))
+    before = source.read_bytes()
+    store = office.PresentationStore(tmp_path / 'deck.pptx')
+    store.init('deck', source if whole_deck else None)
+    if not whole_deck:
+        apply(store, 'slide.import', slide_id='p1', source_slide_id='tpl-001',
+              template_id='curated', template_path='source/template.pptx')
+    sid = 'tpl-001' if whole_deck else 'p1'
+    imported = store.status()['revision']
+    assert store.status()['template_visual_system'] == visual
+    assert store.status()['theme']['background'] == visual['background']
+    assert store.status()['manifest']['profile']['colors']['background'] == visual['background']
+    assert store.status()['manifest']['profile']['fonts']['body'] == 'Montserrat'
+    apply(store, 'element.add_text', slide_id=sid, element=dict(id='note', text='A note', style='caption',
+          geometry=dict(x=.8, y=.8, w=.15, h=.08)))
+    note = next(shape for shape in Presentation(store.path).slides[0].shapes if shape.name == 'da:note')
+    assert note.text_frame.paragraphs[0].runs[0].font.name == 'Montserrat'
+    apply(store, 'presentation.set_profile', profile='slate_dark')
+    assert store.status()['theme']['accent'] == '4DE8FF'
+    assert store.status()['template_visual_system'] == visual
+    store.restore(imported, store.status()['revision'], 'restore-style')
+    assert store.status()['template_visual_system'] == visual
+    assert store.status()['theme']['background'] == '070B18'
+    assert source.read_bytes() == before
 
 
 def test_slide_import_delivers_only_generated_slides(tmp_path):
@@ -252,19 +381,14 @@ def test_slide_import_delivers_only_generated_slides(tmp_path):
     assert store.status()['finalized'] is True
 
 
-def test_second_import_requires_check_slide_of_generated_pages(tmp_path):
+def test_import_can_finish_all_pages_before_checking(tmp_path):
     sample.build(tmp_path)
     store = office.PresentationStore(tmp_path / 'deck.pptx')
     store.init('deck')
     _import(store, 'page-1', 'tpl-001', template_path='template.pptx')
     revision = store.status()['revision']
-    before = store.path.read_bytes()
-    with pytest.raises(ValueError, match='Check all affected slides before creating the next slide'):
-        _import(store, 'page-2', 'tpl-002', template_path='template.pptx')
-    assert store.path.read_bytes() == before
-    assert store.status()['revision'] == revision
-    accept_all(store)
     _import(store, 'page-2', 'tpl-002', template_path='template.pptx')
+    assert store.status()['revision'] == revision + 1
     assert [slide['slide_id'] for slide in store.status()['manifest']['slides']] == ['page-1', 'page-2']
 
 
@@ -368,8 +492,7 @@ def test_deck_review_is_rejected_after_the_document_changes(tmp_path):
     payload = dict(status='passed', summary='old', review_id='rev-old')
     assert store.record_deck_review(first['deck_review']['request_id'], payload) == dict(applied=True)
     assert store.review_status()['deck_review']['status'] == 'passed'
-    store.record_human_decision(store.status()['revision'], 'accept', '看起来可以', 'human-old')
-    assert store.status()['deck_review']['human']['decision'] == 'accept'
+    assert not hasattr(store,'record_human_decision')
     accept_all(store)
     apply(store, 'slot.fill', slide_id='tpl-001', slots={'title': '新标题', 'subtitle': '修订'})
     deck = store.status()['deck_review']
@@ -378,8 +501,8 @@ def test_deck_review_is_rejected_after_the_document_changes(tmp_path):
     assert store.record_deck_review(first['deck_review']['request_id'], dict(status='passed', summary='late', review_id='rev-late')) == dict(applied=False, reason='stale')
     assert store.status()['deck_review']['status'] == 'stale'
     assert store.status()['deck_review'].get('review_id') != 'rev-late'
-    with pytest.raises(ValueError, match='No current deck review'):
-        store.record_human_decision(store.status()['revision'], 'accept', '不能沿用旧版', 'human-new')
+    with pytest.raises(ValueError, match='No current deck findings'):
+        store.dismiss_issues(store.status()['revision'],['missing'],'old-dismissal')
     accept_all(store)
     second = store.request_deck_review(store.status()['revision'])
     assert second['deck_review']['request_id'] != first['deck_review']['request_id']

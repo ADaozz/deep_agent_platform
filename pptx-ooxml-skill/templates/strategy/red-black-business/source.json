@@ -1,0 +1,56 @@
+{
+  "category": "strategy",
+  "theme_id": "red-black-business",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/01_strategy/04/en/red-black-business.md",
+  "reference_repo_path": "docs/themes/extra/red-black-business.jpg",
+  "provenance": "original",
+  "original_design_sha256": "1891c8ca3cc8aef181bfd76e3493d937e361165bacf497058ba6a0b781dd3d2f",
+  "reference_sha256": "4902c2cc31f16b417dcfbc446a4698b3a6d36cdaeadcd9128109147dab40d1a1",
+  "reference_width": 2667,
+  "reference_height": 7548,
+  "original_size": [
+    2667,
+    9060
+  ],
+  "final_size": [
+    2667,
+    7548
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "panel_height": 1500,
+      "gutter": 12,
+      "kept_slides": 5,
+      "cut_position": 7548,
+      "new_size": [
+        2667,
+        7548
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "11c4ae83a9b07100a2a3c2e0eba97db6d5a55d27ef1d6df990a210e5b907a2ba",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1510.0,
+      "cut_position": 7520,
+      "new_size": [
+        2667,
+        7520
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "01_strategy"
+}

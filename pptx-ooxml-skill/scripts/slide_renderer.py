@@ -32,13 +32,21 @@ def profile_view(state):
     """Design tokens for the quick preview; never page content."""
     profile=state.get('profile')
     if not profile:return None
-    return dict(id=profile.get('id'),version=profile.get('version'),name=profile.get('name'),label=profile.get('label'),
-        colors=profile.get('colors'),fonts=profile.get('fonts'),type_scale=profile.get('type_scale'),
+    visual=state.get('template_visual_system') or {}
+    colors=dict(profile.get('colors') or {})
+    colors.update(state.get('theme') or {})
+    fonts=dict(profile.get('fonts') or {})
+    if state.get('template_font'):
+        fonts.update(title=state['template_font'],body=state['template_font'])
+    name=visual.get('name') or profile.get('name')
+    label={'zh':name,'en':name} if visual.get('name') else profile.get('label')
+    return dict(id=profile.get('id'),version=profile.get('version'),name=name,label=label,
+        colors=colors,fonts=fonts,type_scale=profile.get('type_scale'),template_visual_system=visual,
         spacing=profile.get('spacing'),density=profile.get('density'),tables=profile.get('tables'),
         charts=profile.get('charts'),quality=profile.get('quality'))
 
 
-MANIFEST_KEYS=('text','shape','rows','chart','fill','line','alt','component','component_instance','component_slot','align','vector',
+MANIFEST_KEYS=('text','latex','mathml','shape','rows','chart','fill','line','alt','component','component_instance','component_slot','align','vector',
     'rotation','preset','style_overrides','manual_geometry','text_color','diagram_id','diagram_role','node_id','edge_id',
     'source','target','relation','label','detail','arrow','route','icon','source_element','target_element','text_blocks',
     'emphasis','rank','edge_id','chart_style')
@@ -76,9 +84,14 @@ def connector_view(shape,by_shape_id,width,height):
 
 
 def manifest(prs,state):
+    import style_library
+    import review_design
     result=[]; width,height=prs.slide_width,prs.slide_height
     for slide in prs.slides:
         sid=slide_identity(slide); elements=[]; complex_slide=bool(state.get('template_complex',{}).get(sid))
+        background=state.get('backgrounds',{}).get(sid,'FFFFFF')
+        actual=slide._element.find('./'+P_NS+'cSld/'+P_NS+'bg/'+P_NS+'bgPr/'+A_NS+'solidFill/'+A_NS+'srgbClr')
+        if actual is not None:background=actual.get('val',background)
         by_shape_id={str(shape.shape_id):element_identity(shape) for shape in slide.shapes}
         for shape in slide.shapes:
             meta=metadata(shape); generated=bool(meta.get('kind'))
@@ -93,20 +106,37 @@ def manifest(prs,state):
                 for key in MANIFEST_KEYS:
                     if key in meta:e[key]=meta[key]
                 if e['type'] in ('image','component'):e['image_type']=shape.image.content_type
-                if e['type']=='chart' and (e['chart'].get('type')=='pie' or any(v<0 for series in e['chart']['series'] for v in series['values'])):complex_slide=True
+                if e['type']=='chart':complex_slide=True
             elif shape.has_text_frame:
                 # An untouched template's rich text/theme can be more complicated
                 # than the quick renderer. Use the actual rendered slide instead.
                 e.update(type='complex',text=shape.text); complex_slide=True
             else:
                 e.update(type='complex'); complex_slide=True
+            if not generated:
+                # Script-created text, pictures and charts also need overlap checks.
+                e['overlap_candidate']=bool((shape.has_text_frame and shape.text.strip()) or shape.has_chart or shape.shape_type==13)
+            if shape._element.findall('.//{http://schemas.microsoft.com/office/drawing/2010/main}m'):
+                e['native_equation']=True
+                if not generated:
+                    e['overlap_candidate']=True
+            if shape.has_chart or shape._element.findall('.//{http://schemas.microsoft.com/office/drawing/2014/chartex}chart'):
+                import native_charts
+                try:
+                    e['native_chart_type']=native_charts.infer_type(shape)
+                    e['native_chart_preview_requires_office']=native_charts.requires_office(e['native_chart_type'])
+                except (ValueError,AttributeError,StopIteration):
+                    e['native_chart_preview_requires_office']=True
             elements.append(e)
         variant=state.get('layout_variants',{}).get(sid)
         result.append(dict(slide_id=sid,elements=elements,complex=complex_slide,
-            background=state.get('backgrounds',{}).get(sid,'FFFFFF'),layout=state.get('layouts',{}).get(sid,'title_body'),
+            background=background,layout=state.get('layouts',{}).get(sid,'title_body'),
             layout_variant=variant if variant not in (None,'0') else None,layout_modules=state.get('layout_modules',{}).get(sid),
             profile_id=state.get('profile_id'),
             review=state.get('reviews',{}).get(sid,dict(status='writing',visual_review='pending')),
+            previous_review=state.get('last_reviews',{}).get(sid),
             formal=state.get('renders',{}).get(sid)))
     return dict(width=width,height=height,aspect_ratio=width/height,profile=profile_view(state),
+        style_reference=style_library.presentation_reference(prs) or state.get('style_reference'),
+        review_design=state.get('review_design'),review_profile=review_design.profile(state.get('review_design'),prs) or profile_view(state),
         conflicts=list(state.get('design_conflicts') or []),slides=result)

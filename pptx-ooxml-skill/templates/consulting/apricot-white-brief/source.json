@@ -1,0 +1,55 @@
+{
+  "category": "consulting",
+  "theme_id": "apricot-white-brief",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/consulting/apricot-white-brief/design.md",
+  "reference_repo_path": "docs/themes/consulting/apricot-white-brief.jpg",
+  "provenance": "original",
+  "original_design_sha256": "94a912c08d769a44e7b13a8332fda0148299d708cb4d21beed5847feb0f67fc9",
+  "reference_sha256": "8a8a10a97e9759349fde45227c2d8d1b32db421ce681df757cb3fd4ee083a8e6",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "e5d7a9d584a7b44984b3e83373c46eb361856ed2cb29590bb967c6b8a516a9d1",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

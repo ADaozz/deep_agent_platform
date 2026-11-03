@@ -1,0 +1,55 @@
+{
+  "category": "promotion",
+  "theme_id": "aqua-charity-report",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/promotion/aqua-charity-report/design.md",
+  "reference_repo_path": "docs/themes/promotion/aqua-charity-report.jpg",
+  "provenance": "original",
+  "original_design_sha256": "26209fc8f074e44d139e977db283a79920954a2a15b045e4359d78cba14fd148",
+  "reference_sha256": "a1e56271bd4cd82356bd8ffc495cd1f1d670f9387be61fd22760d296baf7ac39",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "7b1c31c708b80b399d76792ffb1e88d47109c10a86745d0195557ae7c24cb516",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

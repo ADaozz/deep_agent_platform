@@ -1,0 +1,23 @@
+{
+  "category": "business",
+  "theme_id": "lead-gray-quarterly",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/02_business/04/en/lead-gray-quarterly.md",
+  "reference_repo_path": "docs/themes/extra/lead-gray-quarterly.jpg",
+  "provenance": "original",
+  "original_design_sha256": "a15187918f7bcf0c068db084451eb035554479c81b0e4585426ad5f619bc4db2",
+  "reference_sha256": "63251c71b278f9f6c6c69e0b221dc630a016f08b02b45eb449dbbf217d493aa2",
+  "reference_width": 1440,
+  "reference_height": 4926,
+  "original_size": [
+    1440,
+    4926
+  ],
+  "final_size": [
+    1440,
+    4926
+  ],
+  "removed_slides": 0,
+  "operations": [],
+  "action": "kept_original_bytes",
+  "original_category": "02_business"
+}

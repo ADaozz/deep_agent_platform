@@ -51,11 +51,17 @@ def list_templates(root=None):
             path=str(package),
             manifest=str(manifest_path),
             license=manifest.get('license'),
+            name=manifest.get('name') or manifest.get('template_id') or manifest_path.parent.name,
+            category=manifest.get('category', 'presentation'),
+            use_for=manifest.get('use_for', ''),
+            recommended_pages=list(manifest.get('recommended_pages') or []),
+            visual_system=dict(manifest.get('visual_system') or {}),
             source_sha256=actual or recorded,
             source_sha256_recorded=recorded,
             slide_size=manifest.get('slide_size'),
             tokens=manifest.get('tokens') or {},
-            slides=[_catalog_slide(slide, manifest.get('slide_size')) for slide in manifest.get('slides', [])],
+            slides=[_catalog_slide(slide, manifest.get('slide_size')) for slide in manifest.get('slides', [])
+                    if slide.get('selectable', True)],
         ))
     return found
 
@@ -67,6 +73,9 @@ def _catalog_slide(slide, default_size=None):
         role=slide.get('role'),
         preview=slide.get('preview') or (f'previews/{slide_id}.png' if slide_id else None),
         slots=dict(slide.get('slots') or {}),
+        slot_texts={alias: next((element.get('text', '') for element in slide.get('elements', [])
+                               if element.get('id') == identity), '')
+                    for alias, identity in (slide.get('slots') or {}).items()},
         native_objects=dict(slide.get('native_objects') or {}),
         slide_size=slide.get('slide_size') or default_size,
         preserve=list(slide.get('preserve') or []),
@@ -177,6 +186,8 @@ def merge_manifest(draft, sidecar):
         merged['template_id'] = sidecar['template_id']
     if sidecar.get('license'):
         merged['license'] = sidecar['license']
+    if sidecar.get('visual_system'):
+        merged['visual_system'] = dict(sidecar['visual_system'])
     overrides = list(sidecar.get('slides') or [])
     slides = []
     for index, slide in enumerate(draft['slides']):
@@ -201,12 +212,12 @@ def apply_stable_ids(prs, manifest):
             raise ValueError('Invalid template slide id ' + str(slide_id))
         slide._element.cSld.set('name', 'da-slide:' + slide_id)
         used = set()
+        prs_slide_shapes = list(slide.shapes)
         for element in spec['elements']:
             element_id = element['id']
             if not ID.fullmatch(element_id) or element_id in used:
                 raise ValueError('Invalid or duplicate template element id ' + str(element_id))
             used.add(element_id)
-            prs_slide_shapes = list(slide.shapes)
             if not 0 <= element['index'] < len(prs_slide_shapes):
                 raise ValueError('Template manifest shape index is outside the slide')
             prs_slide_shapes[element['index']].name = 'da:' + element_id
@@ -228,6 +239,9 @@ def match_library(template_id=None, role=None, root=None):
             continue
         payload.append(dict(
             template_id=item['template_id'],
+            name=item.get('name'),category=item.get('category'),use_for=item.get('use_for'),
+            license=item.get('license'),recommended_pages=item.get('recommended_pages'),
+            visual_system=item.get('visual_system'),
             source_sha256=item.get('source_sha256'),
             slide_size=item.get('slide_size'),
             slides=slides,
@@ -322,7 +336,7 @@ def _native_objects(elements):
 
 
 def _kind(shape):
-    if shape.has_chart:
+    if shape.has_chart or shape._element.findall('.//{http://schemas.microsoft.com/office/drawing/2014/chartex}chart'):
         return 'chart'
     if shape.has_table:
         return 'table'
@@ -512,7 +526,8 @@ def _geometry(data):
         for shape in slide.shapes:
             chart = None
             if shape.has_chart:
-                chart = [tuple(float(value) for value in series.values) for series in shape.chart.series]
+                try:chart = [tuple(float(value) for value in series.values) for series in shape.chart.series]
+                except (ValueError,AttributeError):chart = etree.tostring(shape.chart.part._element).decode()
             text = ''
             if shape.has_text_frame and not shape.has_table:
                 text = shape.text_frame.text

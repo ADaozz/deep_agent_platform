@@ -1,0 +1,23 @@
+{
+  "category": "business",
+  "theme_id": "ink-green-market-trends",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/02_business/05/en/ink-green-market-trends.md",
+  "reference_repo_path": "docs/themes/extra/ink-green-market-trends.jpg",
+  "provenance": "original",
+  "original_design_sha256": "813d0807b6a6af8ba3d9afc204a8703b8ea44d0ed9eba6ea885ab5bfb09e64a9",
+  "reference_sha256": "86c21a7d731367feabc150b60bd2d1098fcc06b43553d0b0b0fa0119745f42ff",
+  "reference_width": 1920,
+  "reference_height": 7632,
+  "original_size": [
+    1920,
+    7632
+  ],
+  "final_size": [
+    1920,
+    7632
+  ],
+  "removed_slides": 0,
+  "operations": [],
+  "action": "kept_original_bytes",
+  "original_category": "02_business"
+}

@@ -1,0 +1,55 @@
+{
+  "category": "consulting",
+  "theme_id": "red-black-growth",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/consulting/red-black-growth/design.md",
+  "reference_repo_path": "docs/themes/consulting/red-black-growth.jpg",
+  "provenance": "original",
+  "original_design_sha256": "83f3c08597dc51ae32aed1bcf7ec8210e27f2e003d6cff3a90be95c908531c8f",
+  "reference_sha256": "671a6d585702221f20d31376826cf70c1ce87bfd4f3c6abd116ba0b0b643f122",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "b3089032ec59668bfb61a7e3dc5215726b0d59d02bd31a5c6590d9c8c3d1b6b6",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

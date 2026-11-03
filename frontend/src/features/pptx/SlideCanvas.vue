@@ -1,10 +1,12 @@
 <script setup>
 import {computed} from 'vue'
+import DOMPurify from 'dompurify'
 const props=defineProps({slide:Object,revision:Number,baseUrl:String,thumbnail:Boolean,profile:Object,highlights:{type:Array,default:()=>[]}})
 const width=960,height=540
 const FALLBACK={background:'FFFFFF',card:'EDF4FC',border:'D3DFEC',text:'17324D',muted:'536B82',accent:'246BCE',surface:'FBFCFE',chart_series:['246BCE','60A5B8','92B14B','C0715A']}
 const design=computed(()=>({colors:{...FALLBACK,...(props.profile?.colors||{})},tables:props.profile?.tables||{header_fill_token:'card'},fonts:props.profile?.fonts||{body:'Noto Sans CJK SC'}}))
-const formal=computed(()=>props.slide?.formal&&(props.slide.complex||props.slide.review?.automatic_passed))
+const formal=computed(()=>props.slide?.formal&&(props.slide.complex||props.slide.review?.automatic_passed||props.slide.elements?.some(e=>e.native_equation)))
+const equationMarkup=e=>DOMPurify.sanitize(e.mathml||'',{USE_PROFILES:{mathMl:true}})
 const token=name=>'#'+(design.value.colors[name]||FALLBACK[name]||'17324D')
 const marker=computed(()=>'pptx-arrow-'+(props.slide?.slide_id||'slide')+(props.thumbnail?'-t':''))
 function box(e){const g=e.geometry;return {x:g.x*width,y:g.y*height,w:g.w*width,h:g.h*height}}
@@ -34,6 +36,7 @@ const boxes=computed(()=>{
    <rect width="960" height="540" :fill="'#'+slide.background"/>
    <template v-for="e in slide.elements" :key="e.id">
     <foreignObject v-if="e.type==='text'" :x="box(e).x" :y="box(e).y" :width="box(e).w" :height="box(e).h"><div xmlns="http://www.w3.org/1999/xhtml" :style="style(e)">{{ e.text }}</div></foreignObject>
+    <foreignObject v-else-if="e.type==='equation'" :x="box(e).x" :y="box(e).y" :width="box(e).w" :height="box(e).h"><div xmlns="http://www.w3.org/1999/xhtml" class="pptx-equation" :style="{fontSize:(e.style?.font_size||24)+'px',color:'#'+(e.style?.color||FALLBACK.text),justifyContent:({'left':'flex-start','center':'center','right':'flex-end'})[e.align||'center']}" v-html="equationMarkup(e)"></div></foreignObject>
     <polyline v-else-if="e.type==='connector'" :points="route(e)" fill="none" :stroke="'#'+(e.fill||design.colors.muted)" stroke-width="2" :stroke-dasharray="dashed(e)" :marker-end="e.arrow&&e.arrow!=='none'?`url(#${marker})`:null" :marker-start="e.arrow==='both'?`url(#${marker})`:null"/>
     <line v-else-if="e.type==='shape'&&e.shape==='line'" :x1="box(e).x" :y1="box(e).y+box(e).h/2" :x2="box(e).x+box(e).w" :y2="box(e).y+box(e).h/2" :stroke="token('accent')" stroke-width="2"/>
     <ellipse v-else-if="e.type==='shape'&&e.shape==='ellipse'" :cx="box(e).x+box(e).w/2" :cy="box(e).y+box(e).h/2" :rx="box(e).w/2" :ry="box(e).h/2" :fill="'#'+(e.fill||design.colors.card)"/>
@@ -62,6 +65,7 @@ const boxes=computed(()=>{
  </div>
 </template>
 <style>
-.pptx-canvas{position:relative;width:100%;aspect-ratio:16/9;background:white;box-shadow:0 3px 20px #0002;overflow:hidden;user-select:none}.pptx-canvas>svg,.pptx-canvas>img{display:block;width:100%;height:100%;object-fit:contain}.pptx-complex{display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:#6c7b8a;background:#f6f8fb}.pptx-canvas.thumbnail{box-shadow:0 1px 5px #0001;pointer-events:none}.pptx-component-tag{display:inline-block;padding:1px 5px;border-radius:0 0 4px 0;background:#000000aa;color:#fff;font:9px/1.5 ui-monospace,monospace;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pptx-equation{display:flex;align-items:center;width:100%;height:100%;overflow:hidden;font-family:'Cambria Math','STIX Two Math',serif}.pptx-equation math{margin:0}
+.pptx-canvas{position:relative;width:100%;aspect-ratio:16/9;background:white;box-shadow:0 3px 20px #0002;overflow:hidden;user-select:none}.pptx-canvas>svg,.pptx-canvas>img{display:block;width:100%;height:100%;object-fit:contain}.pptx-complex{display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--text-secondary);background:var(--surface-subtle)}.pptx-canvas.thumbnail{box-shadow:0 1px 5px #0001;pointer-events:none}.pptx-component-tag{display:inline-block;padding:1px 5px;border-radius:0 0 4px 0;background:#000000aa;color:#fff;font:9px/1.5 ui-monospace,monospace;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .pptx-highlight{position:absolute;pointer-events:none;box-sizing:border-box;border:2px dashed #b26b00;border-radius:3px;opacity:.55;transition:opacity .15s}.pptx-highlight-element{border-style:solid;border-width:1.5px}.pptx-highlight.active{opacity:1;background:#b26b0014}.pptx-highlight-critical,.pptx-highlight-major{border-color:#b3372f}.pptx-highlight-critical.active,.pptx-highlight-major.active{background:#b3372f14}.pptx-highlight-minor{border-color:#5b7391}.pptx-canvas.thumbnail .pptx-highlight{display:none}
 </style>

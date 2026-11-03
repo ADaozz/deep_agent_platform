@@ -1,0 +1,56 @@
+{
+  "category": "business",
+  "theme_id": "lake-blue-memo",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/02_business/02/en/lake-blue-memo.md",
+  "reference_repo_path": "docs/themes/finance/lake-blue-memo.jpg",
+  "provenance": "original",
+  "original_design_sha256": "6601608ea1e3542eb6cae185834e21c9a90c5d09d813fee9f743b45d6b0f4c6d",
+  "reference_sha256": "0f9e257020fdb83367295004b81f1fe45b53269cf42934162b6bda65cbe72ac9",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "316201850a3e6f1acc193a1ff865395b69c21e5bdbf3f5e2f6bd34afd0f56298",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "02_business"
+}

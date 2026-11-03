@@ -26,7 +26,7 @@ Built in: `corporate_blue` (default), `slate_dark`, `minimal_keynote`, `consulti
 
 `extends` merges token-by-token; unknown fields, bad colours, cycles and missing tokens are rejected with a precise error. Adding a profile is one JSON file — no Agent, frontend or engine change. A profile never contains page content.
 
-Precedence when they disagree: explicit user instruction > uploaded template assets and theme > selected built-in profile > default theme. The engine keeps a template's accent and body font, reports the override, and never rewrites the template's theme part.
+For new decks: explicit user requirements/overrides > actual recorded design parameters > selected style Markdown/reference > optional built-in fallback profile. For editing existing files: explicit user instruction > original assets/theme > optional fallback profile. A fallback profile must never become a reason to repaint a selected style or enforce its default margins during review. The engine keeps a template's accent and body font, reports the override, and never rewrites the template's theme part.
 
 ## Layouts
 
@@ -60,4 +60,4 @@ python scripts/component_renderer.py previews
 3. Run `python scripts/component_renderer.py previews` and inspect the actual PNG at its insertion size.
 4. Run the design-system tests. Missing previews, undeclared placeholders, unsafe SVG or duplicate ids fail validation.
 
-Do not copy the four design-study decks as page components. They informed colour, spacing and hierarchy rules; the shipped components and profiles are original and independently reviewed.
+The sample decks under tests/helpers are fixtures for import/editing regressions, not creation templates. They are excluded from platform skill snapshots.

@@ -1,0 +1,55 @@
+{
+  "category": "promotion",
+  "theme_id": "travel-green-handbook",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/promotion/travel-green-handbook/design.md",
+  "reference_repo_path": "docs/themes/promotion/travel-green-handbook.jpg",
+  "provenance": "original",
+  "original_design_sha256": "5e960091a9f92bb95a5a0afb28d5341d4c58b74d36a7f83dd37c1854bb221018",
+  "reference_sha256": "eb58c5a638d603d510e1acb4c874e2681c06ecfdfcdfd0a0383fc6491324e4d7",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "3562cb89fb6f3d2644b01f3bca9ee2627792482d4c9840677d1ecab0ccab1c37",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

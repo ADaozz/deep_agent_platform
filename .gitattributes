@@ -1,0 +1,5 @@
+# Imported design specifications retain source bytes and Markdown hard breaks.
+pptx-ooxml-skill/templates/**/design.md -text whitespace=-blank-at-eol
+# Preserve the importer exports, including their original CSV line endings.
+scripts/import_pptx_styles/*.csv -text whitespace=cr-at-eol
+scripts/import_pptx_styles/import-records/*.csv -text whitespace=cr-at-eol

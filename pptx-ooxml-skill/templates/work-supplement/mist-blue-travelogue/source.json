@@ -1,0 +1,56 @@
+{
+  "category": "work-supplement",
+  "theme_id": "mist-blue-travelogue",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/03_work/02/en/mist-blue-travelogue.md",
+  "reference_repo_path": "docs/themes/extra/mist-blue-travelogue.jpg",
+  "provenance": "original",
+  "original_design_sha256": "663b3fe85363d240a9f8e38022212632f31ee90b2de000a6b8d66f2c71a46fc0",
+  "reference_sha256": "cf6ca47016d77b33ffa7797363fa967e2592e3d673419b88ef836027501ec6d2",
+  "reference_width": 1920,
+  "reference_height": 7632,
+  "original_size": [
+    1920,
+    8724
+  ],
+  "final_size": [
+    1920,
+    7632
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8724
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 12,
+      "kept_slides": 7,
+      "cut_position": 7632,
+      "new_size": [
+        1920,
+        7632
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "49c210b03a869c3bb5be185861cb0160fbe67b60bf2c43dfc81175abb84f6152",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8724
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1090.5,
+      "cut_position": 7644,
+      "new_size": [
+        1920,
+        7644
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "03_work"
+}

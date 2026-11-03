@@ -1,0 +1,23 @@
+{
+  "category": "strategy",
+  "theme_id": "map-strategy",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/01_strategy/06/en/map-strategy.md",
+  "reference_repo_path": "docs/themes/extra/map-strategy.jpg",
+  "provenance": "original",
+  "original_design_sha256": "c42db2dc47f9dda6b1caa8079df156db9e7959d05c4ea74d3d1dba6c7fa08f83",
+  "reference_sha256": "00eab6833145d2d8e7d15ac941775d9ee18f482c6d3a374aac1d1c2477e84fd0",
+  "reference_width": 960,
+  "reference_height": 3300,
+  "original_size": [
+    960,
+    3300
+  ],
+  "final_size": [
+    960,
+    3300
+  ],
+  "removed_slides": 0,
+  "operations": [],
+  "action": "kept_original_bytes",
+  "original_category": "01_strategy"
+}

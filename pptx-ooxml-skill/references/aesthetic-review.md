@@ -1,21 +1,23 @@
 # Model visual (aesthetic) review
 
-The deterministic checks prove that a slide is intact; they cannot judge composition. That judgement comes from a vision-capable model that looks at the real Impress render. It runs on the platform host, never in the sandbox, in the background. It is advice: it never blocks building or delivering the deck. The Agent fixes critical findings on its own; every other finding is shown to the user, who decides what to change.
+The deterministic checks prove that a slide is intact; they cannot judge composition. That judgement comes from a vision-capable model that looks at the real Impress render. When the optional platform adapter is connected, it makes a separate model API request on the host in the background. It does not use the generating Agent’s own visual ability. Standalone CLI checks only record requests; they do not supply this worker or model configuration. It is advice: it never blocks building or delivering the deck. All visual findings, including critical ones, are suggestions; the Agent changes nothing unless the user requests it.
 
 ## Flow
 
-`check-slide` → Impress render → host re-renders the exact revision → model reviews the PNG → structured issues → critical: Agent repairs locally and re-checks; others: shown to the user, who may send them back to the Agent.
+Finish the whole deck → `check-deck` → local overlap repair and recheck until passed → single-slide and deck vision reviews → suggestions only. The request is `{"content_notes":{"slide-id":"specific content checks"}}`. Results include repair_targets, other_errors and overlap_passed. Passing unchanged pages are reused; deferred vision jobs stay deferred across restarts until the deck passes.
 
-1. `check-slide` stores `technical_review`, `visual_integrity` and `aesthetic_review: pending`. A slide with deterministic errors is `blocked` and is not sent to the model.
+1. At the end of generation, `check-deck` uses the page checker to store `technical_review`, `visual_integrity` and `aesthetic_review: pending`. A slide with deterministic errors is `blocked` and is not sent to the model.
 2. The host sees the check event, re-renders the revision into a host-private directory (the sandbox cannot swap the screenshot), verifies the revision hash and calls the model.
 3. The answer is schema-validated, its status is derived (below) and the result is ledgered and applied only if the slide's check is still the current one. A late answer for an older revision is recorded as not applied and never overwrites the newer state.
 4. `review-status [--slide-id …]` returns the result, critical issues and suggestions separately, and the next action. The Agent does not wait for it.
+
+The model also receives selected_design: the real style_id, design Markdown, explicit deck parameters and user overrides. It follows user requirements first, then actual parameters, then the style MD; fallback profile colours and margins are not design requirements. Numeric checks use the same explicit parameters. Review reuse requires the same design fingerprint as well as matching pixels/intent.
 
 The model's input: the PNG as an image block (never a path or URL), the design profile, layout and page purpose (`--intent`), user layout constraints (`--constraint`), the native element manifest (IDs, types, text, geometry, styles), chart data, diagram nodes and edges with their bindings, and the automatic findings. Only the current presentation's own renders are sent, and only to the configured model endpoint.
 
 ## Model selection
 
-The session's current model is used when its configuration declares `input: [text, image]`. Otherwise the host uses `llm.vision_model: "<source>/<model>"` (or the `PLATFORM_VISION_MODEL` environment variable) when that profile declares image input. With neither, the review is `unavailable` — it is never assumed to pass. No API key is visible to skill scripts.
+Model selection below belongs to the platform adapter, not to the standalone skill. The session's current model configuration is used for a separate API request when its configuration declares `input: [text, image]`. Otherwise the host uses `llm.vision_model: "<source>/<model>"` (or the `PLATFORM_VISION_MODEL` environment variable) when that profile declares image input. With neither, the review is `unavailable` — it is never assumed to pass. No API key is visible to skill scripts.
 
 ## Dimensions
 
@@ -36,7 +38,7 @@ composition, focal_point, hierarchy, legibility, spacing, chart_quality, diagram
 
 | status | when |
 | --- | --- |
-| `failed` | at least one `critical`/`major` issue with medium/high confidence and no pending verification — whatever the model's own verdict; only critical ones are acted on without the user |
+| `failed` | at least one `critical`/`major` issue with medium/high confidence and no pending verification — whatever the model's own verdict; all findings remain advice |
 | `uncertain` | a `critical`/`major` issue that is low-confidence or needs verification; the model says uncertain; any dimension is uncertain; evidence is generic ("看起来很好", "设计专业") or repeated; or the model says fail without a confirmed blocking issue |
 | `passed` | none of the above; `minor` issues remain as optional suggestions |
 | `unavailable` | no image-capable model, timeout, provider error, invalid JSON, schema mismatch, missing image, render failure or hash mismatch |
@@ -50,12 +52,12 @@ Each answer is stored in the host-private ledger (`<session>/artifact-review/ppt
 
 ## Repair policy and delivery
 
-- Only confirmed `critical` findings (high/medium confidence, not pending verification) are repaired without asking: a small local edit, then `check-slide`. The same critical finding (category + element IDs, or region bucket) gets at most two rounds; then the review carries `auto_repair: false` and `escalated_issues` and the Agent tells the user.
-- `major` and `minor` findings and every deck-level finding are suggestions. The preview shows critical findings and folds the rest under "其他建议"; the user can dismiss a finding or send it to the Agent ("交给 Agent 修复"), which arrives as a steer (while running) or a new message.
+- Only deterministic overlap findings trigger autonomous repairs. Edit listed slide/element IDs in the existing PPT, then repeat `check-deck` until passed. Never regenerate unrelated pages or silently suppress errors.
+- All visual findings are advice, including critical ones. Reviews carry `auto_repair: false, advisory_only: true`. Only a user repair request authorizes edits based on these suggestions.
 - A slide shows `needs_attention` only while a critical finding is open. That status is informational.
-- `slide.add` needs only the deterministic checks of existing slides (strict mode additionally needs aesthetic acceptance).
+- Slide creation/import/clone has no intermediate check gate, including strict mode. Check after the whole deck is ready.
 - `finalize` needs automatic and content checks per slide. Visual review, deck review, `uncertain` and `unavailable` never block it; the finalize event lists outstanding critical findings and suggestion counts for the delivery message. The host then checks that every claimed verdict really exists in its ledger (and matches the finalized pixels) and publishes `finalize_verified`.
-- Human decisions (accept, reject with change requests, dismiss) are made in the preview and ledgered. `review-slide` from the sandbox is an advisory self-inspection only.
+- There is no manual single-slide re-review, human accept or human reject UI/API. Issue dismissal and sending a suggestion to the Agent remain; dismissal never converts the model verdict into acceptance. Historical human records are not used to override results. `review-slide` is advisory Agent self-inspection only.
 - `request-review` may re-request an `unavailable` review (at most 3 times per check).
 
 ## Deck review

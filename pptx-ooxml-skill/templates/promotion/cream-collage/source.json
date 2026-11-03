@@ -1,0 +1,55 @@
+{
+  "category": "promotion",
+  "theme_id": "cream-collage",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/promotion/cream-collage/design.md",
+  "reference_repo_path": "docs/themes/promotion/cream-collage.jpg",
+  "provenance": "original",
+  "original_design_sha256": "9f8cfef54ff28d9ee8a9d998325b97e90bdd4f45703cc7f20d2a9cd40ba9b2ce",
+  "reference_sha256": "c2005c607f6aef6e9ecd21041fe1a5f6c98e5af50ec382e6c16282322431c120",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "99d9abc080e55e3693ee9a855fd234db7a058c34320625d48c74f87fecb95108",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

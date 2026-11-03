@@ -1,0 +1,55 @@
+{
+  "category": "consulting",
+  "theme_id": "indigo-due-diligence",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/consulting/indigo-due-diligence/design.md",
+  "reference_repo_path": "docs/themes/consulting/indigo-due-diligence.jpg",
+  "provenance": "original",
+  "original_design_sha256": "34ac9b1cdda0f344aaa1a36c5dca3ba5daad148295fc86642a4bdff96e948557",
+  "reference_sha256": "e5db358c23322cb72c0a0434d97296883150e2be04e4279f5ef36316ffc56e22",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "9aeb6c0c17c88c06a222ecbf091052ad9be3a622a9de4762b47e4d919f97e09d",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

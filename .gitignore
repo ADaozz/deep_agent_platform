@@ -10,3 +10,6 @@ cursor-agents-replica.zip
 *:Zone.Identifier
 
 frontend/test-results/
+
+# User-provided templates have no recorded redistribution grant.
+pptx-ooxml-skill/templates/local-*/

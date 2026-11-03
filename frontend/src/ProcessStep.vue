@@ -2,10 +2,10 @@
 import {computed,ref,watch,nextTick,onMounted} from 'vue'
 import Icon from './Icon.vue'
 import {t} from './preferences'
-import {terminalStatuses} from './conversation'
+import {settledStatuses} from './conversation'
 import {stepBody,elapsed,formatDuration} from './processView'
 const props=defineProps({step:Object,actionLabel:Function,now:Number,collapseEpoch:Number})
-const complete=computed(()=>terminalStatuses.has(props.step.status))
+const complete=computed(()=>settledStatuses.has(props.step.status))
 const expanded=ref(!complete.value),viewport=ref(null),follow=ref(true)
 let programmatic=false
 const content=computed(()=>stepBody(props.step,t))
@@ -14,7 +14,7 @@ const icon=computed(()=>props.step.status==='failed'?'CircleAlert':props.step.st
 const duration=computed(()=>formatDuration(elapsed(props.step.startedAt,props.step.endedAt,props.step.durationMs,props.now,!complete.value),t))
 function onScroll(){if(!programmatic&&viewport.value){const el=viewport.value;follow.value=el.scrollHeight-el.scrollTop-el.clientHeight<=4}}
 function tail(){if(!viewport.value||!expanded.value||!follow.value)return;programmatic=true;viewport.value.scrollTop=viewport.value.scrollHeight;requestAnimationFrame(()=>programmatic=false)}
-watch(()=>props.step.status,(status,previous)=>{if(status===previous)return;expanded.value=!terminalStatuses.has(status)})
+watch(()=>props.step.status,(status,previous)=>{if(status===previous)return;expanded.value=!settledStatuses.has(status)})
 watch(()=>props.collapseEpoch,()=>{if(complete.value)expanded.value=false})
 watch(content,async()=>{await nextTick();tail()})
 watch(expanded,async value=>{if(value){await nextTick();tail()}})

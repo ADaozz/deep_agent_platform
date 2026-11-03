@@ -47,15 +47,16 @@ def test_native_elements_editability_and_idempotency(tmp_path):
     m.validator.validate_package(store.path.read_bytes())
 
 
-def test_failed_op_restore_and_slide_gate(tmp_path):
+def test_failed_op_restore_and_deck_completion_gate(tmp_path):
     store=initialized(tmp_path); before=store.path.read_bytes()
     with pytest.raises(ValueError):operation(store,'element.add_text',element=dict(id='bad',text='x',geometry=dict(x=.9,y=.1,w=.5,h=.1)))
     assert store.path.read_bytes()==before and store.status()['revision']==1
-    with pytest.raises(ValueError):operation(store,'slide.add',sid='s2',layout='data')
+    operation(store,'slide.add',sid='s2',layout='data')
+    assert [slide['slide_id'] for slide in store.status()['manifest']['slides']]==['s1','s2']
     operation(store,'element.add_text',element=dict(id='title',anchor='title',text='可回滚的内容'))
-    assert store.restore(1,2,'restore')['revision']==3
+    assert store.restore(1,3,'restore')['revision']==4
     assert store.path.read_bytes()==store.snapshot(1)
-    with pytest.raises(ValueError):store.finalize(3)
+    with pytest.raises(ValueError):store.finalize(4)
 
 
 def test_twenty_slides_and_twenty_elements(tmp_path):

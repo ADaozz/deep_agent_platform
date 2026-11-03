@@ -1,0 +1,56 @@
+{
+  "category": "academic-supplement",
+  "theme_id": "dark-themed-data",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/05_academic/06/en/dark-themed-data.md",
+  "reference_repo_path": "docs/themes/extra/dark-themed-data.jpg",
+  "provenance": "original",
+  "original_design_sha256": "b8540b4bd8cda0dd6e3e567426bfe77299974140036a81162c4339fa8f36265e",
+  "reference_sha256": "c344ef8c68f03d65d5027300b1de9000470ff75866d6646e920f3365c05e7a86",
+  "reference_width": 2667,
+  "reference_height": 7548,
+  "original_size": [
+    2667,
+    9060
+  ],
+  "final_size": [
+    2667,
+    7548
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "panel_height": 1500,
+      "gutter": 12,
+      "kept_slides": 5,
+      "cut_position": 7548,
+      "new_size": [
+        2667,
+        7548
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "0f7a53215acf36a65e1e83e6ea40ed7948d66c8ff25dd68fe08b1b099d103e43",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1510.0,
+      "cut_position": 7580,
+      "new_size": [
+        2667,
+        7580
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "05_academic"
+}

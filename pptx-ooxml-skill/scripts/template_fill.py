@@ -1,5 +1,10 @@
 """Fill template slots and replace chart or picture bytes without rebuilding the shape."""
 import math
+import sys
+from pathlib import Path
+if str(Path(__file__).parent) not in sys.path:sys.path.insert(0,str(Path(__file__).parent))
+import native_charts
+import unicodedata
 
 from lxml import etree
 from pptx.dml.color import RGBColor
@@ -45,6 +50,8 @@ def assert_capacity(shape, text):
 
 def fill_shape_text(shape, text):
     """Replace visible text and keep the first run's paragraph and character properties."""
+    if shape._element.findall('.//{http://schemas.microsoft.com/office/drawing/2010/main}m'):
+        raise ValueError('slot.fill cannot replace a native equation; use element.update latex or native_math.replace')
     if not getattr(shape, 'has_text_frame', False) or shape.has_table or shape.has_chart:
         raise ValueError('slot.fill requires a native text box')
     assert_capacity(shape, text)
@@ -69,20 +76,16 @@ def fill_shape_text(shape, text):
 
 def replace_chart_data(shape, payload, build_data):
     """Replace a chart's workbook. ``build_data`` is the engine's bounded chart validator."""
-    if not getattr(shape, 'has_chart', False) or not shape.has_chart:
+    if not native_charts.is_chart(shape):
         raise ValueError('chart.replace_data requires a native chart')
-    if payload.get('type') and _chart_family(shape) and payload['type'] != _chart_family(shape):
-        raise ValueError('Changing chart type uses chart.change_type, which replaces the chart object and keeps its data')
-    data = build_data(payload)
-    partname_before = str(shape.chart.part.partname)
-    shape.chart.replace_data(data)
-    actual = []
-    for series in shape.chart.series:
-        actual.append([float(value) for value in series.values])
-    expected = [[float(value) for value in item['values']] for item in payload['series']]
-    if actual != expected:
-        raise ValueError('Chart workbook does not match the replacement data')
-    return dict(chart_part=partname_before, series=actual)
+    old = native_charts.infer_type(shape)
+    chart = dict(payload, type=payload.get('type', old))
+    if native_charts.canonical(chart['type']) != native_charts.canonical(old):
+        # Backward aliases may denote exactly the same legacy type.
+        if (chart['type'] not in native_charts.CHART_TYPES or old not in native_charts.CHART_TYPES
+                or native_charts.CHART_TYPES[chart['type']] != native_charts.CHART_TYPES[old]):
+            raise ValueError('Changing chart type uses chart.change_type')
+    return native_charts.replace_data(shape, chart)
 
 
 def replace_picture(slide, shape, image_path):
@@ -150,14 +153,37 @@ def _element_id(shape):
 
 def _line_budget(shape, text):
     size = _font_pt(shape)
-    width_pt = max(1, shape.width / 12700)
-    height_pt = max(1, shape.height / 12700)
-    chars_per_line = max(1, int(width_pt / size))
-    limit = max(1, int(height_pt / (size * 1.3)))
+    frame = shape.text_frame
+    width_pt = max(1, (shape.width - frame.margin_left - frame.margin_right) / 12700)
+    height_pt = max(1, (shape.height - frame.margin_top - frame.margin_bottom) / 12700)
+    line_height = size * 1.3
+    first = frame.paragraphs[0] if frame.paragraphs else None
+    spacing = first.line_spacing if first is not None else None
+    if isinstance(spacing, float) and spacing > 0:
+        line_height = size * spacing
+    elif spacing is not None and hasattr(spacing, 'pt') and spacing.pt > 0:
+        line_height = spacing.pt
+    limit = max(1, int(height_pt / line_height))
     needed = 0
     for line in text.split('\n') or ['']:
-        needed += max(1, math.ceil(len(line) / chars_per_line)) if line else 1
+        units = sum(_character_width(char) for char in line)
+        needed += max(1, math.ceil(units * size / width_pt)) if line else 1
     return needed, limit
+
+
+def _character_width(char):
+    """Conservative em-width estimate; Latin letters are not full-width CJK glyphs."""
+    if unicodedata.combining(char):
+        return 0.0
+    if unicodedata.east_asian_width(char) in ('W', 'F'):
+        return 1.0
+    if char.isspace():
+        return 0.35
+    if char in 'ilI.,:;!\'`|':
+        return 0.35
+    if char in 'MW@%':
+        return 1.0
+    return 0.7 if char.isupper() else 0.65
 
 
 def _font_pt(shape):
@@ -193,18 +219,6 @@ def _set_paragraph_line(paragraph, line):
         run.remove(extra)
     for extra_run, _texts in text_runs[1:]:
         paragraph.remove(extra_run)
-
-
-def _chart_family(shape):
-    from pptx.enum.chart import XL_CHART_TYPE
-    chart_type = shape.chart.chart_type
-    if chart_type == XL_CHART_TYPE.COLUMN_CLUSTERED:
-        return 'bar'
-    if chart_type in (XL_CHART_TYPE.LINE, XL_CHART_TYPE.LINE_MARKERS):
-        return 'line'
-    if chart_type == XL_CHART_TYPE.PIE:
-        return 'pie'
-    return None
 
 
 def _hex(value):

@@ -1,0 +1,56 @@
+{
+  "category": "strategy",
+  "theme_id": "pine-green-strategy",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/01_strategy/03/en/pine-green-strategy.md",
+  "reference_repo_path": "docs/themes/consulting/pine-green-strategy.jpg",
+  "provenance": "original",
+  "original_design_sha256": "9b6fdba1e13c7da2181da7aaf013511f1b42fd09463c9811dd608d66ee2df545",
+  "reference_sha256": "6831d896f5732876ac290dc908b6c007a983d6c71399f5bb3052d7d84557c40c",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "47338616d806e2e925208043f7b9d0d0c45799a3bda81ef4df0c5aaa455682d4",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "01_strategy"
+}

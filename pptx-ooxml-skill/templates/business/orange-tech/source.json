@@ -1,0 +1,56 @@
+{
+  "category": "business",
+  "theme_id": "orange-tech",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/02_business/06/en/orange-tech.md",
+  "reference_repo_path": "docs/themes/extra/orange-tech.jpg",
+  "provenance": "original",
+  "original_design_sha256": "75b31493f7e326312a35fde307fb389365d1355c8243c21568b261ddf0aa366f",
+  "reference_sha256": "70866b8a3e9031f61882c7801ef5fd5b26d5fefc3415cf9ee7c2ab77e511e61e",
+  "reference_width": 2667,
+  "reference_height": 7548,
+  "original_size": [
+    2667,
+    9060
+  ],
+  "final_size": [
+    2667,
+    7548
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "panel_height": 1500,
+      "gutter": 12,
+      "kept_slides": 5,
+      "cut_position": 7548,
+      "new_size": [
+        2667,
+        7548
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "df3d061ed2d7201fcf17f3cea3da510cbc3b24ded6263baac2987d2e752176b3",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1510.0,
+      "cut_position": 7520,
+      "new_size": [
+        2667,
+        7520
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "02_business"
+}

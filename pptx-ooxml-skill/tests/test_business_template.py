@@ -14,7 +14,7 @@ A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location('pptx_biz_' + name, SCRIPTS / f'{name}.py')
+    spec = importlib.util.spec_from_file_location('pptx_biz_' + name, (SCRIPTS.parent/'tests'/'helpers' if name in ('sample_template','render_baseline','template_stage') else SCRIPTS) / f'{name}.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -101,7 +101,8 @@ def build_report(tmp_path, timings=None):
     sample.build(tmp_path)
     source_hash = (tmp_path / 'template.pptx').read_bytes()
     store = office.PresentationStore(tmp_path / 'deck.pptx')
-    listed = importer.list_templates()
+    sample.build(tmp_path / 'library' / 'consulting-brief')
+    listed = importer.list_templates(tmp_path / 'library')
     assert any(item['template_id'] == 'consulting-brief' for item in listed)
     store.init('deck')
     started = time.perf_counter()

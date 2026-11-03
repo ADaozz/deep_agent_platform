@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { conversationTimeline } from '../frontend/src/conversation.js'
-import { stepBody } from '../frontend/src/processView.js'
+import { stepBody, elapsed } from '../frontend/src/processView.js'
 const processOf = (events, status='running') => conversationTimeline(events,status).find(block=>block.kind==='process')
 const at=(second)=>`2026-10-29T14:00:${String(second).padStart(2,'0')}.000Z`
 
@@ -148,4 +148,53 @@ test('steering moves from the end of the turn to the point where the run read it
   assert.deepEqual(steps.map(step => step.kind), ['tool', 'steer', 'tool'])
   assert.equal(steps[1].content, '第3页改成蓝色')
   assert.equal(processOf(applied).stepCount, 2)
+})
+
+test('paused execution stays frozen when resume starts a new execution segment',()=>{
+ const paused=[
+  {seq:1,type:'operation',operation:'message',text:'Build',occurred_at:at(0)},
+  {seq:2,type:'thinking_delta',content:'Planning',occurred_at:at(1)},
+  {seq:3,type:'result',status:'paused',occurred_at:at(5)},
+ ]
+ const first=processOf(paused,'paused')
+ assert.equal(first.status,'paused');assert.equal(first.active,false);assert.equal(first.finished,true)
+ assert.equal(first.durationMs,5000);assert.equal(first.steps[0].status,'paused')
+ assert.equal(first.steps[0].durationMs,4000)
+ const events=[...paused,
+  {seq:4,type:'operation',operation:'resume',occurred_at:at(30)},
+  {seq:5,type:'status',status:'running',occurred_at:at(30)},
+  {seq:6,type:'thinking_delta',content:'Continuing',occurred_at:at(31)},
+ ]
+ const runs=conversationTimeline(events,'running').filter(b=>b.kind==='process')
+ assert.equal(runs.length,2)
+ assert.deepEqual(runs[0],first)
+ assert.equal(runs[1].active,true);assert.equal(runs[1].startedAt,Date.parse(at(30)))
+ assert.equal(elapsed(runs[0].startedAt,runs[0].endedAt,runs[0].durationMs,Date.parse(at(59))),5000)
+ assert.equal(elapsed(runs[1].startedAt,runs[1].endedAt,runs[1].durationMs,Date.parse(at(35))),5000)
+})
+
+test('a missing terminal event cannot leave an older execution running forever',()=>{
+ const events=[
+  {seq:1,type:'operation',operation:'message',text:'Old attempt',occurred_at:at(0)},
+  {seq:2,type:'status',status:'running',occurred_at:at(0)},
+  {seq:3,type:'tool_started',name:'execute',tool_call_id:'a',occurred_at:at(1)},
+  {seq:4,type:'tool_output_delta',tool_call_id:'a',content:'Partial output',occurred_at:at(5)},
+  {seq:5,type:'operation',operation:'message',text:'Continue after restart',occurred_at:at(30)},
+  {seq:6,type:'thinking_delta',content:'Continue',occurred_at:at(31)},
+ ]
+ const runs=conversationTimeline(events,'running').filter(b=>b.kind==='process')
+ assert.equal(runs.length,2)
+ assert.equal(runs[0].status,'interrupted');assert.equal(runs[0].finished,true);assert.equal(runs[0].active,false)
+ assert.equal(runs[0].durationMs,5000);assert.equal(runs[0].steps[0].endedAt,Date.parse(at(5)))
+ assert.equal(runs[0].steps[0].streamedOutput,'Partial output')
+ assert.equal(runs.filter(run=>run.active).length,1)
+ assert.deepEqual(conversationTimeline(JSON.parse(JSON.stringify(events)),'running').filter(b=>b.kind==='process'),runs)
+})
+
+test('session pause freezes the latest execution even before its result event arrives',()=>{
+ const events=[{seq:1,type:'operation',operation:'message',occurred_at:at(0)},
+  {seq:2,type:'thinking_delta',content:'Pending work',occurred_at:at(3)}]
+ const run=processOf(events,'paused')
+ assert.equal(run.status,'paused');assert.equal(run.active,false);assert.equal(run.finished,true)
+ assert.equal(run.endedAt,Date.parse(at(3)));assert.equal(run.durationMs,3000)
 })

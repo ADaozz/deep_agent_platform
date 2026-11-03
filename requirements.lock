@@ -1,4 +1,5 @@
 aiofile==3.12.3
+latex2mathml==3.81.1
 aiosqlite==0.22.1
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -68,6 +69,7 @@ orjson==3.13.0
 ormsgpack==1.13.0
 packaging==26.3
 pathable==0.6.0
+pillow==12.3.0
 platformdirs==4.14.0
 py-key-value-aio==0.4.6
 pyasn1==0.6.5

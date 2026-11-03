@@ -1,0 +1,56 @@
+{
+  "category": "work-supplement",
+  "theme_id": "red-white-business",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/03_work/06/en/red-white-business.md",
+  "reference_repo_path": "docs/themes/extra/red-white-business.jpg",
+  "provenance": "original",
+  "original_design_sha256": "02700e8b9f009b3fa5cec673dbcfab1c0b5dbb161d51695a2589d9edfa896f79",
+  "reference_sha256": "6781cda27f92f83a51d0bb6767e8cd8a5851e454895478d21845133ee8ec3a8b",
+  "reference_width": 2667,
+  "reference_height": 7548,
+  "original_size": [
+    2667,
+    9060
+  ],
+  "final_size": [
+    2667,
+    7548
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "panel_height": 1500,
+      "gutter": 12,
+      "kept_slides": 5,
+      "cut_position": 7548,
+      "new_size": [
+        2667,
+        7548
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "19e38305517008806bb8e21c30021259fda43198699ebad99c1767437e3057b0",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1510.0,
+      "cut_position": 7580,
+      "new_size": [
+        2667,
+        7580
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "03_work"
+}

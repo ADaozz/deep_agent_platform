@@ -21,7 +21,9 @@ A layout declares stable id/version, intent, density, slot rectangles, accepted 
 ## Quality severities
 
 - `error` — unreadable, lost or wrong content: package/render failure, out of bounds, proven text overflow, unexpected content overlap, missing font, unregistered style/layout/component, slot or component capacity exceeded, contrast below the error threshold, profile size drift, unlabelled chart series, missing rendered text. Blocks acceptance.
-- `warning` — profile deviation that must be fixed or explicitly accepted: small type, contrast below the normal-text threshold, safe-margin intrusion, component version/source drift, component below its reviewed minimum size.
+- `warning` — nonblocking reminder; inspect only if relevant to the selected design: small type, contrast below the normal-text threshold, safe-margin intrusion, component version/source drift, component below its reviewed minimum size.
 - `advisory` — optimisation only: alignment drift, uneven spacing, missing chart unit, dense table cell.
 
 Background and decoration layers never trigger collision errors, and intentional same-`overlap_group` stacking is excluded. Composition, visual weight and narrative rhythm are not scored numerically; they stay with the actual rendered screenshot review. A successful ZIP or a passing numeric score is never visual certification.
+
+Selected-style reviews use the matching design.md and explicit deck parameters, not the fallback corporate_blue profile. Only declared margins with explicit units become numeric safe-area checks; absent/ambiguous values are left to visual advice. Structural checks (bounds, overflow and actual element overlap) remain active. Layout/profile JSON still supports explicitly requested atomic layouts and editing compatibility.

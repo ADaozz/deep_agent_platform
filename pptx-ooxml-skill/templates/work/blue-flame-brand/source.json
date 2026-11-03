@@ -1,0 +1,55 @@
+{
+  "category": "work",
+  "theme_id": "blue-flame-brand",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/work/blue-flame-brand/design.md",
+  "reference_repo_path": "docs/themes/work/blue-flame-brand.jpg",
+  "provenance": "original",
+  "original_design_sha256": "49c6d12df76e72e8940e99b5251ddeb8b31a570a1fa8d217f9f672e39a7dc924",
+  "reference_sha256": "a3475e301551d6cc5225f4607c79bf171e5834b037940038483090a291a87308",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "9ea5b2f03abbb9f8584468c2708a2e0bea4b0243ff00b91cfa2ac736787097df",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

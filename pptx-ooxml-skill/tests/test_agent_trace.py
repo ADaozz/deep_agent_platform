@@ -6,7 +6,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location('pptx_trace_' + name, SCRIPTS / f'{name}.py')
+    spec = importlib.util.spec_from_file_location('pptx_trace_' + name, (SCRIPTS.parent/'tests'/'helpers' if name in ('sample_template','render_baseline','template_stage') else SCRIPTS) / f'{name}.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -63,9 +63,11 @@ def check(store, log, slide_id, notes='Checked generated page'):
         lambda: dict(slide_id=slide_id, automatic_passed=True, revision=store.status()['revision']))
 
 
-def test_agent_trace_creates_pptx_from_template(tmp_path):
+def test_agent_trace_creates_pptx_from_template(tmp_path, monkeypatch):
     log = ExecuteLog()
     sample.build(tmp_path)
+    sample.build(tmp_path / 'fixture-skill' / 'templates' / 'consulting-brief')
+    monkeypatch.setattr(importer, 'SKILL_ROOT', tmp_path / 'fixture-skill')
     store = office.PresentationStore(tmp_path / 'deck.pptx')
     listed = log.run(f'{CLI} list-templates', importer.list_templates)
     assert any(item['template_id'] == 'consulting-brief' for item in listed)

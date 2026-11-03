@@ -359,7 +359,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
       <button class="language-toggle" :title="t('language.switch')" :aria-label="t('language.switch')" @click="toggleLocale"><Icon name="Languages" :size="15" /><span>{{ locale === 'zh' ? '中文' : 'EN' }}</span></button>
     </div>
 
-    <main>
+    <main :class="{'session-layout':selected&&mainView!=='history'}">
       <header v-if="selected || mainView === 'history'" class="page-header"><button @click="newChat" class="text-button"><Icon name="ArrowLeft" :size="15" /> {{ t("Agents") }}</button><span class="header-title">{{ selected ? sessionTitle(selected) : t('All chats') }}</span></header>
 
       <div v-if="loading" class="loading"><Icon name="LoaderCircle" class="spin" /> {{ t("Loading…") }}</div>

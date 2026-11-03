@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import fcntl
 import hashlib
+import io
+import math
 import os
 from pathlib import Path
 import re
@@ -16,6 +18,8 @@ from uuid import uuid4
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_IMAGES_PER_MESSAGE = 4
+MODEL_IMAGE_MAX_EDGE = 8192
+MODEL_IMAGE_MAX_PIXELS = 64_000_000
 ATTACHMENT_META_KEY = "image_attachments"
 _REF_TYPE = "deep-agent/image-attachment-ref"
 _REF_VERSION = 1
@@ -28,6 +32,45 @@ class ImageAttachment:
     mime_type: str
     data: bytes
     size: int
+
+
+def model_image_attachment(attachment: ImageAttachment, *, max_edge: int = MODEL_IMAGE_MAX_EDGE) -> ImageAttachment:
+    """Make a bounded request-local image; never change the uploaded original.
+
+    Providers may reject a valid PNG because of dimensions, bit depth or an
+    oversized decoded image. Validate by decoding, then normalize large images
+    to 8-bit JPEG/PNG before materializing the model's request.
+    """
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(attachment.data)) as source:
+            if source.width * source.height > 80_000_000:
+                raise ValueError('Image exceeds the 80 megapixel decoding limit')
+            source.load()
+            needs_copy = (max(source.size) > max_edge
+                          or source.width * source.height > MODEL_IMAGE_MAX_PIXELS
+                          or source.mode not in ('RGB', 'RGBA', 'L', 'P'))
+            if not needs_copy:
+                return attachment
+            image = ImageOps.exif_transpose(source)
+            scale = min(1, max_edge / max(image.size),
+                        math.sqrt(MODEL_IMAGE_MAX_PIXELS / (image.width * image.height)))
+            if scale < 1:
+                image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
+            alpha = 'A' in image.getbands() or (image.mode == 'P' and 'transparency' in image.info)
+            output = io.BytesIO()
+            if alpha:
+                image.convert('RGBA').save(output, 'PNG', optimize=True)
+                mime, extension = 'image/png', '.png'
+            else:
+                image.convert('RGB').save(output, 'JPEG', quality=92, optimize=True)
+                mime, extension = 'image/jpeg', '.jpg'
+            data = output.getvalue()
+            return ImageAttachment(filename=Path(attachment.filename).stem + extension,
+                                   mime_type=mime, data=data, size=len(data))
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError('Uploaded image cannot be decoded; use a valid PNG, JPEG, WebP or GIF') from exc
 
 
 @dataclass(frozen=True)

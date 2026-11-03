@@ -1,0 +1,23 @@
+{
+  "category": "academic-supplement",
+  "theme_id": "pink-purple-diagnosis",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/05_academic/01/en/pink-purple-diagnosis.md",
+  "reference_repo_path": "docs/themes/extra/pink-purple-diagnosis.jpg",
+  "provenance": "original",
+  "original_design_sha256": "7ea8a474249e50146d2e287981709bf2aa6e81ba66b467a7eb2f66eab109eb55",
+  "reference_sha256": "93876da6059b714842a74f48a8d12b0b3a190cef305b5409bd73375dbd683e2e",
+  "reference_width": 960,
+  "reference_height": 3300,
+  "original_size": [
+    960,
+    3300
+  ],
+  "final_size": [
+    960,
+    3300
+  ],
+  "removed_slides": 0,
+  "operations": [],
+  "action": "kept_original_bytes",
+  "original_category": "05_academic"
+}

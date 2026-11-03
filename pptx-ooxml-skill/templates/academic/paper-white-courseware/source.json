@@ -1,0 +1,55 @@
+{
+  "category": "academic",
+  "theme_id": "paper-white-courseware",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/academic/paper-white-courseware/design.md",
+  "reference_repo_path": "docs/themes/academic/paper-white-courseware.jpg",
+  "provenance": "original",
+  "original_design_sha256": "afd099d9cd40a30c1a393c9910604b9caf8e4c6d8a1f490efad29b8da21cda53",
+  "reference_sha256": "fc9933b82243e7ed8fd157efef6a1a9c26c3082a7ede9d3f2872582bfcb143d7",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "9bc51d231319af09727afd4c2f19bdd2cb484c849b64f8b3941e0ec3d09b5807",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

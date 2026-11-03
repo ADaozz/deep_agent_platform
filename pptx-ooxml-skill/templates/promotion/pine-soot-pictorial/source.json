@@ -1,0 +1,55 @@
+{
+  "category": "promotion",
+  "theme_id": "pine-soot-pictorial",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/promotion/pine-soot-pictorial/design.md",
+  "reference_repo_path": "docs/themes/promotion/pine-soot-pictorial.jpg",
+  "provenance": "original",
+  "original_design_sha256": "f755132236574cb66d8937d55e3cde5df5ad5900ff19ae6960e7d9bbbd0705bd",
+  "reference_sha256": "de0ca391c85335ba91631dbf6306ba2bf4b50e502020bd8197e7b47c4b93848a",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "53cade985c2dbb3a4c730a10d318b56a47666941a1ec4c1a9a1e5c1ede78a550",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7527,
+      "new_size": [
+        1920,
+        7527
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

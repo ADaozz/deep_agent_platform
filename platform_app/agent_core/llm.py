@@ -17,7 +17,7 @@ from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from pydantic import PrivateAttr, model_validator
 
-from platform_app.agent_core.attachments import ATTACHMENT_META_KEY, AttachmentStore, refs_from_message
+from platform_app.agent_core.attachments import ATTACHMENT_META_KEY, AttachmentStore, refs_from_message, model_image_attachment
 from platform_app.agent_core.config import DEFAULT_REQUEST_TIMEOUT, ModelProfile
 from platform_app.agent_core.llm_stream import (
     CancellableStreamBridge,
@@ -153,6 +153,8 @@ def materialize_attachment_refs(input_: Any, store: AttachmentStore | None) -> A
         return input_
     messages: list[Any] = []
     changed = False
+    image_count = sum(len(refs_from_message(message)) for message in input_ if isinstance(message, HumanMessage))
+    max_edge = 4096 if image_count >= 15 else 8192
     for message in input_:
         refs = refs_from_message(message) if isinstance(message, HumanMessage) else ()
         if not refs:
@@ -168,7 +170,7 @@ def materialize_attachment_refs(input_: Any, store: AttachmentStore | None) -> A
         elif isinstance(content, list):
             blocks.extend(content)
         for ref in refs:
-            attachment = store.read(ref)
+            attachment = model_image_attachment(store.read(ref), max_edge=max_edge)
             blocks.append(create_image_block(
                 base64=base64.b64encode(attachment.data).decode("ascii"),
                 mime_type=attachment.mime_type,

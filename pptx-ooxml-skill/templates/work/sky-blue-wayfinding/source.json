@@ -1,0 +1,55 @@
+{
+  "category": "work",
+  "theme_id": "sky-blue-wayfinding",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/work/sky-blue-wayfinding/design.md",
+  "reference_repo_path": "docs/themes/work/sky-blue-wayfinding.jpg",
+  "provenance": "original",
+  "original_design_sha256": "da54734ef2f533e72b11f8d75fe8d2a8629489d2f3491214c0589bc938a69e65",
+  "reference_sha256": "967fd7305aa084a92d876746c823c2ba2e9484a2065eb1abce7586948ff09e20",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "e91eadcc49a149ab9bf44456302388e2975ab648731b156dd5cd6c76aa9ba8e9",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

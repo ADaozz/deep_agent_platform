@@ -1,0 +1,55 @@
+{
+  "category": "work",
+  "theme_id": "electric-violet-business",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/work/electric-violet-business/design.md",
+  "reference_repo_path": "docs/themes/work/electric-violet-business.jpg",
+  "provenance": "original",
+  "original_design_sha256": "30b7f007eeb5fc7495f98a22240847504c02c002a6413e5ac7afcf0901a923cb",
+  "reference_sha256": "2a020123b74c0f04e1a65ba3054d8a9e3e2589cece8221159d02196ea1913976",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "e7314ef5060775cf3b987575bc27c1219c5fad0cc04d42f8d8a41f58d3ac0a48",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

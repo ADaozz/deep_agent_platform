@@ -1248,8 +1248,8 @@
     "en": "Formal render"
   },
   "pptx.instant": {
-    "zh": "即时预览 · 排版以正式渲染为准",
-    "en": "Instant preview · formal render is authoritative"
+    "zh": "即时预览",
+    "en": "Instant preview"
   },
   "pptx.creating": {
     "zh": "正在初始化幻灯片…",
@@ -1283,6 +1283,10 @@
     "zh": "版式",
     "en": "Layout"
   },
+  "pptx.styleUnspecified": {
+    "zh": "未指定",
+    "en": "Not specified"
+  },
   "pptx.profile": {
     "zh": "设计风格",
     "en": "Profile"
@@ -1298,10 +1302,6 @@
   "pptx.aesthetic.suggestions": {
     "zh": "{count} 条建议，由你决定",
     "en": "{count} suggestions, your call"
-  },
-  "pptx.otherSuggestions": {
-    "zh": "其他建议（{count} 条，可选）",
-    "en": "Other suggestions ({count}, optional)"
   },
   "pptx.noCritical": {
     "zh": "没有严重问题",
@@ -1331,9 +1331,13 @@
     "zh": "模型回复不是可解析的 JSON",
     "en": "Model reply was not parseable JSON"
   },
+  "pptx.previewError": {
+    "zh": "本版本预览生成失败：",
+    "en": "Preview generation failed for this revision:"
+  },
   "pptx.error.schema_invalid": {
-    "zh": "模型回复缺少必要字段",
-    "en": "Model reply missed required fields"
+    "zh": "模型回复格式不完整或不符合审查结构",
+    "en": "Model reply was incomplete or did not match the review schema"
   },
   "pptx.error.provider_error": {
     "zh": "模型服务调用出错",
@@ -1342,6 +1346,10 @@
   "pptx.error.image_missing": {
     "zh": "截图缺失",
     "en": "Screenshot missing"
+  },
+  "pptx.error.unsupported_chart_renderer": {
+    "zh": "当前预览器无法准确显示此原生图表，请在 PowerPoint 中核对",
+    "en": "Verify this native chart in PowerPoint; the current preview renderer is not authoritative"
   },
   "pptx.error.render_failed": {
     "zh": "截图渲染失败",
@@ -1446,38 +1454,6 @@
   "pptx.dismiss": {
     "zh": "驳回此问题",
     "en": "Dismiss issue"
-  },
-  "pptx.rerun": {
-    "zh": "重新审查",
-    "en": "Review again"
-  },
-  "pptx.humanAccept": {
-    "zh": "人工确认通过",
-    "en": "Accept as reviewer"
-  },
-  "pptx.humanReject": {
-    "zh": "人工判定不通过",
-    "en": "Reject as reviewer"
-  },
-  "pptx.humanDecision": {
-    "zh": "人工决定：{decision}",
-    "en": "Human decision: {decision}"
-  },
-  "pptx.decision.accept": {
-    "zh": "确认通过",
-    "en": "accepted"
-  },
-  "pptx.decision.reject": {
-    "zh": "不通过",
-    "en": "rejected"
-  },
-  "pptx.decisionNotesOptional": {
-    "zh": "备注（可选）",
-    "en": "Notes (optional)"
-  },
-  "pptx.rejectNotes": {
-    "zh": "请填写修改意见（必填），Agent 会据此修改",
-    "en": "Describe what should change (required); the Agent will act on it"
   },
   "pptx.model": {
     "zh": "模型 {model} · 提示词 {prompt}",
@@ -1603,6 +1579,14 @@
     "zh": "{count} 个步骤",
     "en": "{count} steps"
   },
+  "process.status.paused": {
+    "zh": "已暂停",
+    "en": "Paused"
+  },
+  "process.status.runtime_config_boundary": {
+    "zh": "等待继续",
+    "en": "Waiting to continue"
+  },
   "process.status.pending": {
     "zh": "等待中",
     "en": "Pending"
@@ -1723,18 +1707,148 @@
     "zh": "MCP 配置可保留。通用宿主 MCP 服务尚无 Thread 作用域适配，因此当前不会启动；不会把宿主访问能力当作沙箱内工具。",
     "en": "MCP configuration is retained. Generic host MCP servers are not started until a Thread-scoped adapter is available; host access is not treated as sandboxed."
   },
-  "human.other": { "zh": "其他", "en": "Other" },
-  "human.otherAnswer": { "zh": "{field}：其他回复", "en": "{field}: custom answer" },
-  "human.otherPlaceholder": { "zh": "请填写你的回复…", "en": "Enter your answer…" }
-,
-  "usage.context": { "zh": "上下文 {used} / {limit} Token", "en": "Context {used} / {limit} tokens" },
-  "usage.output": { "zh": "输出 {count} Token", "en": "Output {count} tokens" },
-  "usage.latestRequest": { "zh": "最近一次模型请求的输入用量 / 模型上下文窗口", "en": "Latest model request input usage / model context window" }
-,
-  "skills.bundled": { "zh": "内置技能", "en": "Built-in skill" }
-,
-  "artifacts.preview": { "zh": "点击预览", "en": "Preview" },
-  "artifacts.select": { "zh": "选择预览文件", "en": "Select preview file" },
-  "artifacts.previewUnavailable": { "zh": "此文件的预览暂不可用，可下载查看。", "en": "Preview is unavailable for this file. You can download it." }
-
+  "human.other": {
+    "zh": "其他",
+    "en": "Other"
+  },
+  "human.otherAnswer": {
+    "zh": "{field}：其他回复",
+    "en": "{field}: custom answer"
+  },
+  "human.otherPlaceholder": {
+    "zh": "请填写你的回复…",
+    "en": "Enter your answer…"
+  },
+  "usage.context": {
+    "zh": "上下文 {used} / {limit} Token",
+    "en": "Context {used} / {limit} tokens"
+  },
+  "usage.output": {
+    "zh": "输出 {count} Token",
+    "en": "Output {count} tokens"
+  },
+  "usage.latestRequest": {
+    "zh": "最近一次模型请求的输入用量 / 模型上下文窗口",
+    "en": "Latest model request input usage / model context window"
+  },
+  "skills.bundled": {
+    "zh": "内置技能",
+    "en": "Built-in skill"
+  },
+  "artifacts.preview": {
+    "zh": "点击预览",
+    "en": "Preview"
+  },
+  "artifacts.select": {
+    "zh": "选择预览文件",
+    "en": "Select preview file"
+  },
+  "artifacts.previewUnavailable": {
+    "zh": "此文件的预览暂不可用，可下载查看。",
+    "en": "Preview is unavailable for this file. You can download it."
+  },
+  "pptx.automatic": {
+    "zh": "自动检查",
+    "en": "Automatic checks"
+  },
+  "pptx.issueCount": {
+    "zh": "{count} 个问题",
+    "en": "{count} issues"
+  },
+  "pptx.severity.ungraded": {
+    "zh": "未分级",
+    "en": "Unrated"
+  },
+  "pptx.reviewState.not_requested": {
+    "zh": "未检查",
+    "en": "Not checked"
+  },
+  "pptx.reviewState.waiting": {
+    "zh": "等待自动检查",
+    "en": "Waiting for automatic checks"
+  },
+  "pptx.reviewState.pending": {
+    "zh": "检查中",
+    "en": "Checking"
+  },
+  "pptx.reviewState.passed": {
+    "zh": "通过",
+    "en": "Passed"
+  },
+  "pptx.reviewState.failed": {
+    "zh": "未通过",
+    "en": "Failed"
+  },
+  "pptx.reviewState.unavailable": {
+    "zh": "检查不可用",
+    "en": "Check unavailable"
+  },
+  "pptx.reviewState.uncertain": {
+    "zh": "待核实",
+    "en": "Needs verification"
+  },
+  "pptx.aesthetic.stale": {
+    "zh": "审查已过期",
+    "en": "Review outdated"
+  },
+  "pptx.reviewState.stale": {
+    "zh": "审查已过期",
+    "en": "Review outdated"
+  },
+  "pptx.reviewVersions": {
+    "zh": "审查版本 {reviewed} · 当前版本 {current}",
+    "en": "Reviewed revision {reviewed} · Current revision {current}"
+  },
+  "pptx.reviewExpired": {
+    "zh": "PPT 已在该次审查后修改，此结果仅供历史参考，需要针对当前版本重新审查。",
+    "en": "The PPT changed after this review. This result is historical; review the current revision again."
+  },
+  "pptx.error.snapshot_expired": {
+    "zh": "审查所需快照已超出当前版和前一版的保留范围，需针对当前版本重新检查",
+    "en": "The reviewed snapshot expired under two-revision retention; check the current revision again"
+  },
+  "filePreview.title": {
+    "zh": "文件预览",
+    "en": "File preview"
+  },
+  "filePreview.close": {
+    "zh": "关闭文件预览",
+    "en": "Close file preview"
+  },
+  "filePreview.image": {
+    "zh": "图片",
+    "en": "Image"
+  },
+  "filePreview.text": {
+    "zh": "文本",
+    "en": "Text"
+  },
+  "filePreview.failed": {
+    "zh": "预览失败，请下载文件查看或重试。",
+    "en": "Preview failed. Download the file or try again."
+  },
+  "filePreview.source": {
+    "zh": "查看源码",
+    "en": "View source"
+  },
+  "filePreview.rendered": {
+    "zh": "查看排版",
+    "en": "View rendered"
+  },
+  "filePreview.zoomOut": {
+    "zh": "缩小图片",
+    "en": "Zoom out"
+  },
+  "filePreview.zoomIn": {
+    "zh": "放大图片",
+    "en": "Zoom in"
+  },
+  "filePreview.refresh": {
+    "zh": "刷新",
+    "en": "Refresh"
+  },
+  "filePreview.loading": {
+    "zh": "正在加载预览…",
+    "en": "Loading preview…"
+  }
 }

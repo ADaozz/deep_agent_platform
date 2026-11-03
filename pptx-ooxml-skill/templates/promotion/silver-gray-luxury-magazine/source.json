@@ -1,0 +1,55 @@
+{
+  "category": "promotion",
+  "theme_id": "silver-gray-luxury-magazine",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/promotion/silver-gray-luxury-magazine/design.md",
+  "reference_repo_path": "docs/themes/promotion/silver-gray-luxury-magazine.jpg",
+  "provenance": "original",
+  "original_design_sha256": "883ca1821b3cfcf0d3b5282296168a8cbb361e675611709fccbc8fc40dc69ed1",
+  "reference_sha256": "84a73faba4327090a0bbc6e2f2075a310ae40c32aeeb8661ae2d8ba5b1bcedd9",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "5ac6f93e46e01b7c79fd3f7f5331aa0b000c36c8e54b41e3144bfff66301eaa6",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7527,
+      "new_size": [
+        1920,
+        7527
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

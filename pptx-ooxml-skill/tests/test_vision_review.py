@@ -140,6 +140,26 @@ def test_model_receives_the_real_host_render_and_structured_context(harness):
     assert (h.service.reviews.private_root / 'renders').exists()
 
 
+def test_model_uses_selected_style_instead_of_internal_blue_profile(harness):
+    model=FakeVision(answer());h=harness(model)
+    h.op('slide.add',layout='title_body')
+    h.op('element.add_text',element=dict(id='title',anchor='title',text='风格审查'))
+    from pptx import Presentation
+    prs=Presentation(h.path)
+    engine.style_library.apply_reference(prs,'consulting/red-black-growth',design={
+        'palette':{'accent':'308050','text':'17324D'},'user_requirements':['用户指定绿色'],
+        'margins':{'unit':'fraction','left':.04,'right':.04,'top':.04,'bottom':.04}})
+    prs.save(h.path);h.service.detect_external()
+    assert h.store.check_deck({'s1':'核对页面标题'})['status']=='passed'
+    h.service.sync();review=h.review()
+    assert review['aesthetic_review']['status']=='passed'
+    request=json.loads(model.calls[0]['text'])
+    assert request['design_profile']['id']=='consulting/red-black-growth'
+    assert request['design_profile']['colors']['accent']=='308050'
+    assert request['selected_design']['design_md']
+    assert request['selected_design']['parameters']['user_requirements']==['用户指定绿色']
+
+
 def test_confirmed_major_issue_fails_but_allows_next_slide_minor_is_advice(harness):
     model = FakeVision(answer('fail', [issue()]), answer('pass', [issue(2, severity='minor', category='spacing')]))
     h = harness(model)
@@ -206,14 +226,15 @@ def test_unavailable_reviews_never_pass(harness, kind):
     assert aesthetic['status'] == 'unavailable'
     assert aesthetic['error']['code'] == {'no_model': 'no_vision_model', 'invalid_json': 'invalid_json', 'timeout': 'timeout'}[kind]
     if kind == 'invalid_json':
-        assert len(model.calls) == 2 and '上一次回答无法使用' in model.calls[1]['text']
+        assert len(model.calls) == 2 and '上一次回答' in model.calls[1]['text'] and '重新' in model.calls[1]['text']
     status = h.store.review_status('s1')['slides'][0]
     assert 'Do not claim visual acceptance' in status['next_action']
     assert h.store.finalize(h.store.status()['revision'])['aesthetics']['s1']['status'] == 'unavailable'
 
 
 def test_agent_can_rerequest_only_after_unavailable(harness):
-    model = FakeVision('not json', answer())
+    # An automatic corrective retry is attempted before the agent can re-request.
+    model = FakeVision('not json', 'still not json', answer())
     h = harness(model)
     h.slide()
     assert h.review()['aesthetic_review']['status'] == 'unavailable'
@@ -255,72 +276,60 @@ def test_major_issue_is_left_to_the_user_and_can_be_delegated(harness):
     assert 'change nothing unless asked' in review['next_action'] and review['status'] == 'passed'
 
 
-def test_sandbox_cannot_self_accept_and_human_override_is_ledgered(harness):
-    h = harness(None)
-    h.slide()
-    assert h.review()['aesthetic_review']['status'] == 'unavailable'
-    revision = h.store.status()['revision']
-    h.store.review('s1', revision, True, '我看过截图，没问题')
-    assert h.store.review_status('s1')['slides'][0]['effective_aesthetic'] == 'unavailable'
-    h.service.human_decision('deck', revision, 'accept', '人工查看正式截图：标题清晰、留白合理', 's1')
-    assert h.store.review_status('s1')['slides'][0]['effective_aesthetic'] == 'passed'
-    h.store.finalize(revision)
-    h.service.sync()
-    deadline = time.time() + 60
-    while time.time() < deadline and not any(e.get('type') == 'presentation_finalize_verification' for e in h.events):
-        time.sleep(.2)
-    verification = next(e for e in h.events if e.get('type') == 'presentation_finalize_verification')
-    assert verification['finalize_verified'], verification
+def test_self_inspection_cannot_accept_and_manual_override_is_unavailable(harness):
+    h=harness(None);h.slide()
+    assert h.review()['aesthetic_review']['status']=='unavailable'
+    revision=h.store.status()['revision']
+    h.store.review('s1',revision,True,'Agent 自检说明')
+    assert h.store.review_status('s1')['slides'][0]['effective_aesthetic']=='unavailable'
+    assert not hasattr(h.service,'human_decision') and not hasattr(h.store,'host_request_review')
+    with pytest.raises(ValueError,match='no longer supported'):
+        h.store.review('s1',revision,True,'manual','human')
+    h.store.finalize(revision);h.service.sync()
+    deadline=time.time()+60
+    while time.time()<deadline and not any(e.get('type')=='presentation_finalize_verification' for e in h.events):time.sleep(.2)
+    verification=next(e for e in h.events if e.get('type')=='presentation_finalize_verification')
+    assert verification['finalize_verified'],verification
 
 
-def test_critical_issue_escalates_to_the_user_after_two_repair_rounds(harness):
+def test_even_critical_visual_findings_are_advice_without_automatic_repairs(harness):
     h = harness(FakeVision(answer('fail', [issue(severity='critical')])))
     h.slide()
-    attempts = []
-    for round_number in range(3):
-        review = h.review()
-        attempts.append(review['aesthetic_review']['issues'][0]['attempt'])
-        if round_number < 2:
-            h.op('element.update', element=dict(id='title', text=f'修复第 {round_number + 1} 轮'))
-            h.check()
-    assert attempts == [1, 2, 3]
+    before = h.store.path.read_bytes()
+    review = h.review()
     assert review['aesthetic_review']['status'] == 'failed' and review['status'] == 'needs_attention'
-    assert review['aesthetic_review']['auto_repair'] is False and review['aesthetic_review']['escalated_issues'] == ['visual-001']
-    assert 'tell the user' in review['next_action']
+    assert review['aesthetic_review']['auto_repair'] is False
+    assert review['aesthetic_review']['advisory_only'] is True
+    assert 'change nothing unless asked' in review['next_action']
+    assert h.store.path.read_bytes() == before
     event = h.store.finalize(h.store.status()['revision'])
     assert event['outstanding_critical'] == {'s1': ['visual-001']}
 
 
-def test_accept_needs_no_notes_but_reject_needs_change_requests(harness):
-    h = harness(None)
-    h.slide()
-    h.review()
-    revision = h.store.status()['revision']
-    with pytest.raises(ValueError, match='修改意见'):
-        h.service.human_decision('deck', revision, 'reject', '  ', 's1')
-    h.service.human_decision('deck', revision, 'reject', '标题改为深色并加大字号', 's1')
-    rejected = h.store.review_status('s1')['slides'][0]
-    assert rejected['effective_aesthetic'] == 'failed' and rejected['aesthetic_review']['human']['notes'] == '标题改为深色并加大字号'
-    h.service.human_decision('deck', revision, 'accept', '', 's1')
-    assert h.store.review_status('s1')['slides'][0]['effective_aesthetic'] == 'passed'
+def test_dismissal_keeps_model_verdict_without_implicit_human_acceptance(harness):
+    h=harness(FakeVision(answer('fail',[issue(severity='critical')])));h.slide();h.review()
+    revision=h.store.status()['revision']
+    h.service.dismiss_issues('deck',revision,['visual-001'],slide_id='s1')
+    result=h.store.review_status('s1')['slides'][0]
+    assert result['effective_aesthetic']=='failed'
+    assert result['aesthetic_review']['issues'][0]['dismissed']
+    assert not result['aesthetic_review'].get('human')
+    assert result['critical_issues']==[]
+    assert len(h.model.calls)==1
 
 
-def test_human_decision_survives_a_late_model_answer(harness):
-    gate = threading.Event()
-    model = FakeVision(answer('fail', [issue()]), gate=gate)
-    h = harness(model)
-    h.slide()
-    deadline = time.time() + 30
-    while not model.calls and time.time() < deadline:
-        time.sleep(.1)
-    h.service.human_decision('deck', h.store.status()['revision'], 'accept', '用户确认标题配色为品牌要求', 's1')
-    gate.set()
-    deadline = time.time() + 30
-    while time.time() < deadline and h.store.review_status('s1')['slides'][0]['aesthetic_review'].get('status') == 'pending':
-        time.sleep(.2)
-    review = h.store.review_status('s1')['slides'][0]
-    assert review['aesthetic_review']['status'] == 'failed' and review['aesthetic_review']['human']['decision'] == 'accept'
-    assert review['effective_aesthetic'] == 'passed'
+def test_legacy_human_flags_do_not_override_a_model_answer(harness):
+    gate=threading.Event();model=FakeVision(answer('fail',[issue()]),gate=gate);h=harness(model)
+    try:
+        h.slide();deadline=time.time()+30
+        while not model.calls and time.time()<deadline:time.sleep(.1)
+        with h.store.locked() as(c,state):
+            state['reviews']['s1']['aesthetic_review']['human']={'decision':'accept'}
+            h.store.save_state(c,state);c.commit()
+        gate.set();result=h.review()
+        assert result['effective_aesthetic']=='failed'
+        assert not result['aesthetic_review'].get('human')
+    finally:gate.set()
 
 
 def test_forged_acceptance_in_sandbox_state_fails_host_verification(harness):
@@ -351,8 +360,9 @@ def deck_answer(system, text):
     return json.dumps(dict(status='fail', summary='第 2、3 页构图重复', checks=deck_checks, issues=[
         dict(id='deck-001', category='repetition', severity='major', slides=[2, 3], observation='第 2、3 页都是左上标题加大片留白',
             reason='相邻页节奏单调', suggestion='第 3 页改用数据版式', confidence='high'),
-        dict(id='deck-002', category='design_system', severity='major', slides=[1], observation='整体风格一般',
-            reason='不够高级', suggestion='重做整个演示文稿', confidence='medium')]), ensure_ascii=False)
+        # Invalid page references are rejected deterministically, without relying on prose heuristics.
+        dict(id='deck-002', category='design_system', severity='major', slides=[4], observation='第 4 页标题颜色与前文不同',
+            reason='标题颜色不一致', suggestion='统一第 4 页标题颜色', confidence='medium')]), ensure_ascii=False)
 
 
 def test_deck_review_returns_specific_pages_and_gates_finalize(harness):
@@ -409,3 +419,47 @@ def test_feature_snapshot_keeps_vision_service_on_the_host(tmp_path):
     copied = tmp_path / 'pptx-ooxml-author'
     assert (copied / 'scripts' / 'office_pptx.py').is_file()
     assert not (copied / 'vision_review_service.py').exists() and not (copied / 'platform_adapter.py').exists()
+
+
+def test_vision_uses_effective_template_profile(harness):
+    model = FakeVision(answer())
+    h = harness(model)
+    with h.store.locked() as (connection, state):
+        state['template_visual_system'] = {'name': 'Dark Analytics Dashboard'}
+        state['template_font'] = 'Montserrat'
+        h.store.save_state(connection, state)
+        connection.commit()
+    h.slide()
+    h.review()
+    profile = json.loads(model.calls[0]['text'])['design_profile']
+    assert profile['name'] == 'Dark Analytics Dashboard'
+    assert profile['fonts']['body'] == 'Montserrat'
+
+
+def test_changed_page_exposes_previous_review_without_accepting_it(harness):
+    h = harness(FakeVision(answer()))
+    h.slide()
+    previous = h.review()
+    h.op('element.update', element={'id': 'title', 'text': '更新后的汇报标题'})
+    slide = h.store.status()['manifest']['slides'][0]
+    assert slide['review']['status'] == 'writing'
+    assert slide['previous_review']['aesthetic_review']['review_id'] == previous['aesthetic_review']['review_id']
+    h.store.check_slide('s1', '标题已更新')
+    slide = h.store.status()['manifest']['slides'][0]
+    assert slide['review']['aesthetic_review']['status'] == 'pending'
+    assert slide['previous_review']['aesthetic_review']['review_id'] == previous['aesthetic_review']['review_id']
+
+
+def test_unsupported_chart_preview_is_not_sent_as_a_successful_visual_check(harness):
+    model = FakeVision(answer())
+    h = harness(model)
+    h.op('slide.add', layout='title_body')
+    h.op('element.add_chart', element=dict(id='waterfall', geometry=dict(x=.1,y=.25,w=.8,h=.6),
+        chart=dict(type='waterfall',categories=['Start','Change','End'],
+                   series=[dict(name='Cash',values=[100,-20,80])],totals=[0,2])))
+    result = h.check()
+    review = result['review']
+    assert review['automatic_passed'] and review['rendered']
+    assert review['visual_integrity']['status'] == 'unavailable'
+    assert review['aesthetic_review']['error']['code'] == 'unsupported_chart_renderer'
+    assert not model.calls

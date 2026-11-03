@@ -1,0 +1,56 @@
+{
+  "category": "promotion-supplement",
+  "theme_id": "fresh-brand",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/04_promotion/06/en/fresh-brand.md",
+  "reference_repo_path": "docs/themes/extra/fresh-brand.jpg",
+  "provenance": "original",
+  "original_design_sha256": "bf4a27937456aa5cafa001603f2062be45854b98f9d5c487cc05e0015bbf5fad",
+  "reference_sha256": "754c7729947b5e15208f0444ef43db803f79b972d440749cdc5be6ec33400519",
+  "reference_width": 2667,
+  "reference_height": 7548,
+  "original_size": [
+    2667,
+    9060
+  ],
+  "final_size": [
+    2667,
+    7548
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "panel_height": 1500,
+      "gutter": 12,
+      "kept_slides": 5,
+      "cut_position": 7548,
+      "new_size": [
+        2667,
+        7548
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "231932251be6c99b8cc3ddd1eaf75432ab8d9d49fe77064a2e9fd90c5dffddc4",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        2667,
+        9060
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1510.0,
+      "cut_position": 7580,
+      "new_size": [
+        2667,
+        7580
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page",
+  "original_category": "04_promotion"
+}

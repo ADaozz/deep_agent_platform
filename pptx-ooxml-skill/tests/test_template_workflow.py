@@ -11,7 +11,7 @@ A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location('pptx_' + name, SCRIPTS / f'{name}.py')
+    spec = importlib.util.spec_from_file_location('pptx_' + name, (SCRIPTS.parent/'tests'/'helpers' if name in ('sample_template','render_baseline','template_stage') else SCRIPTS) / f'{name}.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -60,6 +60,27 @@ def test_import_records_roles_and_refuses_unlicensed_vendor(tmp_path):
     skill_templates = Path(__file__).resolve().parents[1] / 'templates' / 'rejected' / 'manifest.json'
     with pytest.raises(ValueError, match='unlicensed'):
         importer.import_template(external / 'template.pptx', output=skill_templates, license_note='external check')
+
+
+def test_library_catalog_hides_nonselectable_pages_without_changing_source(tmp_path):
+    import json
+    directory = tmp_path / 'curated'
+    source = sample.build(directory)
+    before = source.read_bytes()
+    path = directory / 'manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['slides'][0]['selectable'] = False
+    manifest.update(name='Local test deck', category='diagram', use_for='Process explanations', recommended_pages=[3])
+    path.write_text(json.dumps(manifest))
+    listed = importer.list_templates(tmp_path)
+    assert [s['slide_id'] for s in listed[0]['slides']] == ['tpl-002', 'tpl-003', 'tpl-004']
+    matched = importer.match_library('consulting-brief', 'comparison', tmp_path)
+    assert matched['category'] == 'diagram'
+    assert matched['use_for'] == 'Process explanations'
+    assert matched['recommended_pages'] == [3]
+    assert importer.match_library('consulting-brief', 'cover', tmp_path)['slides'] == []
+    assert len(Presentation(source).slides) == 4
+    assert source.read_bytes() == before
 
 
 def test_clone_fill_recolor_and_chart_independence(tmp_path):

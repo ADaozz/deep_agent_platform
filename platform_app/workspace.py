@@ -139,6 +139,10 @@ class SandboxPolicyBuilder:
         portable_office = sorted((Path.home() / '.local/libreoffice/opt').glob('libreoffice*'))
         if portable_office:
             runtime_mounts.append(BindMount(source=portable_office[-1], destination='/opt/agent-libreoffice'))
+        template_fonts = Path.home() / '.local/share/fonts/deep-agent-pptx'
+        if template_fonts.is_dir():
+            runtime_mounts.append(BindMount(source=template_fonts,
+                destination='/home/agent/.local/share/fonts/deep-agent-pptx'))
         config = SandboxConfig(workspace=context.workspace_root, mode=mode,
             protected_config_dir=context.sandbox_state_root, protected_files=protected,
             mount_skills=False, network_modes=('restricted', 'full-access'), extra_read_only_mounts=(

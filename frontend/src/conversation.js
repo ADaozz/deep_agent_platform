@@ -1,6 +1,8 @@
 // The journal stays immutable. Each model summary and tool-call ID owns one
 // timeline row; stream events update that row without regrouping repeated tools.
 export const terminalStatuses = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
+const pausedStatuses = new Set(['paused', 'runtime_config_boundary'])
+export const settledStatuses = new Set([...terminalStatuses, ...pausedStatuses])
 const liveStatuses = new Set(['running', 'queued'])
 export function eventTime(event) {
   const value = event.occurred_at ?? event.timestamp ?? event.created_at
@@ -32,7 +34,7 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
   let turn, model
   const ensureTurn = (event, index) => {
     if (!turn) {
-      turn = { key: event.seq ?? index, models: [], steps: [], tools: new Map(), notes: [], result: '', startedAt: eventTime(event), endedAt: null, status: null }
+      turn = { key: event.seq ?? index, models: [], steps: [], tools: new Map(), notes: [], result: '', startedAt: eventTime(event), lastEventAt: eventTime(event), endedAt: null, status: null }
       turns.push(turn)
     }
     return turn
@@ -82,12 +84,19 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
       const current = ensureTurn(event, index)
       current.user = { kind: 'user', key: `user-${current.key}`, content: event.text, attachments: event.attachments || [] }
       current.status = 'running'
-    } else if (event.type === 'operation' && ['approve', 'answer', 'resume'].includes(event.operation)) {
+    } else if (event.type === 'operation' && event.operation === 'resume') {
+      if (turn) {
+        if (!settledStatuses.has(turn.status)) turn.status = 'paused'
+        turn.endedAt ??= turn.lastEventAt
+      }
+      turn = null; model = null
+      ensureTurn(event, index).status = 'running'
+    } else if (event.type === 'operation' && ['approve', 'answer'].includes(event.operation)) {
       ensureTurn(event, index).status = 'running'
       for (const step of turn.steps) if (step.status === 'pending') step.status = 'running'
     } else if (event.type === 'status') {
       ensureTurn(event, index).status = event.status
-      if (terminalStatuses.has(event.status)) turn.endedAt = eventTime(event)
+      if (settledStatuses.has(event.status)) turn.endedAt = eventTime(event)
     } else if (event.type === 'assistant_started') {
       ensureTurn(event, index)
       model = { key: event.message_id || event.seq || index, content: '', thought: '', hasTools: false, completed: false, startedAt: eventTime(event) }
@@ -127,7 +136,7 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
       }
     } else if (event.type === 'result') {
       ensureTurn(event, index).status = event.status
-      if (terminalStatuses.has(event.status)) turn.endedAt = eventTime(event)
+      if (settledStatuses.has(event.status)) turn.endedAt = eventTime(event)
       else if (['waiting_confirmation', 'waiting_human', 'paused', 'runtime_config_boundary'].includes(event.status)) {
         for (const step of turn.steps) if (!terminalStatuses.has(step.status)) step.status = 'pending'
       }
@@ -154,17 +163,25 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
         content: entry?.note.content ?? steeringText(event.result?.content ?? event.content), status: 'completed',
         startedAt: eventTime(event), endedAt: eventTime(event), durationMs: 0 })
     }
+    if (turn && !settledStatuses.has(turn.status) && eventTime(event) != null
+        && !event.type.startsWith('presentation_') && !event.type.startsWith('document_')) {
+      turn.lastEventAt = eventTime(event)
+    }
   }
   return turns.flatMap((item, index) => {
     const blocks = []; if (item.user) blocks.push(item.user)
     const last = index === turns.length - 1
-    const currentStatus = last && terminalStatuses.has(sessionStatus) ? sessionStatus : item.status || (last ? sessionStatus : 'interrupted')
-    const ended = terminalStatuses.has(currentStatus)
+    let currentStatus = last && settledStatuses.has(sessionStatus) ? sessionStatus : item.status || (last ? sessionStatus : 'interrupted')
+    // Only the latest execution can be live. A restart may have persisted the
+    // session's interruption without writing a final event for the old run.
+    if (!last && !settledStatuses.has(currentStatus)) currentStatus = 'interrupted'
+    const ended = settledStatuses.has(currentStatus)
+    const endedAt = item.endedAt ?? (ended ? item.lastEventAt : null)
     const steps = item.steps.sort((a, b) => a.order - b.order).map(step => {
       const projected = { ...step }
       if (ended && !terminalStatuses.has(projected.status)) {
         projected.status = currentStatus === 'completed' ? 'interrupted' : currentStatus === 'cancelled' ? 'cancelled' : currentStatus
-        projected.endedAt = item.endedAt ?? projected.endedAt
+        projected.endedAt = endedAt ?? projected.endedAt
       }
       projected.durationMs ??= timeSpan(projected.startedAt, projected.endedAt)
       projected.resultSummary = shortResult(projected.finalOutput || projected.streamedOutput || projected.content)
@@ -172,9 +189,9 @@ export function conversationTimeline(events, sessionStatus = 'idle') {
     })
     if (steps.length || liveStatuses.has(currentStatus)) blocks.push({
       kind: 'process', key: `process-${item.key}`, steps, status: currentStatus,
-      active: liveStatuses.has(currentStatus), finished: ended && steps.every(step => terminalStatuses.has(step.status)),
+      active: last && liveStatuses.has(currentStatus), finished: ended && steps.every(step => settledStatuses.has(step.status)),
       stepCount: steps.filter(step => step.kind !== 'steer').length, actionCount: steps.filter(step => step.kind === 'tool').length,
-      startedAt: item.startedAt, endedAt: item.endedAt, durationMs: timeSpan(item.startedAt, item.endedAt),
+      startedAt: item.startedAt, endedAt, durationMs: timeSpan(item.startedAt, endedAt),
     })
     const answers = item.models.filter(chunk => !chunk.hasTools && chunk.content)
     for (const chunk of answers) blocks.push({ kind: 'assistant', key: `answer-${chunk.key}`, content: chunk.content })

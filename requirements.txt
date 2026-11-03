@@ -14,3 +14,5 @@ httpx[socks]>=0.27,<1
 cryptography>=43,<51
 py-key-value-aio[filetree]>=0.4.4,<0.5
 pyyaml>=6.0,<7.0
+Pillow>=10,<13
+latex2mathml>=3.81.1,<4

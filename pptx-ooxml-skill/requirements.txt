@@ -2,3 +2,5 @@ python-pptx>=1.0,<2
 lxml>=5.0,<7
 Pillow>=10,<13
 PyMuPDF>=1.24,<2
+openpyxl>=3.1,<4
+latex2mathml>=3.81.1,<4

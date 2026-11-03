@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/acnlie/open-kimi-ppt-skill",
+  "source_ref": "main",
+  "observed_head": "c32890fe0985bdf668f2722fed30f1010bdf24c9",
+  "organizer": "../../scripts/import_pptx_styles/organize.py",
+  "license": "LICENSE.source",
+  "note": "Per-style provenance, hashes and crop records are in source.json. Full import audit is archived under ../../scripts/import_pptx_styles/import-records/."
+}

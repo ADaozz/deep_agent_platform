@@ -2,12 +2,17 @@
 
 The vocabulary is deliberately small: colours, fonts, strokes, a soft shadow,
 a two-colour linear gradient, a few chart and table switches and a handful of
-presets. Defaults stay flat; glow, bevel, reflection, 3-D and similar effects
+presets. Native 3-D chart types are handled by native_charts; shape defaults stay flat.
+Glow, bevel, reflection, 3-D shape styling and similar effects
 are rejected rather than approximated. Every explicit override is stored in
 element metadata so profile changes and data updates re-apply it after the
 profile defaults (explicit user style wins).
 """
 import io
+import sys
+from pathlib import Path
+if str(Path(__file__).parent) not in sys.path:sys.path.insert(0,str(Path(__file__).parent))
+import native_charts
 import math
 
 from pptx.chart.data import CategoryChartData
@@ -21,13 +26,14 @@ from pptx.util import Inches, Pt
 
 FORBIDDEN_EFFECTS = ('glow', 'bevel', 'reflection', 'soft_edges', '3d', 'three_d', 'inner_shadow', 'neon')
 SHADOWS = ('none', 'soft')
-CHART_TYPES = {'bar': XL_CHART_TYPE.COLUMN_CLUSTERED, 'line': XL_CHART_TYPE.LINE_MARKERS, 'pie': XL_CHART_TYPE.PIE}
+CHART_TYPES = native_charts.CHART_TYPES
 NUMBER_FORMATS = ('General', '0', '0.0', '0.00', '#,##0', '#,##0.0', '0%', '0.0%')
 DASHES = {'solid': MSO_LINE_DASH_STYLE.SOLID, 'dash': MSO_LINE_DASH_STYLE.DASH, 'dot': MSO_LINE_DASH_STYLE.ROUND_DOT}
 ALIGN = {'left': PP_ALIGN.LEFT, 'center': PP_ALIGN.CENTER, 'right': PP_ALIGN.RIGHT}
 
 # Allowed override keys per element kind. Anything else is rejected.
 STYLE_KEYS = {
+    'equation': {'color','font_size','align'},
     'text': {'color', 'bold', 'italic', 'font_size', 'font_family', 'align'},
     'shape': {'fill', 'gradient', 'shadow', 'line_color', 'line_width_pt', 'dash', 'text_color', 'bold', 'font_size'},
     'connector': {'line_color', 'line_width_pt', 'dash'},
@@ -407,6 +413,11 @@ def _point_emphasis(chart_data, target):
 
 def apply_chart(shape, meta, state, profile):
     """Profile defaults with explicit overrides: light grid, explicit points and units."""
+    if meta.get('chart',{}).get('type','bar') not in ('bar','line','pie'):
+        styled = dict(meta, style_overrides=effective_style(meta))
+        native_charts.style_xml(shape,styled,state)
+        meta['chart_style'] = styled['chart_style']
+        return
     charts = profile.get('charts') or {}
     palette = state['theme']
     chart_data = meta.get('chart') or {}
@@ -577,80 +588,12 @@ def rotation(current, delta):
 # ---------------------------------------------------------------- chart replacement
 
 def chart_payload(chart):
-    data = CategoryChartData()
-    data.categories = chart['categories']
-    for item in chart['series']:
-        data.add_series(item['name'], item['values'])
-    return data
+    return native_charts.chart_data(chart)
 
 
 def verify_workbook(shape, chart):
-    """The embedded workbook must hold exactly the logical chart data."""
-    from openpyxl import load_workbook
-    try:
-        blob = shape.chart_part.chart_workbook.xlsx_part.blob
-    except AttributeError as exc:
-        raise ValueError('Replacement chart has no embedded workbook') from exc
-    sheet = load_workbook(io.BytesIO(blob), read_only=True, data_only=True).worksheets[0]
-    rows = [list(row) for row in sheet.iter_rows(values_only=True)]
-    if len(rows) < len(chart['categories']) + 1:
-        raise ValueError('Embedded workbook lost chart categories')
-    header = rows[0]
-    for index, series in enumerate(chart['series'], 1):
-        if header[index] != series['name']:
-            raise ValueError('Embedded workbook series names do not match the chart')
-        for row, value in enumerate(series['values'], 1):
-            if rows[row][0] != chart['categories'][row - 1] or not math.isclose(float(rows[row][index]), float(value), rel_tol=1e-9, abs_tol=1e-9):
-                raise ValueError('Embedded workbook values do not match the chart')
-    plotted = [tuple(series.values) for series in shape.chart.series]
-    if plotted != [tuple(float(v) for v in series['values']) for series in chart['series']]:
-        raise ValueError('Chart cache values do not match the logical data')
-    return True
+    return native_charts.verify_workbook(shape, chart)
 
 
 def replace_chart(slide, shape, new_type, meta):
-    """Swap the chart object in place; same position, z-order, name and data.
-
-    Returns the replacement shape and its updated metadata; the caller stores it.
-    """
-    meta = dict(meta)
-    chart = dict(meta.get('chart') or {})
-    if new_type not in CHART_TYPES:
-        raise ValueError('Supported chart types are bar, line and pie')
-    if chart.get('type', 'bar') == new_type:
-        raise ValueError(f'Chart is already a {new_type} chart')
-    if new_type == 'pie':
-        if len(chart['series']) != 1:
-            raise ValueError('A pie chart shows exactly one series; keep bar/line or split the data')
-        if any(value < 0 for value in chart['series'][0]['values']):
-            raise ValueError('A pie chart cannot show negative values')
-        if sum(chart['series'][0]['values']) <= 0:
-            raise ValueError('A pie chart needs a positive total')
-    chart['type'] = new_type
-    left, top, width, height, name = shape.left, shape.top, shape.width, shape.height, shape.name
-    parent = shape._element.getparent()
-    index = parent.index(shape._element)
-    old_rid = shape._element.chart_rId
-    replacement = slide.shapes.add_chart(CHART_TYPES[new_type], left, top, width, height, chart_payload(chart))
-    parent.remove(replacement._element)
-    parent.insert(index, replacement._element)
-    parent.remove(shape._element)
-    try:
-        slide.part.drop_rel(old_rid)
-    except KeyError:
-        pass
-    replacement.name = name
-    meta['chart'] = chart
-    # Type-specific overrides from the former chart stop being meaningful.
-    overrides = dict(meta.get('style_overrides') or {})
-    if new_type == 'pie':
-        overrides.pop('emphasis', None)
-        overrides.pop('gridlines', None)
-    if overrides:
-        meta['style_overrides'] = overrides
-    else:
-        meta.pop('style_overrides', None)
-    if meta.get('preset') and new_type == 'pie' and meta['preset'] == 'chart.emphasis':
-        meta.pop('preset')
-    verify_workbook(replacement, chart)
-    return replacement, meta
+    return native_charts.replace_chart(slide, shape, new_type, meta)

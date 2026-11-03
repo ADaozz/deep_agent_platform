@@ -1,0 +1,22 @@
+{
+  "category": "academic",
+  "theme_id": "wine-red-data",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/academic/wine-red-data/design.md",
+  "reference_repo_path": "docs/themes/academic/wine-red-data.jpg",
+  "provenance": "original",
+  "original_design_sha256": "6b6fa9f7ec50ea38a466dcd904682a129ac0d0c5f7b929ad788aa1b915876d1a",
+  "reference_sha256": "2ee34bfca5b8db3ab91c5ac94e30716e491d1348d94f71e8db024eb4d90f08da",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    7560
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 0,
+  "operations": [],
+  "action": "kept_original_bytes"
+}

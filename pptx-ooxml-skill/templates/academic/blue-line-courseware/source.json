@@ -1,0 +1,22 @@
+{
+  "category": "academic",
+  "theme_id": "blue-line-courseware",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/academic/blue-line-courseware/design.md",
+  "reference_repo_path": "docs/themes/academic/blue-line-courseware.jpg",
+  "provenance": "original",
+  "original_design_sha256": "cbceb29f83eefbab1b593923948344fc60143cb124fed37885eb78c07034701b",
+  "reference_sha256": "9637f2db0856bc8d58de9354531a8afc79549e6827fd77fc60ff99989f4305ed",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    7560
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 0,
+  "operations": [],
+  "action": "kept_original_bytes"
+}

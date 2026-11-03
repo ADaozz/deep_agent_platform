@@ -31,6 +31,16 @@ ACTIVE = ('queued', 'running')
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
+def public_run_error(error):
+    """Expose actionable classifications without leaking upstream configuration."""
+    message = str(error).casefold()
+    if 'unsupported image' in message or 'uploaded image cannot be decoded' in message:
+        return '模型接口拒绝了图片：请检查图片格式、像素尺寸及模型的图片输入限制。'
+    if 'megapixel decoding limit' in message:
+        return '图片像素过大，请缩小图片后重试。'
+    return '内核执行失败，请检查服务端日志及模型配置。'
+
+
 def upload_records(thread_id, ids):
     root = resolve(thread_id).files_root
     result = []
@@ -452,7 +462,7 @@ class Runtime:
                 if result.error and usage.get('input_tokens') is None:
                     usage = record.get('usage', {})
                 record.update(status=result.status, output=result.output or '',
-                    error='内核执行失败，请检查服务端日志及模型配置。' if result.error else None,
+                    error=public_run_error(result.error) if result.error else None,
                     pending_tool_calls=result.pending_tool_calls, human_input=result.human_input,
                     usage=usage, model_id=runner.current_model().id,
                     permission_mode=runner.permission_mode().value,
@@ -738,6 +748,36 @@ def files(session_id: str):
 def download(session_id: str, filename: str):
     root, path = library_file(session_id, filename)
     return FileResponse(path, filename=path.name)
+
+
+@router.get('/sessions/{session_id}/file-preview/{filename:path}')
+def file_preview(session_id: str, filename: str):
+    _, path = library_file(session_id, filename)
+    ext = path.suffix.lower()
+    text_types = {'.md', '.markdown', '.txt', '.yaml', '.yml', '.json', '.csv', '.log', '.toml', '.ini', '.xml'}
+    media_types = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif',
+        '.bmp': 'image/bmp', '.svg': 'image/svg+xml'}
+    if ext in text_types:
+        with path.open('rb') as stream:
+            data = stream.read(2 * 1024 * 1024 + 1)
+        if len(data) > 2 * 1024 * 1024:
+            raise HTTPException(413, '文本超过 2 MB，请下载后查看')
+        if data.startswith((b'\xff\xfe', b'\xfe\xff')):
+            content = data.decode('utf-16', errors='replace')
+        else:
+            try:
+                content = data.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                content = data.decode('gb18030', errors='replace')
+        return {'content': content}
+    if ext not in media_types:
+        raise HTTPException(415, '暂不支持此文件的预览，请下载后查看')
+    headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}
+    if ext == '.svg':
+        headers['Content-Security-Policy'] = "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+    return FileResponse(path, media_type=media_types[ext], filename=path.name,
+        content_disposition_type='inline', headers=headers)
 
 
 def library_file(session_id, filename):

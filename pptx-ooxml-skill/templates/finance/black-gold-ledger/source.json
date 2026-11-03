@@ -1,0 +1,55 @@
+{
+  "category": "finance",
+  "theme_id": "black-gold-ledger",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/finance/black-gold-ledger/design.md",
+  "reference_repo_path": "docs/themes/finance/black-gold-ledger.jpg",
+  "provenance": "original",
+  "original_design_sha256": "03e708f0b2a347f3de053b98081daffb875a51fe6570761234cfbacf32ca805b",
+  "reference_sha256": "7fd985210dce71ef351e913a0c25046cdab2219e257668e61319972aa794c7ea",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "f8410fe6681d8b9b88e50ec598bb42f57ba5747121907c5eaf3c27d35b5b6d74",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

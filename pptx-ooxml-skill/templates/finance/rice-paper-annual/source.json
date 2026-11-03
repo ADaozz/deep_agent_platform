@@ -1,0 +1,55 @@
+{
+  "category": "finance",
+  "theme_id": "rice-paper-annual",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/finance/rice-paper-annual/design.md",
+  "reference_repo_path": "docs/themes/finance/rice-paper-annual.jpg",
+  "provenance": "original",
+  "original_design_sha256": "b98b50eced346dc6d86c00cf0acfeb32298b0e9521fb3bbee2b5889b6b82abbf",
+  "reference_sha256": "fd0273398a408f7afd931d991f6b12d3cac2d68f0a0b02186d1e07b4a631bdfd",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "b88251ea911b1cc67d160414051a52a85eb1132f059fd32f9d8d077a34a6b868",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}

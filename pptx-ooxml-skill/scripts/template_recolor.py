@@ -191,6 +191,11 @@ def _paint_roots(prs, preserve, protected):
         for shape in slide.shapes:
             if shape.has_chart and not ('logos' in preserve and _is_protected(shape._element, ids)):
                 roots.append((f'slide-{index}:chart', shape.chart._element, False, True, set()))
+            elif not ('logos' in preserve and _is_protected(shape._element, ids)):
+                for ref in shape._element.findall('.//{http://schemas.microsoft.com/office/drawing/2014/chartex}chart'):
+                    part=shape.part.related_part(ref.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'))
+                    if hasattr(part,'_element'):
+                        roots.append((f'slide-{index}:chartEx',part._element,False,True,set()))
     return roots
 
 

@@ -58,6 +58,7 @@ FIXED_PATH = "/run/deep-agent:/usr/local/bin:/usr/bin:/bin"
 RUNTIME_PATHS = ("/usr", "/bin", "/lib", "/lib64")
 RUNTIME_FILES = (
     "/etc/alternatives",
+    "/etc/fonts",
     "/etc/group",
     "/etc/ld.so.cache",
     "/etc/localtime",

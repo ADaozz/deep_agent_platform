@@ -1,0 +1,55 @@
+{
+  "category": "finance",
+  "theme_id": "prospect-annual",
+  "design_repo_path": "skills/open-kimi-ppt/reference/design_system/finance/prospect-annual/design.md",
+  "reference_repo_path": "docs/themes/finance/prospect-annual.jpg",
+  "provenance": "original",
+  "original_design_sha256": "f84d64c4d10a8ebd0cc7161cacd85b338bbce295df552e9445ce2c109da76cd9",
+  "reference_sha256": "101bdd7991627efc463726488ce3b3f11de1c3806c953f3d51fbf4df4a6f68a6",
+  "reference_width": 1920,
+  "reference_height": 7560,
+  "original_size": [
+    1920,
+    8640
+  ],
+  "final_size": [
+    1920,
+    7560
+  ],
+  "removed_slides": 1,
+  "operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "panel_height": 1080,
+      "gutter": 0,
+      "kept_slides": 7,
+      "cut_position": 7560,
+      "new_size": [
+        1920,
+        7560
+      ]
+    }
+  ],
+  "action": "removed_trailing_slide_panels",
+  "original_reference_sha256": "1420008a15360b1d1997b9bf771868c4c20f233a95edc7a70afcab30fdd8ec8c",
+  "organizer_crop_operations": [
+    {
+      "old_size": [
+        1920,
+        8640
+      ],
+      "axis": "y",
+      "predicted_panel_span": 1080.0,
+      "cut_position": 7570,
+      "new_size": [
+        1920,
+        7570
+      ]
+    }
+  ],
+  "crop_review": "Verified single-column 16:9 pages with 0px or 12px gutters; cut after complete retained page"
+}
