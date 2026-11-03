@@ -1,0 +1,145 @@
+"""Format-neutral artifact transactions, snapshots, event journal and recovery.
+
+The snapshot blob column is named docx; it stores bytes
+of any supported artifact. This module never plans or executes Agent work.
+"""
+from contextlib import contextmanager
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import sqlite3
+import tempfile
+
+
+def identifier(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[\w.-]{1,80}',value) or value in ('.','..'):
+        raise ValueError('Invalid stable identifier')
+    return value
+
+
+def publish(path, data):
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.' + path.name, delete=False) as f:
+            temporary = Path(f.name)
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+        fd = os.open(path.parent, os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
+
+
+
+class ArtifactStore:
+    def __init__(self, path, suffix, state_dir, temporary_root=None):
+        temporary_root = temporary_root or os.environ.get('OFFICE_RENDER_TMP')
+        self.path=Path(path).absolute()
+        if self.path.suffix.lower()!=suffix or self.path.is_symlink():
+            raise ValueError('Invalid artifact path')
+        self.directory=self.path.parent/state_dir/self.path.name
+        self.render_root = (Path(temporary_root) / hashlib.sha256(str(self.directory).encode()).hexdigest()
+            if temporary_root is not None else self.directory / 'tmp')
+
+    def render_directory(self, revision):
+        if type(revision) is not int or revision < 0:
+            raise ValueError('Invalid render revision')
+        return self.render_root / f'render-{revision:08d}'
+
+    def _publish(self,path,data):
+        publish(path,data)
+
+    @contextmanager
+    def locked(self):
+        self.directory.mkdir(parents=True, exist_ok=True)
+        with (self.directory / 'lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            c = sqlite3.connect(self.directory / 'history.sqlite', timeout=30)
+            c.row_factory = sqlite3.Row
+            try:
+                c.execute('PRAGMA synchronous=FULL')
+                c.execute('CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY, data TEXT)')
+                c.execute('CREATE TABLE IF NOT EXISTS revisions (revision INTEGER PRIMARY KEY, operation_id TEXT UNIQUE, request TEXT, result TEXT, docx BLOB)')
+                c.execute('CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT)')
+                row = c.execute('SELECT data FROM state WHERE id=1').fetchone()
+                state = json.loads(row[0]) if row else None
+                if state and state.get('pending_publish'):
+                    data = c.execute('SELECT docx FROM revisions WHERE revision=?', (state['revision'],)).fetchone()[0]
+                    self._publish(self.path, data)
+                    state['pending_publish'] = False
+                    self.save_state(c, state)
+                    c.commit()
+                yield c, state
+            finally:
+                c.close()
+
+    def save_state(self, c, state):
+        c.execute('INSERT OR REPLACE INTO state VALUES (1,?)', (json.dumps(state, ensure_ascii=False),))
+
+    def persist_revision(self,c,state,data,result,request,operation_id,kind,*,publish=True):
+        if not publish:state['pending_publish']=False
+        c.execute('INSERT INTO revisions VALUES (?,?,?,?,?)',(state['revision'],operation_id,json.dumps(request,sort_keys=True),json.dumps(result),data))
+        c.execute('INSERT INTO events(data) VALUES (?)',(json.dumps(dict(type=kind,**result)),))
+        self.save_state(c,state)
+        c.commit()
+        if publish:self._publish(self.path,data)
+        state['pending_publish']=False
+        self.save_state(c,state)
+        c.commit()
+
+    def restore(self, revision, base_revision, operation_id):
+        identifier(operation_id)
+        request = dict(restore=revision, base_revision=base_revision)
+        with self.locked() as (c, state):
+            previous = c.execute('SELECT request,result FROM revisions WHERE operation_id=?', (operation_id,)).fetchone()
+            if previous:
+                if json.loads(previous[0]) != request:
+                    raise ValueError('Operation ID reused')
+                return json.loads(previous[1])
+            if state is None or type(base_revision) is not int or state['revision'] != base_revision:
+                raise ValueError('Revision conflict')
+            row = c.execute('SELECT docx FROM revisions WHERE revision=?', (revision,)).fetchone()
+            if row is None or row[0] is None:
+                raise ValueError('Unknown historical revision')
+            state=self.prepare_restore(c,state,revision)
+            return self.commit(c, state, row[0], operation_id, request, ['*'])
+
+    def events(self, after=0):
+        with self.locked() as (c, state):
+            return [dict(json.loads(r['data']), store_seq=r['seq']) for r in c.execute('SELECT * FROM events WHERE seq>? ORDER BY seq', (after,))]
+
+    def snapshot(self, revision):
+        with self.locked() as (c, state):
+            row = c.execute('SELECT docx FROM revisions WHERE revision=?', (revision,)).fetchone()
+            if row is None or row[0] is None:
+                raise ValueError('Unknown revision')
+            return row[0]
+
+
+    def prepare_restore(self,c,state,revision):
+        return state
+
+
+def validate_embedded_resources(path):
+    """Do not let a host Office renderer resolve external files or data links."""
+    from urllib.parse import urlsplit
+    from xml.etree import ElementTree
+    import zipfile
+    with zipfile.ZipFile(path) as package:
+        for name in package.namelist():
+            if not name.endswith('.rels'):continue
+            for relation in ElementTree.fromstring(package.read(name)):
+                if relation.get('TargetMode') != 'External':continue
+                target = urlsplit(relation.get('Target', ''))
+                hyperlink = relation.get('Type', '').endswith('/hyperlink')
+                if not hyperlink or target.scheme not in ('http','https') or not target.hostname or target.username is not None or target.password is not None:
+                    raise ValueError('External Office resource is outside the Thread scope; embed the resource before previewing')
