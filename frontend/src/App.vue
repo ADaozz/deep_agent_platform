@@ -342,7 +342,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
 <template>
   <div class="shell" :class="{ expanded: sidebar, 'document-open': artifactPanelOpen }">
     <aside class="sidebar">
-      <div class="sidebar-top"><button class="brand icon-button" :aria-label='t("展开或收起侧栏")' :title='t("Toggle sidebar · Ctrl+Alt+B")' @click="sidebar = !sidebar"><img src="/favicon.svg" alt="Deep Agent"></button><span v-if="sidebar" class="brand-name">Deep Agent</span><button v-if="sidebar" class="icon-button" :aria-label='t("搜索会话")' @click="modal = 'search'"><Icon name="Search" /></button></div>
+      <div class="sidebar-top"><button class="brand icon-button" :aria-label='t("展开或收起侧栏")' :title='t("Toggle sidebar · Ctrl+Alt+B")' @click="sidebar = !sidebar"><img class="mark-light" src="/deep-agent-mark-light.svg" alt="Deep Agent"><img class="mark-dark" src="/deep-agent-mark-dark.svg" alt=""></button><span v-if="sidebar" class="brand-name">Deep Agent</span><button v-if="sidebar" class="icon-button" :aria-label='t("搜索会话")' @click="modal = 'search'"><Icon name="Search" /></button></div>
       <nav>
         <button :class="{ active: chatHome && modal !== 'agent-settings' }" :title='t("New Chat")' @click="newChat"><Icon name="Send" /><span v-if="sidebar">{{ t("New Chat") }}</span></button>
         <button :class="{ active: mainView === 'history' }" :title='t("会话历史")' @click="mainView = 'history'; popup = ''"><Icon name="History" /><span v-if="sidebar">{{ t("History") }}</span></button>
@@ -375,7 +375,7 @@ onUnmounted(() => { source?.close(); clearInterval(poll); clearTimeout(noticeTim
         <div v-if="selected" ref="transcriptEl" class="transcript" @scroll.passive="updateScrollState">
           <div class="session-meta"><span class="status-tag" :class="selected.status">{{ statusLabels[selected.status] }}</span></div>
           <template v-for="b in timeline" :key="b.key">
-            <div v-if="b.lead" class="message-label agent-label"><img src="/favicon.svg" alt=""> {{ t("Agent") }}</div>
+            <div v-if="b.lead" class="message-label agent-label"><img class="mark-light" src="/deep-agent-mark-light.svg" alt=""><img class="mark-dark" src="/deep-agent-mark-dark.svg" alt=""> {{ t("Agent") }}</div>
             <article v-if="b.kind === 'user'" class="user-message"><div class="message-label">{{ t("You") }}</div><div>{{ b.content }}</div><div v-if="b.attachments?.length" class="message-attachments"><a v-for="file in b.attachments" :key="file.id" :href="fileUrl(file.path)" download><Icon name="Paperclip" :size="13" />{{ file.name }}</a></div></article>
             <WorkProcess v-else-if="b.kind === 'process'" :process="b" :action-label="actionLabel" :status-labels="statusLabels" />
             <article v-else-if="b.kind === 'assistant'" class="assistant-message"><div v-html="html(b.content)" class="markdown"></div></article>

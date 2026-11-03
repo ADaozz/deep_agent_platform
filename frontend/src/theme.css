@@ -66,5 +66,8 @@
   --on-primary: #171819;
 }
 
-:root[data-theme="dark"] .brand img,
-:root[data-theme="dark"] .message-label img { filter: invert(1); }
+.brand img.mark-dark,.message-label img.mark-dark{display:none}
+:root[data-theme="dark"] .brand img.mark-light,
+:root[data-theme="dark"] .message-label img.mark-light{display:none}
+:root[data-theme="dark"] .brand img.mark-dark,
+:root[data-theme="dark"] .message-label img.mark-dark{display:block}
