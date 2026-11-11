@@ -6,23 +6,14 @@ This is a **bounded prototype**, not a comprehensive Microsoft Word editing engi
 
 Prerequisites: Python 3.10+, `pip install -r requirements.txt`, LibreOffice headless, fonts for your target language.
 
-Usage:
+Usage: follow `SKILL.md`. Run from the task workspace root (the directory containing `files/` and `tmp/`), one atomic operation per command; the document lives in `files/` from `init` onward:
 
 ```bash
 S=scripts/office_docx.py
-mkdir -p work
-python "$S" init --output work/candidate-000.docx
-# or: python "$S" init --template existing.docx --output work/candidate-000.docx
-python "$S" inspect work/candidate-000.docx --output work/inspect.json
-# Put the SHA-256 from inspect into examples/plan.example.json and save as work/plan-001.json
-python "$S" apply work/candidate-000.docx work/plan-001.json --output work/candidate-001.docx
-python "$S" validate work/candidate-001.docx
-python "$S" render work/candidate-001.docx --output-dir work/render-001
-python "$S" review-template --render-dir work/render-001 --output work/review-001.json
-# After actual page inspection, fill review-001.json and check all pages.
-python "$S" finalize work/candidate-001.docx --render-dir work/render-001 --review work/review-001.json --output work/final.docx
+python "$S" init --document-id report --output files/report.docx
+python "$S" apply-one files/report.docx tmp/operation.json --asset-root tmp
+python "$S" checkpoint files/report.docx
+python "$S" finalize files/report.docx --base-revision N
 ```
 
-For template comparison, render the original and `compare --before work/baseline --after work/render-001 --output-dir work/compare-001`.
-
-The agent should read `SKILL.md` first and open `references/operations.md` only when preparing a plan. The input DOCX is never overwritten. Outputs are editable Office files, not page screenshots.
+The older candidate/plan batch commands (`apply`, `render`, `review-template`, `finalize --render-dir`) are kept for compatibility only and are described in `references/legacy-operations.md`; do not use them for new work. The input DOCX is never overwritten. Outputs are editable Office files, not page screenshots.

@@ -1104,8 +1104,8 @@
     "en": "Updating…"
   },
   "docx.follow": {
-    "zh": "跟随最新内容",
-    "en": "Follow latest content"
+    "zh": "跟随最新修改",
+    "en": "Follow latest changes"
   },
   "docx.loadError": {
     "zh": "文档预览加载失败，可重试或下载查看。",
@@ -1850,5 +1850,13 @@
   "filePreview.loading": {
     "zh": "正在加载预览…",
     "en": "Loading preview…"
+  },
+  "docx.pages": {
+    "zh": "文档页面",
+    "en": "Document pages"
+  },
+  "docx.changedPages": {
+    "zh": "已更新第 {pages} 页",
+    "en": "Updated page {pages}"
   }
 }

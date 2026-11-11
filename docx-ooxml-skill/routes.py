@@ -17,10 +17,12 @@ def create_router(host):
         for document_id in record.get('documents', {}):
             try:
                 store = document_store(session_id, document_id)
+                if not store.path.is_file():
+                    continue
                 state = store.status(committed=True)
                 if state.get('preview_revision', -1) < state['revision']:
                     documents.schedule_preview(store.path)
-                result.append(dict(document_id=document_id, path=record['documents'][document_id]['path'], **{k: state.get(k) for k in ('revision','sha256','pages','gate','render_revision','render_error','finalized','preview_revision','preview_pages','preview_error','external_conflict')}))
+                result.append(dict(document_id=document_id, path=record['documents'][document_id]['path'], **{k: state.get(k) for k in ('revision','sha256','pages','gate','render_revision','render_error','finalized','preview_revision','preview_pages','preview_page_hashes','preview_error','external_conflict')}))
             except (ValueError, OSError):
                 continue
         return result
@@ -63,6 +65,17 @@ def create_router(host):
         if not path.is_file() or path.is_symlink():
             raise HTTPException(404, '页面不存在')
         return FileResponse(path, headers={'Cache-Control': 'private, max-age=31536000, immutable'})
+
+
+    @router.get('/sessions/{session_id}/documents/{document_id}/page-images/{filename}')
+    def document_page_image(session_id: str, document_id: str, filename: str):
+        store = document_store(session_id, document_id)
+        if not re.fullmatch(r'[0-9a-f]{24}\.png', filename):
+            raise HTTPException(404, '页面不存在')
+        path = store.page_directory() / filename
+        if not path.is_file() or path.is_symlink():
+            raise HTTPException(404, '页面不存在')
+        return FileResponse(path, media_type='image/png', headers={'Cache-Control': 'private, max-age=31536000, immutable'})
 
 
     class VisualReview(BaseModel):

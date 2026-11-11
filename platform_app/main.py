@@ -9,8 +9,10 @@ from . import domain as d
 from . import models as m
 from . import runtime
 from . import format_plugins
+from . import itam_bridge
 
 app = FastAPI(title='Deep Agent Platform')
+itam_bridge.install(app)
 d.init()
 runtime.initialize()
 app.include_router(runtime.router)
@@ -50,7 +52,7 @@ def index():
 
 @app.get('/api/status')
 def status():
-    return {'model_configured': any(p['configured'] for p in m.public()['profiles']), 'mode': 'single-user', 'core': 'platform_app.agent_core'}
+    return {'model_configured': any(p['configured'] for p in m.options(itam_bridge.owner())['profiles']), 'mode': 'itam-multi-user' if itam_bridge.is_enabled() else 'single-user', 'core': 'platform_app.agent_core'}
 
 
 class ModelConfig(BaseModel):
@@ -71,6 +73,34 @@ def update_models(value: ModelConfig):
         raise HTTPException(409, str(exc))
     except Exception:
         raise HTTPException(422, '模型配置无效：请检查来源、默认模型、API 协议和 llm 参数。')
+
+
+@app.get('/api/models/options')
+def model_options():
+    return m.options(itam_bridge.owner())
+
+
+def personal_owner():
+    owner = itam_bridge.owner()
+    if owner is None:
+        raise HTTPException(404, '个人模型配置仅在 ITAM 多用户模式下可用')
+    return owner
+
+
+@app.get('/api/models/personal')
+def personal_models():
+    return m.public_personal(personal_owner())
+
+
+@app.put('/api/models/personal')
+def update_personal_models(value: ModelConfig):
+    owner = personal_owner()
+    try:
+        return m.save_personal(owner, value.llm, value.revision)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(422, f'个人模型配置无效：{exc}')
 
 
 @app.get('/api/settings')

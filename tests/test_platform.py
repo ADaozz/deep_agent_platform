@@ -69,6 +69,59 @@ def model_configuration(api='responses', key='private-test-key'):
     return {'default':'provider/demo','timeout':75,'models':{'provider':{'base_url':'https://example.com/v1','api_key':key,'api':api,'reasoning_efforts':['low','high'],'models':{'demo':{'context_window':128000,'input':['text']}}}}}
 
 
+def test_all_files_lists_owned_sessions_newest_first(client, monkeypatch):
+    import os
+    from platform_app import itam_bridge
+    assert client.put('/api/models', json={'llm': model_configuration(), 'revision': 0}).status_code == 200
+    ids = []
+    for name in ('first.txt', 'second.txt', 'other.txt'):
+        sid = client.post('/api/agent/sessions', json={'model_id': 'provider/demo'}).json()['id']
+        assert client.post(f'/api/agent/sessions/{sid}/uploads', files={'file': (name, b'x', 'text/plain')}).status_code == 201
+        ids.append(sid)
+    for index, sid in enumerate(ids):
+        record = d.get('session', sid)
+        record['owner_user_id'] = '1002' if index == 2 else '1001'
+        record['messages'] = [{'role': 'user', 'content': f'task {index}\ndetails'}]
+        d.put('session', record)
+        from platform_app.workspace import resolve
+        for path in resolve(sid).files_root.rglob('*'):
+            if path.is_file():
+                os.utime(path, (1000 + index, 1000 + index))
+
+    listing = client.get('/api/agent/files').json()
+    assert [item['session_id'] for item in listing] == list(reversed(ids))
+    assert listing[0]['session_title'] == 'task 2' and listing[0]['modified_at'] == 1002
+
+    monkeypatch.setattr(itam_bridge, 'is_enabled', lambda: True)
+    monkeypatch.setattr(itam_bridge, 'owner', lambda: '1001')
+    owned = client.get('/api/agent/files').json()
+    assert [item['session_id'] for item in owned] == [ids[1], ids[0]]
+
+
+def test_delete_session_removes_records_and_storage(client):
+    from platform_app.workspace import resolve
+    assert client.put('/api/models', json={'llm': model_configuration(), 'revision': 0}).status_code == 200
+    session_id = client.post('/api/agent/sessions', json={'model_id': 'provider/demo'}).json()['id']
+    assert client.post(f'/api/agent/sessions/{session_id}/uploads', files={'file': ('note.txt', b'hello', 'text/plain')}).status_code == 201
+    context = resolve(session_id)
+    assert any(context.files_root.iterdir())
+
+    record = d.get('session', session_id)
+    record['status'] = 'running'
+    d.put('session', record)
+    assert client.delete(f'/api/agent/sessions/{session_id}').status_code == 409
+    record['status'] = 'completed'
+    d.put('session', record)
+
+    assert client.delete(f'/api/agent/sessions/{session_id}').status_code == 204
+    assert client.get(f'/api/agent/sessions/{session_id}').status_code == 404
+    assert client.delete(f'/api/agent/sessions/{session_id}').status_code == 404
+    assert all(item.get('thread_id') != session_id for item in d.all_records('upload'))
+    assert all(item['id'] != session_id for item in d.all_records('thread_workspace'))
+    assert all(item.get('session_id') != session_id for item in d.all_records('event'))
+    assert not context.workspace_root.exists() and not context.session_root.exists()
+
+
 def test_model_config_redaction_revision_and_persistence(client):
     from platform_app import models
     response = client.put('/api/models',json={'llm':model_configuration(),'revision':0})

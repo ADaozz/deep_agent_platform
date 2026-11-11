@@ -22,6 +22,7 @@
 ```python
 from pptx import Presentation
 from pptx.util import Inches
+import deck_io
 import native_math
 
 prs = Presentation()
@@ -30,14 +31,14 @@ eq = native_math.create(slide, r'A=\begin{bmatrix}a&b\\c&d\end{bmatrix}',
                         (Inches(1), Inches(1), Inches(6), Inches(2)),
                         font_size=28, color='17324D', align='center')
 eq.name = 'da:matrix'  # Stable element ID, used for local edits/checks.
-prs.save('files/deck.pptx')
+deck_io.save_deck(prs, 'files/deck.pptx')
 
 # Repair an existing file by locating the exact slide/element; do not rebuild it.
 prs = Presentation('files/deck.pptx')
 eq = next(shape for shape in prs.slides[0].shapes if shape.name == 'da:matrix')
 native_math.replace(eq, r'A=\begin{bmatrix}1&0\\0&1\end{bmatrix}',
                     font_size=28, color='17324D')
-prs.save('tmp/deck.pptx')  # Then os.replace into the actual output path.
+deck_io.save_deck(prs, 'files/deck.pptx')  # Write back in place; never keep a copy in tmp/.
 ```
 
 `replace` preserves the shape ID, name, geometry and other slide objects; its explicit style arguments replace formula styling (defaults: 24 pt, 17324D, centered). Keep using the deck's shared design parameters when passing them.

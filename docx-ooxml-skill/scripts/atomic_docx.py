@@ -19,25 +19,22 @@ import zipfile
 _spec = importlib.util.spec_from_file_location('ooxml_engine', Path(__file__).with_name('office_docx.py'))
 o = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(o)
-_shared_spec = importlib.util.spec_from_file_location('artifact_runtime', Path(__file__).with_name('artifact_runtime.py'))
+_shared_path = Path(__file__).resolve().parents[2] / 'platform_app' / 'artifact_runtime.py'
+if not _shared_path.is_file():
+    _shared_path = Path(__file__).with_name('artifact_runtime.py')
+_shared_spec = importlib.util.spec_from_file_location('artifact_runtime', _shared_path)
 _shared = importlib.util.module_from_spec(_shared_spec)
 _shared_spec.loader.exec_module(_shared)
 ID = re.compile(r'^[\w.-]{1,80}$')
 BLOCK_NS = 'urn:deep-agent:docx:blocks:v1'
 BLOCK_ID = '{%s}id' % BLOCK_NS
+MAX_DIRTY = 3
 
 
 def identifier(value):
     if not isinstance(value, str) or not ID.fullmatch(value) or value in ('.', '..'):
         raise ValueError('Invalid stable identifier')
     return value
-
-
-def block_signatures(data):
-    parts = o.read_parts(io.BytesIO(data))
-    root = o.parse_xml(parts[o.MAIN])
-    return {block.get(BLOCK_ID): hashlib.sha256(o.xml_bytes(block)).hexdigest()
-        for block in root.iter() if block.get(BLOCK_ID)}
 
 
 def packed(parts):
@@ -106,25 +103,29 @@ class DocumentStore(_shared.ArtifactStore):
     def _publish(self, path, data):
         publish(path, data)
 
-    def commit(self, c, state, data, operation_id, request, changed, kind='document_revision', extra=None, publish=True):
+    def commit(self, c, state, data, operation_id, request, changed, kind='document_revision', extra=None):
         revision = state['revision'] + 1
         digest = hashlib.sha256(data).hexdigest()
-        previous_notes = state.get('content_notes') or {}
-        previous_signatures = state.get('block_signatures') or {}
-        signatures = block_signatures(data)
-        notes = {key: value for key, value in previous_notes.items() if previous_signatures.get(key) == signatures.get(key)}
         result = dict(status='committed', document_id=state['document_id'], revision=revision,
             sha256=digest, operation_id=operation_id, changed_blocks=changed, needs_preview=True,
             path=self.path.name, preview_ready=False, committed_at=time.time())
         if extra:
             result.update(extra)
-        state.update(revision=revision, sha256=digest, pending_publish=bool(publish), finalized=False,
-            pages=[], preview_ready=False, check=None, block_signatures=signatures, content_notes=notes)
-        self.persist_revision(c, state, data, result, request, operation_id, kind, publish=publish)
+        dirty = state.get('dirty', 0) + 1
+        gate = state.get('gate', 'open')
+        if gate == 'open' and dirty >= MAX_DIRTY:
+            gate = 'checkpoint'
+        if 'external' in request:
+            result.update(external_unreviewed=True, gate='checkpoint')
+        state.update(revision=revision, sha256=digest, pending_publish=True, finalized=False,
+            dirty=dirty, pages=[], preview_ready=False, gate=gate)
+        self.persist_revision(c, state, data, result, request, operation_id, kind)
         return result
 
-    def init(self, document_id, template=None, style_id=None):
+    def init(self, document_id, template=None, mode='normal'):
         identifier(document_id)
+        if mode not in ('normal', 'strict'):
+            raise ValueError('Unknown review mode')
         with self.locked() as (c, state):
             if state:
                 if state['document_id'] != document_id:
@@ -132,18 +133,13 @@ class DocumentStore(_shared.ArtifactStore):
                 return state
             if self.path.exists():
                 raise ValueError('Document exists; use track_external or a different output path')
-            if style_id and template:
-                raise ValueError('A new styled document does not start from a DOCX template')
-            if style_id:
-                parts = _document_build().blank(_style_library().parameters(style_id), style_id)
-            else:
-                parts = o.read_parts(template) if template else o.default_package()
+            parts = o.read_parts(template) if template else o.default_package()
             parts = mark_blocks(parts)
             manifest = _template_manifest(parts, template) if template else None
             data = packed(parts)
-            state = dict(document_id=document_id, revision=-1, pages=[], template_manifest=manifest,
-                style_id=style_id, content_notes={}, block_signatures={})
-            self.commit(c, state, data, '__init__', {'template': str(template) if template else None, 'style_id': style_id}, [], 'document_initialized')
+            state = dict(document_id=document_id, revision=-1, mode=mode, dirty=-1, pages=[], gate='open',
+                template_manifest=manifest)
+            self.commit(c, state, data, '__init__', {'template': str(template)}, [], 'document_initialized')
             return state
 
     def assert_current(self, state, base_revision=None):
@@ -189,6 +185,14 @@ class DocumentStore(_shared.ArtifactStore):
                 return json.loads(previous[1])
             self.assert_current(state, request['base_revision'])
             op = request['operation']
+            kind = op.get('type')
+            repairs = {'replace_text', 'set_paragraph_style', 'set_paragraph_format', 'delete_block', 'set_table_format', 'set_page',
+                'slot.fill', 'document.recolor', 'part.replace_text', 'update_toc',
+                'set_table_cell', 'format_text', 'set_header_footer'}
+            if state['gate'] != 'open' and kind not in repairs:
+                raise ValueError('Page checkpoint required before adding content: ' + state['gate'])
+            if state['dirty'] >= MAX_DIRTY * 2:
+                raise ValueError('Repair budget exhausted; checkpoint before further changes')
             parts = o.read_parts(self.path)
             try:
                 parts, changed, extra = mutate(parts, op, Path(asset_root or self.path.parent))
@@ -197,26 +201,25 @@ class DocumentStore(_shared.ArtifactStore):
             return self.commit(c, state, packed(parts), request['operation_id'], request, changed, extra=extra)
 
     def track_external(self, document_id=None):
-        """Snapshot a complete external write without publishing over its writer."""
+        """Observe native write/execute changes without calling them reviewed/atomic."""
         with self.locked() as (c, state):
             if not self.path.is_file() or self.path.is_symlink():
                 return None
-            data = self.path.read_bytes()
-            digest = hashlib.sha256(data).hexdigest()
-            if state is not None and state.get('sha256') == digest:
+            digest = o.sha(self.path)
+            if state and digest == state['sha256']:
                 return None
-            parts = o.read_parts(io.BytesIO(data))
+            # Invalid writes never replace the last committed snapshot.
+            parts = o.read_parts(self.path)
+            data = self.path.read_bytes()
             if not o.validate_parts(parts)['ok']:
                 raise ValueError('External DOCX is invalid')
-            _shared.validate_embedded_resources(io.BytesIO(data))
-            if hashlib.sha256(self.path.read_bytes()).hexdigest() != digest:
-                return None
-            initial = state is None
-            if initial:
-                state = dict(document_id=identifier(document_id or self.path.stem), revision=-1, pages=[], content_notes={}, block_signatures={})
-            operation = '__external__' if initial else 'external-%d-%s' % (state['revision'] + 1, digest[:12])
-            return self.commit(c, state, data, operation, {'external': True}, ['*'],
-                'document_initialized' if initial else 'document_revision', extra={'external': True}, publish=False)
+            if state is None:
+                state = dict(document_id=identifier(document_id or self.path.stem), revision=-1, mode='normal', dirty=0)
+            result = self.commit(c, state, data, 'external-' + str(state['revision'] + 1), {'external': digest}, ['*'])
+            state.update(gate='checkpoint', external_unreviewed=True)
+            self.save_state(c, state)
+            c.commit()
+            return result
 
     def render_snapshot(self, revision):
         """One renderer per immutable revision, shared by live preview and QA."""
@@ -230,6 +233,9 @@ class DocumentStore(_shared.ArtifactStore):
             if manifest_file.exists():
                 manifest = json.loads(manifest_file.read_text())
                 if manifest.get('sha256') == digest and (output / 'preview.pdf').is_file() and all((output / image).is_file() for image in manifest.get('images', [])):
+                    if 'page_hashes' not in manifest:
+                        self._share_pages(output, manifest)
+                        publish(manifest_file, json.dumps(manifest).encode())
                     return output, manifest
             source = output / self.path.name
             publish(source, data)
@@ -238,8 +244,28 @@ class DocumentStore(_shared.ArtifactStore):
                 import pymupdf as fitz
                 with fitz.open(output / 'preview.pdf') as pdf:
                     manifest = dict(sha256=digest, page_count=len(pdf), images=[f'page-{i+1:03d}.png' for i in range(len(pdf))])
-                publish(manifest_file, json.dumps(manifest).encode())
+            manifest['sha256'] = digest
+            self._share_pages(output, manifest)
+            publish(manifest_file, json.dumps(manifest).encode())
             return output, manifest
+
+    def page_directory(self):
+        return self.render_root / 'pages'
+
+    def _share_pages(self, output, manifest):
+        """Layout is global, so every revision is paginated in full; identical pages keep one
+        content-addressed image so viewers reload only the pages whose pixels changed."""
+        shared = self.page_directory()
+        shared.mkdir(parents=True, exist_ok=True)
+        hashes = []
+        for image in manifest['images']:
+            data = (output / image).read_bytes()
+            name = hashlib.sha256(data).hexdigest()[:24]
+            target = shared / (name + '.png')
+            if not target.is_file():
+                publish(target, data)
+            hashes.append(name)
+        manifest['page_hashes'] = hashes
 
     def preview_failed(self, error):
         with self.locked() as (c, state):
@@ -258,115 +284,104 @@ class DocumentStore(_shared.ArtifactStore):
         with self.locked() as (c, state):
             if state is None or revision <= state.get('preview_revision', -1):
                 return None
-            state.update(preview_revision=revision, preview_pages=manifest['page_count'], preview_error=None, preview_ready=True)
+            state.update(preview_revision=revision, preview_pages=manifest['page_count'], preview_page_hashes=manifest['page_hashes'],
+                preview_error=None, preview_ready=True)
             self.save_state(c, state)
             event = dict(type='document_preview', document_id=state['document_id'], revision=state['revision'],
-                preview_revision=revision, preview_pages=manifest['page_count'], path=self.path.name, preview_ready=True)
+                preview_revision=revision, preview_pages=manifest['page_count'], preview_page_hashes=manifest['page_hashes'],
+                path=self.path.name, preview_ready=True)
             c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
             c.commit()
             return event
 
-    def retain_recent_history(self, limit=2):
-        """Keep two file snapshots. Operation ids and check summaries stay for retries."""
-        with self.locked() as (c, state):
-            if not state:
-                return []
-            kept = [row[0] for row in c.execute('SELECT revision FROM revisions WHERE docx IS NOT NULL ORDER BY revision DESC LIMIT ?', (limit,))]
-            if not kept:
-                return []
-            c.execute('UPDATE revisions SET docx=NULL WHERE revision<? AND docx IS NOT NULL', (min(kept),))
-            if state.get('preview_revision') not in kept:
-                state['preview_revision'] = max(kept) if state.get('preview_revision', -1) >= 0 else state.get('preview_revision', -1)
-            self.save_state(c, state)
-            c.commit()
-        self.prune_render_cache(kept)
-        return kept
-
-    def prune_render_cache(self, kept):
-        import shutil
-        if not self.render_root.exists():
-            return
-        for directory in self.render_root.glob('render-*'):
-            if directory.is_symlink() or not directory.is_dir():
-                continue
-            try:
-                revision = int(directory.name.removeprefix('render-'))
-            except ValueError:
-                continue
-            if revision in kept:
-                continue
-            try:
-                with (directory / 'render.lock').open('a') as lock:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    shutil.rmtree(directory)
-            except (BlockingIOError, FileNotFoundError):
-                continue
-
-    def check_doc(self, content_notes=None):
-        review = _page_review()
+    def checkpoint(self, final=False):
+        from importlib.util import spec_from_file_location, module_from_spec
+        spec = spec_from_file_location('page_review', Path(__file__).with_name('page_review.py'))
+        review = module_from_spec(spec)
+        spec.loader.exec_module(review)
+        # Render an immutable snapshot outside the commit lock; stale results are rejected.
         current = self.status()
         revision = current['revision']
-        notes = content_notes if isinstance(content_notes, dict) else {}
+        hashes = []
         try:
-            output, _manifest = self.render_snapshot(revision)
+            output, manifest = self.render_snapshot(revision)
+            hashes = manifest['page_hashes']
             source = output / self.path.name
-            parts = o.read_parts(source)
-            design = _style_library().read_design(parts)
-            expected = None
-            if design and design.get('margins'):
-                expected = _document_build().twips(design['margins'])
-            pages = review.review_pages(source, output, o, expected_margins=expected, render=False)
+            pages = review.review_pages(source, output, o, final=final, render=False)
             failure = None
         except (OSError, ValueError, RuntimeError, ImportError, TimeoutError) as exc:
-            pages, failure, output = [], type(exc).__name__ + ': ' + str(exc)[:300], None
-        targets = repair_targets(pages)
-        automatic = not failure and bool(pages) and all(page['checks']['automatic_passed'] for page in pages) and not targets
+            pages, failure = [], type(exc).__name__ + ': ' + str(exc)[:300]
         with self.locked() as (c, state):
             self.assert_current(state, revision)
-            known = set(state.get('block_signatures') or {})
-            state['content_notes'] = {key: value for key, value in {**(state.get('content_notes') or {}), **notes}.items() if key in known}
-            aesthetic = dict(status='pending' if automatic else 'unavailable', reason=None if automatic else 'automatic_checks_failed')
-            state.update(pages=pages, render_revision=revision, render_error=failure,
-                check=dict(revision=revision, automatic_passed=automatic, repair_targets=targets, aesthetic_review=aesthetic))
+            old = {p['fingerprint']: p for p in state.get('last_pages', []) if p.get('checks', {}).get('visual_review') in ('passed', 'failed')}
+            for page in pages:
+                if page['fingerprint'] in old and page['checks']['automatic_passed']:
+                    page['checks']['visual_review'] = old[page['fingerprint']]['checks']['visual_review']
+                    page['evidence'] = old[page['fingerprint']].get('evidence')
+                    if page['checks']['visual_review'] == 'failed':
+                        page['status'] = 'failed'
+                    elif page['complete']:
+                        page['status'] = 'passed'
+            state.update(pages=pages, last_pages=pages, render_revision=revision, render_error=failure, dirty=0)
             if not failure:
-                state.update(preview_revision=revision, preview_pages=len(pages), preview_error=None, preview_ready=True)
+                state.update(preview_revision=revision, preview_pages=len(pages), preview_page_hashes=hashes, preview_error=None, preview_ready=True)
+            complete = [p for p in pages if p['complete']]
+            if failure or any(not p['checks']['automatic_passed'] or p['checks']['visual_review'] == 'failed' for p in pages):
+                state['gate'] = 'failed'
+            elif state['mode'] == 'strict' and any(p['status'] != 'passed' for p in complete):
+                state['gate'] = 'visual_pending'
+            else:
+                state['gate'] = 'open'
             self.save_state(c, state)
-            event = dict(type='document_review', document_id=state['document_id'], revision=revision, path=self.path.name,
-                pages=pages, automatic_passed=automatic, repair_targets=targets, render_error=failure, aesthetic_review=aesthetic,
-                **({} if failure else dict(preview_revision=revision, preview_pages=len(pages), preview_ready=True)))
+            event = dict(type='document_review', document_id=state['document_id'], revision=revision,
+                pages=pages, gate=state['gate'], render_error=failure, path=self.path.name,
+                **({} if failure else dict(preview_revision=revision, preview_pages=len(pages), preview_page_hashes=hashes,
+                    preview_ready=True, render_directory=str(output))))
             c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
             c.commit()
             return event
 
-    def record_aesthetic(self, revision, payload):
-        """Store a host visual suggestion. This never changes the DOCX bytes."""
+    def visual_review(self, revision, page, passed, reviewer, notes):
+        if type(passed) is not bool:
+            raise ValueError('Visual verdict must be a boolean')
+        if reviewer not in ('human', 'vision_model') or not isinstance(notes, str) or not notes.strip():
+            raise ValueError('Actual visual review requires reviewer and evidence notes')
         with self.locked() as (c, state):
-            check = (state or {}).get('check') or {}
-            if not state or check.get('revision') != revision:
-                return dict(applied=False)
-            check['aesthetic_review'] = payload
-            state['check'] = check
+            self.assert_current(state, revision)
+            if state.get('render_revision') != revision:
+                raise ValueError('Render checkpoint is stale')
+            target = next((p for p in state['pages'] if p['page'] == page), None)
+            if target is None or not target['checks']['automatic_passed']:
+                raise ValueError('Page must pass automatic checks first')
+            target['checks']['visual_review'] = 'passed' if passed else 'failed'
+            target['evidence'] = dict(reviewer=reviewer, notes=notes, reviewed_at=time.time())
+            target['status'] = ('passed' if target['complete'] else 'writing') if passed else 'failed'
+            state['last_pages'] = state['pages']
+            if not passed:
+                state['gate'] = 'failed'
+            elif all(p['checks']['automatic_passed'] and (not p['complete'] or p['status'] == 'passed') for p in state['pages']):
+                state['gate'] = 'open'
             self.save_state(c, state)
-            event = dict(type='document_aesthetic', document_id=state['document_id'], revision=revision, path=self.path.name,
-                aesthetic_review=payload, automatic_passed=check.get('automatic_passed'), repair_targets=check.get('repair_targets') or [])
+            event = dict(type='document_review', document_id=state['document_id'], revision=revision, path=self.path.name,
+                pages=state['pages'], gate=state['gate'])
             c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
             c.commit()
-            return dict(applied=True, **event)
+            return event
 
     def finalize(self, base_revision):
         with self.locked() as (c, state):
             self.assert_current(state, base_revision)
-            check = state.get('check') or {}
-            if check.get('revision') != base_revision or not check.get('automatic_passed'):
-                raise ValueError('check-doc must pass for this revision before finalize')
+            if state.get('render_revision') != base_revision or not state['pages'] or state['gate'] != 'open' or any(p['status'] != 'passed' for p in state['pages']):
+                raise ValueError('Final checkpoint and actual visual review of every page required')
+            render_dir = self.render_directory(base_revision)
+            if not (render_dir / 'render.json').is_file() or any(not (render_dir / p['image']).is_file() for p in state['pages']):
+                raise ValueError('Reviewed render artifacts are missing; render and review again')
             state['finalized'] = True
+            state['external_unreviewed'] = False
             self.save_state(c, state)
-            aesthetic = (check.get('aesthetic_review') or {}).get('status', 'pending')
-            event = dict(type='document_finalized', document_id=state['document_id'], revision=base_revision,
-                path=self.path.name, finalized=True, aesthetic_status=aesthetic, sha256=state['sha256'])
-            c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
+            c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(dict(type='document_finalized', document_id=state['document_id'], revision=base_revision, path=self.path.name, finalized=True)),))
             c.commit()
-            return event
+            return dict(status='finalized', document_id=state['document_id'], revision=base_revision, sha256=state['sha256'])
 
 
 def mutate(parts, op, asset_root):
@@ -384,27 +399,30 @@ def mutate(parts, op, asset_root):
     block_id = identifier(op.get('block_id', 'page-layout'))
     matches = root.xpath('//*[@b:id=$id]', namespaces={'b': BLOCK_NS}, id=block_id)
     target = matches[0] if len(matches) == 1 else None
-    adding = kind in ('append_paragraph', 'append_table', 'insert_image', 'insert_block')
+    adding = kind in ('append_paragraph', 'append_table', 'insert_image', 'insert_block',
+                      'insert_equation', 'insert_chart', 'insert_caption', 'insert_toc',
+                      'insert_table', 'insert_image_row')
+    academic = _sibling('academic_blocks')
+    rich = _sibling('rich_blocks')
     if adding:
         if matches:
             raise ValueError('Duplicate block_id')
         if kind == 'append_paragraph':
-            text = op['text']
-            if not isinstance(text, str) or len(text) > 3000 or '\n' in text or '\r' in text:
+            text = op.get('text')
+            if text is not None and (not isinstance(text, str) or len(text) > 3000 or '\n' in text or '\r' in text):
                 raise ValueError('One paragraph, maximum 3000 characters')
             style = op.get('style', 'Normal')
             o.require_style(parts, style)
             node = o.etree.Element(o.q(o.W, 'p'))
             prop = o.etree.SubElement(node, o.q(o.W, 'pPr'))
             o.etree.SubElement(prop, o.q(o.W, 'pStyle')).set(o.q(o.W, 'val'), style)
-            run = o.etree.SubElement(node, o.q(o.W, 'r'))
-            t = o.etree.SubElement(run, o.q(o.W, 't'))
-            t.text = text
-            t.set(o.q(o.XMLNS, 'space'), 'preserve')
+            node.extend(rich.inline_nodes(o, text=text, runs=op.get('runs')))
+            if op.get('ref_id'):
+                rich.bookmark_paragraph(o, root, node, identifier(op['ref_id']))
         elif kind == 'append_table':
             rows = op['rows']
-            if not isinstance(rows, list) or not 1 <= len(rows) <= 10 or any(not isinstance(r, list) or not 1 <= len(r) <= 8 for r in rows) or len({len(r) for r in rows}) != 1:
-                raise ValueError('A bounded table requires 1-10 rows and 1-8 uniform columns')
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 60 or any(not isinstance(r, list) or not 1 <= len(r) <= 8 for r in rows) or len({len(r) for r in rows}) != 1:
+                raise ValueError('A bounded table requires 1-60 rows and 1-8 uniform columns')
             if any(not isinstance(t, str) or len(t) > 300 for row in rows for t in row):
                 raise ValueError('Table cells must be strings of at most 300 characters')
             widths = op.get('column_widths_twips', [9000 // len(rows[0])] * len(rows[0]))
@@ -438,13 +456,29 @@ def mutate(parts, op, asset_root):
                         rpr = o.etree.SubElement(r, o.q(o.W, 'rPr'))
                         o.etree.SubElement(rpr, o.q(o.W, 'b'))
                     o.etree.SubElement(r, o.q(o.W, 't')).text = text
-            if op.get('keep_together', True):
+            # Long tables may break across pages; the header row repeats (tblHeader).
+            if op.get('keep_together', len(rows) <= 10):
                 paragraphs = list(node.iter(o.q(o.W, 'p')))
                 for index, paragraph in enumerate(paragraphs):
                     o.set_para_format(paragraph, {'keep_next': index < len(paragraphs) - 1})
         elif kind == 'insert_image':
             node = o.add_image(parts, root, op, asset_root)
-            o.set_para_format(node, {'alignment': 'center', 'keep_next': bool(op.get('keep_with_next', True))})
+            if op.get('float'):
+                rich.float_image(node, op, o)
+            else:
+                o.set_para_format(node, {'alignment': 'center', 'keep_next': bool(op.get('keep_with_next', True))})
+        elif kind == 'insert_table':
+            node = rich.table(parts, root, op, o)
+        elif kind == 'insert_image_row':
+            node = rich.image_row(parts, root, op, asset_root, o)
+        elif kind == 'insert_equation':
+            node = academic.equation(parts, root, op, o)
+        elif kind == 'insert_chart':
+            node = academic.chart(parts, root, op, o)
+        elif kind == 'insert_caption':
+            node = academic.caption(parts, root, op, o)
+        elif kind == 'insert_toc':
+            node = academic.toc(parts, root, op, o)
         else:
             nodes = o.fragment_nodes([op['xml']], parts)
             node = nodes[0]
@@ -464,6 +498,8 @@ def mutate(parts, op, asset_root):
         # Reuse the conservative existing layout implementation.
         updated = o.apply_plan(parts, {'operations': [dict(op, op='set_page')]}, asset_root)
         return updated, ['page-layout'], None
+    elif kind == 'set_header_footer':
+        rich.header_footer(parts, root, op, o)
     else:
         if target is None:
             raise ValueError('Unknown or ambiguous block_id')
@@ -493,10 +529,18 @@ def mutate(parts, op, asset_root):
                 style.set(o.q(o.W, 'val'), op['style'])
             else:
                 o.set_para_format(target, op)
+        elif kind == 'update_toc':
+            academic.update_toc(parts, root, target, o)
+        elif kind == 'set_table_cell':
+            rich.set_cell(parts, root, target, op, o)
+        elif kind == 'format_text':
+            rich.format_text(root, target, op, o)
         else:
             raise ValueError('Unsupported atomic operation: ' + str(kind))
+    unresolved = academic.refresh_fields(parts, root, o)
+    academic.normalize_namespaces(root, o)
     parts[o.MAIN] = o.xml_bytes(root)
-    return mark_blocks(parts), [block_id], None
+    return mark_blocks(parts), [block_id], {'unresolved_references': unresolved} if unresolved else None
 
 
 def _sibling(name):
@@ -512,32 +556,6 @@ def _template_blocks():
 
 def _template_styles():
     return _sibling('template_styles')
-
-
-def repair_targets(pages):
-    targets = []
-    labels = (('content_overflow', 'overflow'), ('heading_orphan', 'heading_orphan'), ('kept_table_split', 'kept_table_split'),
-        ('margins_abnormal', 'margins'), ('margins_off_plan', 'margins_off_plan'))
-    for page in pages:
-        checks = page.get('checks') or {}
-        for key, kind in labels:
-            if checks.get(key):
-                targets.append(dict(page=page['page'], kind=kind))
-        for font in checks.get('fonts_missing') or []:
-            targets.append(dict(page=page['page'], kind='missing_font', font=font))
-    return targets
-
-
-def _page_review():
-    return _sibling('page_review')
-
-
-def _style_library():
-    return _sibling('style_library')
-
-
-def _document_build():
-    return _sibling('document_build')
 
 
 def _template_manifest(parts, template):

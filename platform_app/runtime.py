@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from . import domain as d, models as m
 from .usage import runner_usage
 from . import format_plugins
+from . import itam_bridge
 from .workspace import resolve, SandboxPolicyBuilder
 
 router = APIRouter(prefix='/api/agent')
@@ -552,23 +553,28 @@ def capabilities():
 
 @router.get('/sessions')
 def sessions():
-    return [public(r) for r in reversed(d.all_records('session'))]
+    records = reversed(d.all_records('session'))
+    if itam_bridge.is_enabled():
+        records = (r for r in records if r.get('owner_user_id') == itam_bridge.owner())
+    return [public(r) for r in records]
 
 
 @router.post('/sessions', status_code=201)
 def create_session(value: NewSession):
+    if itam_bridge.is_enabled() and value.sandbox_mode != 'restricted':
+        raise HTTPException(403, '多用户模式只允许 restricted 沙箱')
     if value.permission_mode == 'allow' and value.permission_confirmation != 'ALLOW':
         raise HTTPException(422, '请输入 ALLOW 确认自动批准模式')
     if value.sandbox_mode == 'full-access' and value.sandbox_confirmation != 'FULL_ACCESS':
         raise HTTPException(422, '请输入 FULL_ACCESS 确认宿主文件访问模式')
     config = d.effective_config()
     try:
-        snapshot = m.selection(value.model_id, value.reasoning_effort if 'reasoning_effort' in value.model_fields_set else m.UNSET)
+        snapshot = m.selection(value.model_id, value.reasoning_effort if 'reasoning_effort' in value.model_fields_set else m.UNSET, owner=itam_bridge.owner())
     except LookupError as exc:
         raise HTTPException(503, str(exc))
     except ValueError:
         raise HTTPException(422, '模型、思考强度或密钥配置无效')
-    record = dict(id=uuid4().hex, config=config, model_snapshot=snapshot,
+    record = dict(id=uuid4().hex, owner_user_id=itam_bridge.owner() if itam_bridge.is_enabled() else None, config=config, model_snapshot=snapshot,
         model_id=snapshot['id'], reasoning_effort=snapshot['reasoning_effort'], status='idle', messages=[],
         output='', error=None, created_at=now(), updated_at=now(), event_seq=0,
         pending_tool_calls=[], human_input={}, permission_mode=value.permission_mode,
@@ -579,6 +585,30 @@ def create_session(value: NewSession):
 @router.get('/sessions/{session_id}')
 def session(session_id: str):
     return public(find(session_id))
+
+
+@router.delete('/sessions/{session_id}', status_code=204)
+def delete_session(session_id: str):
+    rt = runtime(session_id)
+    with rt.lock:
+        record = find(session_id)
+        # A queued or running worker would keep writing into the tree being removed.
+        if record['status'] in ACTIVE:
+            raise HTTPException(409, '会话正在执行，请先停止后再删除')
+        context = resolve(session_id)
+        prefix = f'{session_id}:'
+        with d.LOCK, d.db() as connection:
+            connection.execute('DELETE FROM records WHERE kind=? AND id>? AND id<?', ('event', prefix, prefix + '~'))
+            uploads = [json.loads(row[0]) for row in connection.execute('SELECT data FROM records WHERE kind=?', ('upload',))]
+            connection.executemany('DELETE FROM records WHERE kind=? AND id=?',
+                [('upload', item['id']) for item in uploads if item.get('thread_id') == session_id])
+            connection.execute('DELETE FROM records WHERE kind=? AND id=?', ('thread_workspace', session_id))
+            connection.execute('DELETE FROM records WHERE kind=? AND id=?', ('session', session_id))
+        rt.runner = None
+        for path in (context.workspace_root, context.session_root, context.sandbox_state_root, context.skills_root):
+            shutil.rmtree(path, ignore_errors=True)
+    with LOCK:
+        RUNTIMES.pop(session_id, None)
 
 
 @router.get('/sessions/{session_id}/artifacts/{filename}')
@@ -649,7 +679,7 @@ def change_model(session_id: str, value: NewSession):
     with rt.lock:
         record = find(session_id)
         try:
-            selected = m.selection(value.model_id, value.reasoning_effort)
+            selected = m.selection(value.model_id, value.reasoning_effort, owner=itam_bridge.owner())
         except (LookupError, ValueError):
             raise HTTPException(422, '模型或思考强度配置无效')
         if rt.runner is not None:
@@ -741,7 +771,22 @@ def files(session_id: str):
     root = resolve(session_id).files_root
     if not root.exists():
         return []
-    return [{'path': str(p.relative_to(root)), 'size': p.stat().st_size} for p in root.rglob('*') if p.is_file() and not p.is_symlink() and not internal_path(p.relative_to(root)) and p.resolve().is_relative_to(root.resolve())][:1000]
+    paths = [p for p in root.rglob('*') if p.is_file() and not p.is_symlink() and not internal_path(p.relative_to(root)) and p.resolve().is_relative_to(root.resolve())][:1000]
+    return [{'path': str(p.relative_to(root)), 'size': (stat := p.stat()).st_size, 'modified_at': stat.st_mtime} for p in paths]
+
+
+@router.get('/files')
+def all_files():
+    """Files from every session the caller owns, newest first, tagged with their session."""
+    result = []
+    for record in d.all_records('session'):
+        if itam_bridge.is_enabled() and record.get('owner_user_id') != itam_bridge.owner():
+            continue
+        title = next((m.get('content') or '' for m in record.get('messages', []) if m.get('role') == 'user'), '').split('\n')[0][:80]
+        for item in files(record['id']):
+            result.append({**item, 'session_id': record['id'], 'session_title': title, 'session_status': record['status']})
+    result.sort(key=lambda item: item['modified_at'], reverse=True)
+    return result[:500]
 
 
 @router.get('/sessions/{session_id}/files/{filename:path}')

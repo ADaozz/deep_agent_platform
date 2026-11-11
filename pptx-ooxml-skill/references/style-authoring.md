@@ -11,6 +11,7 @@ from pptx import Presentation
 from pptx.util import Inches
 from pptx.dml.color import RGBColor
 sys.path.insert(0, str(Path(os.environ['PPTX_SKILL_DIR']) / 'scripts'))
+import deck_io
 import native_charts
 import style_library
 
@@ -40,8 +41,7 @@ native_charts.verify_workbook(shape, chart_data)
 audit = native_charts.audit(prs, plan)
 if audit['status'] != 'passed':
     raise ValueError(audit)
-prs.save('tmp/deck.pptx')
-os.replace('tmp/deck.pptx', 'files/deck.pptx')
+deck_io.save_deck(prs, 'files/deck.pptx')  # 原子写入交付路径，平台据此登记版本并预览
 ```
 
 再执行：

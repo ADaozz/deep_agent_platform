@@ -2,11 +2,10 @@
 __pycache__/
 .pytest_cache/
 .platform/
-.platform-thread/
+.platform-*/
 .env
 frontend/node_modules/
 platform_app/web/
-cursor-agents-replica.zip
 *:Zone.Identifier
 
 frontend/test-results/

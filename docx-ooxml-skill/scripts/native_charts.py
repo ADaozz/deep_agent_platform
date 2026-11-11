@@ -1,6 +1,7 @@
 """Native Word charts: c:chart plus an embedded workbook. Never a picture or a shape stack."""
 import io
 import posixpath
+import re
 from lxml import etree
 
 C = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
@@ -78,7 +79,7 @@ def _cache_str(parent, values):
     _val(cache, C, 'ptCount', len(values))
     for index, value in enumerate(values):
         point = _el(cache, C, 'pt', idx=index)
-        _el(cache, C, 'v').text = str(value)
+        _el(point, C, 'v').text = str(value)
     return cache
 
 
@@ -88,7 +89,7 @@ def _cache_num(parent, values):
     _val(cache, C, 'ptCount', len(values))
     for index, value in enumerate(values):
         point = _el(cache, C, 'pt', idx=index)
-        _el(cache, C, 'v').text = str(value)
+        _el(point, C, 'v').text = str(value)
     return cache
 
 
@@ -99,11 +100,31 @@ def _ref(parent, tag, formula, values, numeric):
     (_cache_num if numeric else _cache_str)(ref, values)
 
 
-def _series(parent, index, item, formula_value, categories, cat_formula, kind):
+# Explicit colours: documents without a theme part give theme-derived series no fill.
+PALETTE = ('2F5597', 'C55A11', '548235', 'BF9000', '7030A0', '2E75B6', 'C00000', '00B0A0')
+
+
+def _fill(parent, color, line_only=False):
+    shape = _el(parent, C, 'spPr')
+    if line_only:
+        line = _el(shape, A, 'ln', w=22225)
+        _val(_el(line, A, 'solidFill'), A, 'srgbClr', color)
+    else:
+        _val(_el(shape, A, 'solidFill'), A, 'srgbClr', color)
+    return shape
+
+
+def _series(parent, index, item, formula_value, categories, cat_formula, kind, colors=PALETTE):
     ser = _el(parent, C, 'ser')
     _val(ser, C, 'idx', index)
     _val(ser, C, 'order', index)
     _el(_el(ser, C, 'tx'), C, 'v').text = str(item['name'])
+    _fill(ser, colors[index % len(colors)], line_only=kind in ('line', 'scatter'))
+    if kind in ('pie', 'doughnut'):
+        for point in range(len(categories)):
+            data_point = _el(ser, C, 'dPt')
+            _val(data_point, C, 'idx', point)
+            _fill(data_point, colors[point % len(colors)])
     if kind in ('scatter', 'bubble'):
         xs = [point[0] for point in item['values']]
         ys = [point[1] for point in item['values']]
@@ -117,6 +138,9 @@ def _series(parent, index, item, formula_value, categories, cat_formula, kind):
     else:
         _ref(ser, 'cat', cat_formula, categories, False)
         _ref(ser, 'val', formula_value, item['values'], True)
+    if kind in ('line', 'scatter'):
+        # Office smooths lines unless told otherwise, which misrepresents measured data.
+        _val(ser, C, 'smooth', 0)
     return ser
 
 
@@ -165,6 +189,11 @@ def chart_xml(spec):
     tag = {'column': 'barChart', 'bar': 'barChart', 'line': 'lineChart', 'area': 'areaChart',
         'pie': 'pieChart', 'doughnut': 'doughnutChart', 'scatter': 'scatterChart', 'bubble': 'bubbleChart'}[kind]
     body = _el(plot, C, tag)
+    colors = spec.get('colors') or PALETTE
+    if not isinstance(colors, (list, tuple)) or any(not isinstance(c, str) or not re.fullmatch(r'[0-9A-Fa-f]{6}', c) for c in colors):
+        raise ValueError('Chart colors must be RRGGBB strings')
+    if kind in ('pie', 'doughnut'):
+        _val(body, C, 'varyColors', 1)
     if kind in ('column', 'bar'):
         _val(body, C, 'barDir', 'bar' if kind == 'bar' else 'col')
         _val(body, C, 'grouping', 'clustered')
@@ -178,7 +207,7 @@ def chart_xml(spec):
     cat_formula = f'Sheet1!$A$2:$A${last+1}'
     for index, item in enumerate(series):
         column = chr(ord('B') + index)
-        _series(body, index, item, f'Sheet1!${column}$2:${column}${last+1}', categories, cat_formula, kind)
+        _series(body, index, item, f'Sheet1!${column}$2:${column}${last+1}', categories, cat_formula, kind, [c.upper() for c in colors])
     if kind not in ('pie', 'doughnut', 'scatter', 'bubble'):
         _val(body, C, 'axId', 1)
         _val(body, C, 'axId', 2)
@@ -213,11 +242,17 @@ def _override(parts, office, name, content_type):
         parts[office.CT_FILE] = office.xml_bytes(root)
 
 
-def create(parts, spec, block_id, office):
-    """Insert one native chart paragraph and its workbook. Returns updated parts."""
+def paragraph(parts, spec, office, root):
+    """Add one chart part with its embedded workbook; return the w:p that shows it.
+
+    The caller places the paragraph in ``root`` (the parsed main document part),
+    so this function never writes word/document.xml itself.
+    """
     kind = canonical(spec.get('type'))
     if kind not in SUPPORTED:
         raise ValueError('Unsupported native chart type: ' + str(spec.get('type')))
+    if not isinstance(spec.get('series'), list) or not 1 <= len(spec['series']) <= 12:
+        raise ValueError('A chart needs 1-12 series')
     index = _next_id(parts, 'charts/chart')
     chart_name = f'word/charts/chart{index}.xml'
     book_name = f'word/embeddings/chart-data-{index}.xlsx'
@@ -231,31 +266,28 @@ def create(parts, spec, block_id, office):
     _override(parts, office, chart_name, 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml')
     document_rels = office.parse_xml(parts[office.DOC_RELS])
     used = {node.get('Id') for node in document_rels}
-    rid = 'rIdChart%d' % index
-    while rid in used:
-        index += 1
-        rid = 'rIdChart%d' % index
+    serial = index
+    while 'rIdChart%d' % serial in used:
+        serial += 1
+    rid = 'rIdChart%d' % serial
     office.etree.SubElement(document_rels, office.q(office.RELS, 'Relationship'), Id=rid, Type=CHART_REL, Target=f'charts/chart{index}.xml')
     parts[office.DOC_RELS] = office.xml_bytes(document_rels)
     width = int(float(spec.get('width_cm', 14)) * 360000)
     height = int(float(spec.get('height_cm', 8)) * 360000)
-    root = office.parse_xml(parts[office.MAIN])
-    paragraph = office.etree.Element(office.q(W, 'p'))
-    paragraph.set('{urn:deep-agent:docx:blocks:v1}id', block_id)
-    run = office.etree.SubElement(paragraph, office.q(W, 'r'))
+    if not 2 * 360000 <= width <= 17 * 360000 or not 2 * 360000 <= height <= 20 * 360000:
+        raise ValueError('Chart size must be 2-17 cm wide and 2-20 cm high')
+    docpr = max([int(node.get('id', 0)) for node in root.iter(office.q(WP, 'docPr'))] or [0]) + 1
+    node = office.etree.Element(office.q(W, 'p'))
+    run = office.etree.SubElement(node, office.q(W, 'r'))
     drawing = office.etree.SubElement(run, office.q(W, 'drawing'))
     inline = office.etree.SubElement(drawing, office.q(WP, 'inline'))
     office.etree.SubElement(inline, office.q(WP, 'extent'), cx=str(width), cy=str(height))
-    office.etree.SubElement(inline, office.q(WP, 'docPr'), id=str(100 + index), name='Chart %d' % index)
+    office.etree.SubElement(inline, office.q(WP, 'docPr'), id=str(docpr), name='Chart %d' % index)
     graphic = office.etree.SubElement(inline, office.q(A, 'graphic'))
     data = office.etree.SubElement(graphic, office.q(A, 'graphicData'), uri=C)
     chart = office.etree.SubElement(data, _q(C, 'chart'))
     chart.set(office.q(R, 'id'), rid)
-    body = root.find(office.q(W, 'body'))
-    sect = next((i for i, child in enumerate(body) if child.tag == office.q(W, 'sectPr')), len(body))
-    body.insert(sect, paragraph)
-    parts[office.MAIN] = office.xml_bytes(root)
-    return parts
+    return node
 
 
 def inventory(parts):

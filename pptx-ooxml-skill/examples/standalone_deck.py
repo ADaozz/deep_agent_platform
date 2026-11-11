@@ -1,7 +1,6 @@
 """Two-slide editable example; run from a task directory, not the skill directory."""
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -11,6 +10,7 @@ from pptx.util import Inches, Pt
 
 SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL / 'scripts'))
+import deck_io
 import native_charts
 import native_math
 import style_library
@@ -76,10 +76,7 @@ def main():
             'slides': [{'page': 1, 'statistical_charts': 1}, {'page': 2, 'statistical_charts': 0}]}
     if native_charts.audit(prs, plan)['status'] != 'passed':
         raise ValueError('Native chart audit failed')
-    # Save next to the target so os.replace remains atomic across filesystems.
-    staging = output.with_name('.' + output.stem + '.building.pptx')
-    prs.save(staging)
-    os.replace(staging, output)
+    deck_io.save_deck(prs, output)
     (temporary / 'deck-plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2) + '\n')
     (temporary / 'deck-check.json').write_text(json.dumps({'content_notes': {
         'results': 'Verified synthetic Q1/Q2/Q3 values 12/18/25 and the sample-data label.',
