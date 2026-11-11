@@ -187,7 +187,8 @@ class DocumentStore(_shared.ArtifactStore):
             op = request['operation']
             kind = op.get('type')
             repairs = {'replace_text', 'set_paragraph_style', 'set_paragraph_format', 'delete_block', 'set_table_format', 'set_page',
-                'slot.fill', 'document.recolor', 'part.replace_text'}
+                'slot.fill', 'document.recolor', 'part.replace_text', 'update_toc',
+                'set_table_cell', 'format_text', 'set_header_footer'}
             if state['gate'] != 'open' and kind not in repairs:
                 raise ValueError('Page checkpoint required before adding content: ' + state['gate'])
             if state['dirty'] >= MAX_DIRTY * 2:
@@ -370,27 +371,30 @@ def mutate(parts, op, asset_root):
     block_id = identifier(op.get('block_id', 'page-layout'))
     matches = root.xpath('//*[@b:id=$id]', namespaces={'b': BLOCK_NS}, id=block_id)
     target = matches[0] if len(matches) == 1 else None
-    adding = kind in ('append_paragraph', 'append_table', 'insert_image', 'insert_block')
+    adding = kind in ('append_paragraph', 'append_table', 'insert_image', 'insert_block',
+                      'insert_equation', 'insert_chart', 'insert_caption', 'insert_toc',
+                      'insert_table', 'insert_image_row')
+    academic = _sibling('academic_blocks')
+    rich = _sibling('rich_blocks')
     if adding:
         if matches:
             raise ValueError('Duplicate block_id')
         if kind == 'append_paragraph':
-            text = op['text']
-            if not isinstance(text, str) or len(text) > 3000 or '\n' in text or '\r' in text:
+            text = op.get('text')
+            if text is not None and (not isinstance(text, str) or len(text) > 3000 or '\n' in text or '\r' in text):
                 raise ValueError('One paragraph, maximum 3000 characters')
             style = op.get('style', 'Normal')
             o.require_style(parts, style)
             node = o.etree.Element(o.q(o.W, 'p'))
             prop = o.etree.SubElement(node, o.q(o.W, 'pPr'))
             o.etree.SubElement(prop, o.q(o.W, 'pStyle')).set(o.q(o.W, 'val'), style)
-            run = o.etree.SubElement(node, o.q(o.W, 'r'))
-            t = o.etree.SubElement(run, o.q(o.W, 't'))
-            t.text = text
-            t.set(o.q(o.XMLNS, 'space'), 'preserve')
+            node.extend(rich.inline_nodes(o, text=text, runs=op.get('runs')))
+            if op.get('ref_id'):
+                rich.bookmark_paragraph(o, root, node, identifier(op['ref_id']))
         elif kind == 'append_table':
             rows = op['rows']
-            if not isinstance(rows, list) or not 1 <= len(rows) <= 10 or any(not isinstance(r, list) or not 1 <= len(r) <= 8 for r in rows) or len({len(r) for r in rows}) != 1:
-                raise ValueError('A bounded table requires 1-10 rows and 1-8 uniform columns')
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 60 or any(not isinstance(r, list) or not 1 <= len(r) <= 8 for r in rows) or len({len(r) for r in rows}) != 1:
+                raise ValueError('A bounded table requires 1-60 rows and 1-8 uniform columns')
             if any(not isinstance(t, str) or len(t) > 300 for row in rows for t in row):
                 raise ValueError('Table cells must be strings of at most 300 characters')
             widths = op.get('column_widths_twips', [9000 // len(rows[0])] * len(rows[0]))
@@ -424,13 +428,29 @@ def mutate(parts, op, asset_root):
                         rpr = o.etree.SubElement(r, o.q(o.W, 'rPr'))
                         o.etree.SubElement(rpr, o.q(o.W, 'b'))
                     o.etree.SubElement(r, o.q(o.W, 't')).text = text
-            if op.get('keep_together', True):
+            # Long tables may break across pages; the header row repeats (tblHeader).
+            if op.get('keep_together', len(rows) <= 10):
                 paragraphs = list(node.iter(o.q(o.W, 'p')))
                 for index, paragraph in enumerate(paragraphs):
                     o.set_para_format(paragraph, {'keep_next': index < len(paragraphs) - 1})
         elif kind == 'insert_image':
             node = o.add_image(parts, root, op, asset_root)
-            o.set_para_format(node, {'alignment': 'center', 'keep_next': bool(op.get('keep_with_next', True))})
+            if op.get('float'):
+                rich.float_image(node, op, o)
+            else:
+                o.set_para_format(node, {'alignment': 'center', 'keep_next': bool(op.get('keep_with_next', True))})
+        elif kind == 'insert_table':
+            node = rich.table(parts, root, op, o)
+        elif kind == 'insert_image_row':
+            node = rich.image_row(parts, root, op, asset_root, o)
+        elif kind == 'insert_equation':
+            node = academic.equation(parts, root, op, o)
+        elif kind == 'insert_chart':
+            node = academic.chart(parts, root, op, o)
+        elif kind == 'insert_caption':
+            node = academic.caption(parts, root, op, o)
+        elif kind == 'insert_toc':
+            node = academic.toc(parts, root, op, o)
         else:
             nodes = o.fragment_nodes([op['xml']], parts)
             node = nodes[0]
@@ -450,6 +470,8 @@ def mutate(parts, op, asset_root):
         # Reuse the conservative existing layout implementation.
         updated = o.apply_plan(parts, {'operations': [dict(op, op='set_page')]}, asset_root)
         return updated, ['page-layout'], None
+    elif kind == 'set_header_footer':
+        rich.header_footer(parts, root, op, o)
     else:
         if target is None:
             raise ValueError('Unknown or ambiguous block_id')
@@ -479,10 +501,18 @@ def mutate(parts, op, asset_root):
                 style.set(o.q(o.W, 'val'), op['style'])
             else:
                 o.set_para_format(target, op)
+        elif kind == 'update_toc':
+            academic.update_toc(parts, root, target, o)
+        elif kind == 'set_table_cell':
+            rich.set_cell(parts, root, target, op, o)
+        elif kind == 'format_text':
+            rich.format_text(root, target, op, o)
         else:
             raise ValueError('Unsupported atomic operation: ' + str(kind))
+    unresolved = academic.refresh_fields(parts, root, o)
+    academic.normalize_namespaces(root, o)
     parts[o.MAIN] = o.xml_bytes(root)
-    return mark_blocks(parts), [block_id], None
+    return mark_blocks(parts), [block_id], {'unresolved_references': unresolved} if unresolved else None
 
 
 def _sibling(name):

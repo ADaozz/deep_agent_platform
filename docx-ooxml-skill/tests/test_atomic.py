@@ -72,7 +72,7 @@ def test_conflicts_payload_reuse_and_bounded_protocol(tmp_path):
         store.apply_one(request(0, operation_id='new'))
     for operation in [dict(type='insert_blocks', block_id='bulk', blocks=[]),
         dict(type='append_paragraph', block_id='bulk', text='x\ny'),
-        dict(type='append_table', block_id='bulk', rows=[['x']] * 11)]:
+        dict(type='append_table', block_id='bulk', rows=[['x']] * 61)]:
         with pytest.raises(ValueError):
             store.apply_one(request(1, **operation))
     assert store.status()['revision'] == 1

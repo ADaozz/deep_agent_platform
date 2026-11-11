@@ -61,6 +61,25 @@ Word repaginates. Do not insert page breaks to manufacture a page count.
 
 `append_paragraph`, `append_table` and `insert_image` add content with an existing style. `insert_block` is one bounded paragraph fragment, not the normal way to write. Repairs (`replace_text`, `set_paragraph_style`, `set_paragraph_format`, `delete_block`, `set_table_format`, `set_page`) stay available. Payloads are in `references/operations.md`. The old batch plan is in `references/legacy-operations.md` and is not this workflow.
 
+## 3a. Academic content
+
+Reports with formulas, figures and references use these native operations, one per execute call like any other. Do not hand-build OMML, charts, fields or a ZIP in `tmp/` to get them.
+
+- Headings: `append_paragraph` with `Heading1`, `Heading2` or `Heading3` (multi-level headings feed the table of contents).
+- `insert_toc`: a Word table of contents, rebuilt from the headings after every operation.
+- `insert_equation`: native, editable Office Math from LaTeX; `numbered: true` adds `(n)`.
+- `insert_chart`: a native Word chart with an embedded workbook (column, bar, line, area, pie, doughnut, scatter, bubble).
+- `insert_caption`: `图`/`表` numbering that renumbers itself; give it a `ref_id`.
+- Cross-references: write `{{ref:<ref_id>}}` inside `append_paragraph` text. Forward references are allowed; check `unresolved_references` in the result.
+- Long tables: `append_table` up to 60 rows; the header row repeats across pages.
+- Complex tables: `insert_table` with `colspan`/`rowspan`, column widths and alignment, cell fill, three-line or grid borders; `set_table_cell` edits one cell later.
+- Character formatting and inline math: `runs` in `append_paragraph` (bold, italic, underline, size, colour, highlight, font, letter spacing, superscript/subscript, `{"math": ...}`), or `{{math:...}}` in text; `format_text` formats part of an existing paragraph.
+- Citing headings: give a heading `ref_id`, then `{{ref:id}}` shows its text and `{{pageref:id}}` its page.
+- Images: `insert_image` with `float: left|right` wraps text around it; `insert_image_row` places 2-4 images side by side with sub-captions.
+- Headers and footers: `set_header_footer`, with `{{page}}` and `{{pages}}` for page numbers.
+
+Payloads and limits are in `references/operations.md`.
+
 ## 4. Revisions and checkpoints
 
 Use the current `base_revision`, a stable `block_id` and a stable `operation_id`. Repeat the same request after uncertain delivery. A conflict means read `status` and rebase. A failed operation does not increment the revision. Restore creates a new revision.
