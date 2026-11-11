@@ -9,8 +9,10 @@ from . import domain as d
 from . import models as m
 from . import runtime
 from . import format_plugins
+from . import itam_bridge
 
 app = FastAPI(title='Deep Agent Platform')
+itam_bridge.install(app)
 d.init()
 runtime.initialize()
 app.include_router(runtime.router)
@@ -50,7 +52,7 @@ def index():
 
 @app.get('/api/status')
 def status():
-    return {'model_configured': any(p['configured'] for p in m.public()['profiles']), 'mode': 'single-user', 'core': 'platform_app.agent_core'}
+    return {'model_configured': any(p['configured'] for p in m.public()['profiles']), 'mode': 'itam-multi-user' if itam_bridge.is_enabled() else 'single-user', 'core': 'platform_app.agent_core'}
 
 
 class ModelConfig(BaseModel):
