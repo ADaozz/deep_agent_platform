@@ -10,13 +10,20 @@ metadata:
 
 从当前任务工作目录执行。约定 PPTX 放 `files/`，计划、脚本和临时图片放 `tmp/`。按本 SKILL.md 的实际目录定位 `scripts/office_pptx.py`，下文简称 `office_pptx.py`，不要假设安装在固定沙箱路径。示例使用环境变量 `PPTX_SKILL_DIR` 表示这个实际目录；运行命令前自行设置。先安装技能 requirements.txt；本地渲染另需 LibreOffice、fontconfig 和字体。不启动本平台、交给其他 Agent 或本机脚本使用时，按 [独立使用指南](references/standalone.md) 安装、提示和检查。
 
+## 交付文件（硬性规则）
+
+- `files/<名称>.pptx` 是**唯一的工作稿和交付稿**，从第一次保存起就写在这里。平台只对 `files/` 中的 PPT 登记版本、生成预览；放在别处的整稿用户看不到。
+- Python 脚本每次保存都调用 `deck_io.save_deck(prs, 'files/<名称>.pptx')`，它在目标目录内原子写入，平台不会读到半个 ZIP。不要自行 `prs.save` 到 `tmp/` 再复制或替换；`save_deck` 拒绝写入 `tmp/`。原子操作直接作用于 `files/` 中的文件。
+- 不要在 `tmp/` 或其他目录维护整稿副本，也不要“先在别处做完、检查通过再输出”。检查与修复都直接针对 `files/` 中的文件。
+- 不要自行用 LibreOffice 渲染整稿、读截图来检查效果；预览由平台生成，质量检查用下文的 `audit-charts` 与 `check-deck`。
+
 ## 新建 PPT
 
 新建稿使用用户的**风格设计 MD＋参考图**确定视觉系统，不搜索或复用 PPT 模板库；PPTX 模板库保持为空；`templates/` 现在保存配对的风格 MD 与参考图。用户未指定风格时，先用 `office_pptx.py list-styles` 按分类筛选至多三套候选，再读取一套 `design.md`、查看其 `reference.jpg`；不要一次读取全部风格或混用多套视觉体系。用户明确提供的风格要求优先。参考图用于理解版式、字体层级、配色、留白与图表表达，不直接铺成整页截图。缺少其中一种输入时，先用已有要求提炼风格；确有关键歧义再询问，不寻找旧 PPT 模板兜底。
 
 先在 `tmp/deck-plan.json` 记录选定目录的完整 `style_id`（如 `consulting/red-black-growth`）及输出 `pptx` 路径、受众、叙事、页尺寸、统一字体/回退字体、色板、标题层级、边距、页脚、每页重点与统计图表数量。MD 与参考图冲突时以用户明确指令和 MD 为准，记录必要取舍。整稿沿用同一组设计参数，不能逐页重新配色或缩字。所有数字、单位、时间范围与来源须有依据。
 
-可使用原子接口创建页面与对象，也可写一个可重复运行的 Python 生成脚本。脚本调用 `style_library.apply_reference(prs, style_id, design=design_parameters)` 将风格来源及实际设计参数写入 PPT，原子初始化使用 `init ... --style-id <category/theme_id>`。界面据此显示真实风格文件夹名称，不将内部 profile 名称当成设计来源。脚本统一读取上述设计参数，一次生成完整有效文件后替换目标 PPTX，避免边写边暴露半个 ZIP。优先临时路径保存再 `os.replace`；平台仍会验证完整性，不会因无效中间文件覆盖已登记版本。
+可使用原子接口创建页面与对象，也可写一个可重复运行的 Python 生成脚本。脚本调用 `style_library.apply_reference(prs, style_id, design=design_parameters)` 将风格来源及实际设计参数写入 PPT，原子初始化使用 `init ... --style-id <category/theme_id>`。界面据此显示真实风格文件夹名称，不将内部 profile 名称当成设计来源。脚本统一读取上述设计参数，用 `deck_io.save_deck` 写入 `files/` 中的目标 PPTX；可以分批生成并多次保存，每次保存平台都会登记版本并更新预览。平台仍会验证完整性，不会因无效文件覆盖已登记版本。
 
 审查依据依次为用户明确要求/调整、本稿实际参数、选中风格 MD。计划顶层记录 fonts、palette（或 theme）、type_scale、margins、user_requirements/user_overrides；传入 apply_reference 的 design 使用同样的参数。margins 必须写明 unit（fraction/in/pt）及 left/right/top/bottom。没有明确数值或单位的部分只做视觉建议，不套默认 profile 的配色、字号或 6% 安全边距。选定 style_id 只记录来源，不会自动把 MD 转成排版；生成脚本需实际应用参数。
 
@@ -49,7 +56,7 @@ ChartEx 高级图表、曲面和量价股票图需要 PowerPoint 核对，LibreO
 
 `check-deck` 返回 `repair_targets`（遮挡的 slide_id、elements）和 `other_errors`。**Agent 自动修复遮挡：只修改报告中的页面和相关元素，再运行 check-deck，直到 overlap_passed 为 true 且检查通过。** 不受旧的三次修复上限限制。真实的有意叠放才可标记 overlap_group，不能靠忽略错误、删除内容或整体缩字伪造通过。渲染/字体等环境错误先处理原因；无法验证时明确报告，不能宣称通过。
 
-**修复读取现有 PPT 并局部改动，禁止重新生成整稿。** 优先 `element.update`；脚本用 `Presentation('files/deck.pptx')`，通过稳定 slide_id/element_id 定位修改，再保存临时文件替换。保留其它页及未涉及对象的内容、背景、字体、布局和图表数据。不得重跑从空白 Presentation 重建全部页面的脚本。仅用户要求全局修改时才改全局参数。
+**修复读取现有 PPT 并局部改动，禁止重新生成整稿。** 优先 `element.update`；脚本用 `Presentation('files/deck.pptx')`，通过稳定 slide_id/element_id 定位修改，再用 `deck_io.save_deck(prs, 'files/deck.pptx')` 写回原路径。保留其它页及未涉及对象的内容、背景、字体、布局和图表数据。不得重跑从空白 Presentation 重建全部页面的脚本。仅用户要求全局修改时才改全局参数。
 
 全部自动检查通过后，check-deck 记录单页和整稿视觉审查请求；接入平台时由后台另外调用模型 API 审查截图，不是 Agent 自身的看图能力。独立 CLI 不会自动获得这个后台服务。**所有视觉结果（包括 critical）只给建议，禁止据此自动修改；用户明确要求修复后才局部修改。** 用 review-status 查询并汇总建议；模型或渲染不可用须说明。手动 check-slide 仅用于指定页面诊断，不是默认生成流程。见 [aesthetic-review.md](references/aesthetic-review.md)。
 
