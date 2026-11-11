@@ -1,9 +1,7 @@
-"""Layout checks over a LibreOffice PDF. They do not decide visual quality.
+"""Conservative layout checks over an actual LibreOffice PDF, never visual QA.
 
-A long table may cross pages. A table that asked to stay together and still
-splits, overflow, a heading left at the bottom, missing fonts, or margins that
-depart from the recorded plan are repair targets. Pending visual review is not
-a failure.
+Heuristics can detect geometry and text placement, not visual correctness.
+Every new page therefore retains visual_review=pending until actual inspection.
 """
 import hashlib
 import json
@@ -16,17 +14,12 @@ def normalized(text):
     return re.sub(r'\s+', '', text)
 
 
-def _kept_together(table, o):
-    return any(row.find(o.q(o.W, 'trPr') + '/' + o.q(o.W, 'cantSplit')) is not None for row in table.findall(o.q(o.W, 'tr')))
-
-
-def analyze_pages(parts, pdf, engine, expected_margins=None):
+def analyze_pages(parts, pdf, engine, final=False):
     o = engine
     root = o.parse_xml(parts[o.MAIN])
     ns = o.NS
     sections = root.findall('.//' + o.q(o.W, 'sectPr'))
     margin_abnormal = False
-    margin_off_plan = False
     for section in sections:
         size = section.find(o.q(o.W, 'pgSz'))
         margins = section.find(o.q(o.W, 'pgMar'))
@@ -34,20 +27,20 @@ def analyze_pages(parts, pdf, engine, expected_margins=None):
             margin_abnormal = True
             continue
         width, height = (int(size.get(o.q(o.W, k), 0)) for k in ('w', 'h'))
-        sides = {k: int(margins.get(o.q(o.W, k), 0)) for k in ('left', 'right', 'top', 'bottom')}
-        if min(sides.values()) < 180 or sides['left'] + sides['right'] >= width or sides['top'] + sides['bottom'] >= height:
+        left, right, top, bottom = (int(margins.get(o.q(o.W, k), 0)) for k in ('left', 'right', 'top', 'bottom'))
+        if min(left, right, top, bottom) < 180 or left + right >= width or top + bottom >= height:
             margin_abnormal = True
-        if expected_margins and any(abs(sides[k] - expected_margins[k]) > 40 for k in sides):
-            margin_off_plan = True
     texts = [normalized(p.get_text()) for p in pdf]
     headings = [o.ptext(p) for p in root.iter(o.q(o.W, 'p'))
         if p.xpath('./w:pPr/w:pStyle[starts-with(@w:val,"Heading") or starts-with(@w:val,"heading")]', namespaces=ns)]
     document_text = normalized(o.ptext(root))
     split_pages = set()
+    uncertain_tables = 0
     for table in root.iter(o.q(o.W, 'tbl')):
-        if not _kept_together(table, o):
-            continue
+        # A bounded table spanning pages needs a deliberate repair or review.
         samples = [normalized(o.ptext(p)) for p in table.iter(o.q(o.W, 'p')) if len(normalized(o.ptext(p))) >= 3 and document_text.count(normalized(o.ptext(p))) == 1]
+        if not samples:
+            uncertain_tables += 1
         hits = {i for i, text in enumerate(texts) if any(sample in text for sample in samples)}
         if len(hits) > 1:
             split_pages.update(hits)
@@ -63,7 +56,7 @@ def analyze_pages(parts, pdf, engine, expected_margins=None):
                 fonts_missing.append('fontconfig unavailable: ' + font)
                 continue
             matched = subprocess.run(['fc-match', '-f', '%{family}', font], capture_output=True, text=True, timeout=5).stdout
-            if font.casefold() not in [item.strip() for item in matched.casefold().split(',')]:
+            if font.casefold() not in [f.strip() for f in matched.casefold().split(',')]:
                 fonts_missing.append(font)
     pages = []
     for i, page in enumerate(pdf):
@@ -78,18 +71,22 @@ def analyze_pages(parts, pdf, engine, expected_margins=None):
             if x0 < -1 or y0 < -1 or x1 > rect.width + 1 or y1 > rect.height + 1:
                 overflow = True
         lines = [normalized(line) for line in page.get_text().splitlines() if normalized(line)]
-        orphan = bool(lines and any(normalized(h) and lines[-1].endswith(normalized(h)) for h in headings))
+        complete = final or i < len(pdf) - 1
+        orphan = complete and bool(lines and any(normalized(h) and lines[-1].endswith(normalized(h)) for h in headings))
         checks = dict(ooxml_valid=True, render_success=True, content_overflow=overflow,
-            kept_table_split=i in split_pages, heading_orphan=orphan, margins_abnormal=margin_abnormal,
-            margins_off_plan=margin_off_plan, fonts_missing=fonts_missing)
-        checks['automatic_passed'] = not (overflow or i in split_pages or orphan or margin_abnormal or margin_off_plan or fonts_missing)
+            table_split=i in split_pages, heading_orphan=orphan, margins_abnormal=margin_abnormal,
+            fonts_missing=fonts_missing, visual_review='pending', warnings=['Table text cannot be uniquely mapped; inspect actual table layout'] if uncertain_tables else [])
+        checks['automatic_passed'] = not (overflow or i in split_pages or orphan or margin_abnormal or fonts_missing)
+        # Render fingerprint invalidates previous visual reviews after any reflow,
+        # including images, font substitution, headers, and page renumbering.
         fingerprint = hashlib.sha256(page.get_pixmap(alpha=False).samples).hexdigest()
-        pages.append(dict(page=i + 1, complete=True, fingerprint=fingerprint, checks=checks,
-            image='page-%03d.png' % (i + 1), status='failed' if not checks['automatic_passed'] else 'checked'))
+        complete = final or i < len(pdf) - 1
+        pages.append(dict(page=i + 1, complete=complete, fingerprint=fingerprint, checks=checks,
+            image='page-%03d.png' % (i + 1), status='failed' if not checks['automatic_passed'] else 'pending' if complete else 'writing'))
     return pages
 
 
-def review_pages(docx, output, engine, expected_margins=None, render=True):
+def review_pages(docx, output, engine, final=False, render=True):
     import pymupdf as fitz
     if render:
         engine.run_render(docx, output)
@@ -98,6 +95,6 @@ def review_pages(docx, output, engine, expected_margins=None, render=True):
     if not validation['ok']:
         raise ValueError('Structural validation failed')
     with fitz.open(output / 'preview.pdf') as pdf:
-        pages = analyze_pages(parts, pdf, engine, expected_margins)
+        pages = analyze_pages(parts, pdf, engine, final)
     (output / 'checks.json').write_text(json.dumps(pages, ensure_ascii=False, indent=2))
     return pages

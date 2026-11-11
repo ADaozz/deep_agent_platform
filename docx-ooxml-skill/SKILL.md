@@ -9,7 +9,13 @@ metadata:
 
 # DOCX authoring
 
-This skill does not register a new Agent tool. Run `scripts/office_docx.py` through `execute`, from the Thread user-file directory. In the platform the path is `/agent-skills/docx-ooxml-author/scripts/office_docx.py`. One execute call is one operation. Do not add a planner, loop commands, or write the ZIP yourself.
+This skill does not register a new Agent tool. Run `scripts/office_docx.py` through `execute`, from the task workspace root (the directory that contains `files/` and `tmp/`; `execute` starts there). In the platform the path is `/agent-skills/docx-ooxml-author/scripts/office_docx.py`. One execute call is one operation. Do not add a planner, loop commands, or write the ZIP yourself.
+
+## Deliverable location (hard rule)
+
+- `files/<name>.docx` is the **only working copy and the deliverable**, from `init` onward. The platform versions and previews only documents under `files/`; a document anywhere else is invisible to the user.
+- Always pass the document as `files/<name>.docx`, operation requests as `tmp/<name>.json`, and `--asset-root files`. Do not write the document to `tmp/` or the workspace root, and do not build it elsewhere and copy it in at the end.
+- Uploaded files are in `files/`, so an uploaded template is `files/<template>.docx`.
 
 Prefer a template's sections, paragraphs, named styles, content controls and tables. Author a WordprocessingML fragment only when the template has no suitable block and the atomic operations cannot express the change. Do not claim a page was checked unless you inspected its LibreOffice render.
 
@@ -20,21 +26,21 @@ Look for an uploaded DOCX before creating a blank file. `import-template` assign
 Template path, the default:
 
 ```sh
-python "$S" import-template --template input.docx --template-id report --license-note "user file"
-python "$S" init --document-id report --output report.docx --template input.docx
-python "$S" status report.docx
-python "$S" apply-one report.docx ../tmp/operation.json --asset-root .
-python "$S" checkpoint report.docx
-python "$S" finalize report.docx --base-revision N
+python "$S" import-template --template files/input.docx --template-id report --license-note "user file"
+python "$S" init --document-id report --output files/report.docx --template files/input.docx
+python "$S" status files/report.docx
+python "$S" apply-one files/report.docx tmp/operation.json --asset-root files
+python "$S" checkpoint files/report.docx
+python "$S" finalize files/report.docx --base-revision N
 ```
 
 Blank path, only when nothing suitable exists:
 
 ```sh
-python "$S" init --document-id report --output report.docx
-python "$S" apply-one report.docx ../tmp/operation.json --asset-root .
-python "$S" checkpoint report.docx
-python "$S" finalize report.docx --base-revision N
+python "$S" init --document-id report --output files/report.docx
+python "$S" apply-one files/report.docx tmp/operation.json --asset-root files
+python "$S" checkpoint files/report.docx
+python "$S" finalize files/report.docx --base-revision N
 ```
 
 `$S` is the CLI path above. Repeat it on every execute call.
