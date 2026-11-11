@@ -64,6 +64,18 @@ def test_middleware_enforces_owner_and_admin_config(monkeypatch):
     def save_models():
         return {'ok': True}
 
+    @app.put('/api/models/personal')
+    def save_personal_models():
+        return {'owner': itam_bridge.owner()}
+
+    @app.put('/api/settings')
+    def save_settings():
+        return {'ok': True}
+
+    @app.put('/api/features/{feature_id}')
+    def save_feature(feature_id: str):
+        return {'ok': True}
+
     with TestClient(app) as client:
         path = '/api/agent/sessions/own'
         ok = client.get(path, headers=signed('GET', path))
@@ -74,3 +86,7 @@ def test_middleware_enforces_owner_and_admin_config(monkeypatch):
         assert client.put(path, headers=signed('PUT', path, role='user')).status_code == 403
         assert client.put(path, headers=signed('PUT', path, role='admin')).status_code == 200
         assert client.get('/api/agent/sessions/own').status_code == 401
+        path = '/api/models/personal'
+        assert client.put(path, headers=signed('PUT', path, role='user')).json() == {'owner': '1001'}
+        for path in ('/api/settings', '/api/features/docx'):
+            assert client.put(path, headers=signed('PUT', path, role='admin')).status_code == 403

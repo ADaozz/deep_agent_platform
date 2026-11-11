@@ -18,7 +18,9 @@ from . import domain as d
 USER = ContextVar('itam_user_id', default=None)
 ROLE = ContextVar('itam_role', default='user')
 SESSION_PATH = re.compile(r'^/api/agent/sessions/([a-zA-Z0-9_-]{1,80})(?:/|$)')
-SENSITIVE = {'/api/models', '/api/settings', '/api/features'}
+SENSITIVE = {'/api/models'}
+# Agent tools, skills and feature plugins are server-managed in ITAM mode, even for admins.
+LOCKED = {'/api/settings', '/api/features'}
 CONFIG_WRITE = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
 
@@ -71,10 +73,10 @@ def install(app):
             return JSONResponse({'detail': 'Invalid ITAM runtime identity'}, status_code=401)
         user, role = identity
         path = request.url.path
+        if request.method in CONFIG_WRITE and (path in LOCKED or path.startswith('/api/features/')):
+            return JSONResponse({'detail': 'ITAM 模式下暂不开放 Agent 工具与 Skill 配置'}, status_code=403)
         # Shiro RBAC continues to determine admin/user, this is a defense in depth check.
-        if request.method in CONFIG_WRITE and (
-            path in SENSITIVE or path.startswith('/api/features/')
-        ) and role != 'admin':
+        if request.method in CONFIG_WRITE and path in SENSITIVE and role != 'admin':
             return JSONResponse({'detail': 'Admin permission required'}, status_code=403)
         # Full host access can bypass Thread isolation, so it is disabled in multi-user mode.
         if request.method == 'PUT' and re.fullmatch(r'/api/agent/sessions/[^/]+/sandbox', path):
