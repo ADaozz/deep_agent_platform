@@ -11,7 +11,7 @@ Usage: follow `SKILL.md`. Run from the task workspace root (the directory contai
 ```bash
 S=scripts/office_docx.py
 python "$S" init --document-id report --output files/report.docx
-python "$S" apply-one files/report.docx tmp/operation.json --asset-root files
+python "$S" apply-one files/report.docx tmp/operation.json --asset-root tmp
 python "$S" checkpoint files/report.docx
 python "$S" finalize files/report.docx --base-revision N
 ```

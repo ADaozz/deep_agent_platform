@@ -322,7 +322,10 @@ def create_router(host):
     def presentations(session_id:str):
         service=host.service(session_id,'pptx'); service.detect_external(); record=host.session(session_id); result=[]
         for identity in record.get('presentations',{}):
-            try:result.append({**service.store(service.presentation_path(identity)).status(),'path':record['presentations'][identity]['path'],
+            try:
+                path=service.presentation_path(identity)
+                if not path.is_file():continue
+                result.append({**service.store(path).status(),'path':record['presentations'][identity]['path'],
                 **{key:record['presentations'][identity][key] for key in ('finalize_verified','verification_problems') if key in record['presentations'][identity]}})
             except (ValueError,OSError):continue
         return result

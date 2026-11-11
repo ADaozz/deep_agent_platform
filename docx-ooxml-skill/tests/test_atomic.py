@@ -231,6 +231,28 @@ def test_later_edit_invalidates_prior_page_visual_review(tmp_path, monkeypatch):
     assert result['pages'][0]['status']=='pending'
 
 
+@pytest.mark.skipif(shutil.which('libreoffice') is None, reason='LibreOffice is required for real pagination')
+def test_edit_on_one_page_changes_only_that_page_image(tmp_path):
+    store = a.DocumentStore(tmp_path / 'report.docx'); store.init('report')
+    revision = 0
+    def apply(operation_id, **operation):
+        return store.apply_one(dict(document_id='report', operation_id=operation_id, base_revision=revision, operation=operation))['revision']
+    for i in range(3):
+        if store.status()['gate'] != 'open':
+            store.checkpoint()
+        revision = apply(f'op-{i}', type='append_paragraph', block_id=f'p-{i}', text=f'Section {i} marker Alpha. ' + 'Body text. ' * 200)
+        if i:
+            revision = apply(f'break-{i}', type='set_paragraph_format', block_id=f'p-{i}', page_break_before=True)
+    before = store.preview(revision)
+    assert before['preview_pages'] == 3
+    revision = apply('edit', type='replace_text', block_id='p-1', old='marker Alpha', new='marker Omega')
+    after = store.preview(revision)
+    old, new = before['preview_page_hashes'], after['preview_page_hashes']
+    assert [i + 1 for i in range(3) if old[i] != new[i]] == [2]
+    assert {p.name for p in store.page_directory().iterdir()} == {h + '.png' for h in old + new}
+    assert store.status(committed=True)['preview_page_hashes'] == new
+
+
 def test_libreoffice_timeout_is_persisted_without_losing_content(tmp_path, monkeypatch):
     store=a.DocumentStore(tmp_path/'report.docx'); store.init('report'); store.apply_one(request(0))
     data=store.path.read_bytes()

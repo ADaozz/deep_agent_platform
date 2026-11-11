@@ -233,6 +233,9 @@ class DocumentStore(_shared.ArtifactStore):
             if manifest_file.exists():
                 manifest = json.loads(manifest_file.read_text())
                 if manifest.get('sha256') == digest and (output / 'preview.pdf').is_file() and all((output / image).is_file() for image in manifest.get('images', [])):
+                    if 'page_hashes' not in manifest:
+                        self._share_pages(output, manifest)
+                        publish(manifest_file, json.dumps(manifest).encode())
                     return output, manifest
             source = output / self.path.name
             publish(source, data)
@@ -241,8 +244,28 @@ class DocumentStore(_shared.ArtifactStore):
                 import pymupdf as fitz
                 with fitz.open(output / 'preview.pdf') as pdf:
                     manifest = dict(sha256=digest, page_count=len(pdf), images=[f'page-{i+1:03d}.png' for i in range(len(pdf))])
-                publish(manifest_file, json.dumps(manifest).encode())
+            manifest['sha256'] = digest
+            self._share_pages(output, manifest)
+            publish(manifest_file, json.dumps(manifest).encode())
             return output, manifest
+
+    def page_directory(self):
+        return self.render_root / 'pages'
+
+    def _share_pages(self, output, manifest):
+        """Layout is global, so every revision is paginated in full; identical pages keep one
+        content-addressed image so viewers reload only the pages whose pixels changed."""
+        shared = self.page_directory()
+        shared.mkdir(parents=True, exist_ok=True)
+        hashes = []
+        for image in manifest['images']:
+            data = (output / image).read_bytes()
+            name = hashlib.sha256(data).hexdigest()[:24]
+            target = shared / (name + '.png')
+            if not target.is_file():
+                publish(target, data)
+            hashes.append(name)
+        manifest['page_hashes'] = hashes
 
     def preview_failed(self, error):
         with self.locked() as (c, state):
@@ -261,10 +284,12 @@ class DocumentStore(_shared.ArtifactStore):
         with self.locked() as (c, state):
             if state is None or revision <= state.get('preview_revision', -1):
                 return None
-            state.update(preview_revision=revision, preview_pages=manifest['page_count'], preview_error=None, preview_ready=True)
+            state.update(preview_revision=revision, preview_pages=manifest['page_count'], preview_page_hashes=manifest['page_hashes'],
+                preview_error=None, preview_ready=True)
             self.save_state(c, state)
             event = dict(type='document_preview', document_id=state['document_id'], revision=state['revision'],
-                preview_revision=revision, preview_pages=manifest['page_count'], path=self.path.name, preview_ready=True)
+                preview_revision=revision, preview_pages=manifest['page_count'], preview_page_hashes=manifest['page_hashes'],
+                path=self.path.name, preview_ready=True)
             c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
             c.commit()
             return event
@@ -277,8 +302,10 @@ class DocumentStore(_shared.ArtifactStore):
         # Render an immutable snapshot outside the commit lock; stale results are rejected.
         current = self.status()
         revision = current['revision']
+        hashes = []
         try:
             output, manifest = self.render_snapshot(revision)
+            hashes = manifest['page_hashes']
             source = output / self.path.name
             pages = review.review_pages(source, output, o, final=final, render=False)
             failure = None
@@ -297,7 +324,7 @@ class DocumentStore(_shared.ArtifactStore):
                         page['status'] = 'passed'
             state.update(pages=pages, last_pages=pages, render_revision=revision, render_error=failure, dirty=0)
             if not failure:
-                state.update(preview_revision=revision, preview_pages=len(pages), preview_error=None, preview_ready=True)
+                state.update(preview_revision=revision, preview_pages=len(pages), preview_page_hashes=hashes, preview_error=None, preview_ready=True)
             complete = [p for p in pages if p['complete']]
             if failure or any(not p['checks']['automatic_passed'] or p['checks']['visual_review'] == 'failed' for p in pages):
                 state['gate'] = 'failed'
@@ -308,7 +335,8 @@ class DocumentStore(_shared.ArtifactStore):
             self.save_state(c, state)
             event = dict(type='document_review', document_id=state['document_id'], revision=revision,
                 pages=pages, gate=state['gate'], render_error=failure, path=self.path.name,
-                **({} if failure else dict(preview_revision=revision, preview_pages=len(pages), preview_ready=True, render_directory=str(output))))
+                **({} if failure else dict(preview_revision=revision, preview_pages=len(pages), preview_page_hashes=hashes,
+                    preview_ready=True, render_directory=str(output))))
             c.execute('INSERT INTO events(data) VALUES (?)', (json.dumps(event),))
             c.commit()
             return event

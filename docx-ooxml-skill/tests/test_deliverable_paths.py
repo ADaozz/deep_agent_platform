@@ -14,4 +14,4 @@ def test_documented_commands_target_files_directory():
             document = re.search(r'(?:--output |apply-one |status |checkpoint |finalize )(\S+\.docx)', command)
             assert document and document.group(1).startswith('files/'), (path.name, command)
             if 'apply-one' in command:
-                assert ' tmp/' in command and '--asset-root files' in command, (path.name, command)
+                assert ' tmp/' in command and '--asset-root tmp' in command, (path.name, command)

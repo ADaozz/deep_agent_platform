@@ -62,12 +62,12 @@ try {
   assert.equal(await page.locator('.docx-panel').count(), 0, 'closed preference lost on reload')
   await page.locator('.docx-reopen').click()
   await page.locator('.docx-paper>img').first().waitFor({ timeout: 30000 })
-  // Browsing an earlier page pauses auto-follow across updates.
-  const scroll = page.locator('.docx-preview-scroll')
-  await scroll.evaluate(el => { el.scrollTop = 10; el.dispatchEvent(new Event('scroll')) })
+  // Selecting an earlier page pauses auto-follow across updates.
+  const selectedPage = () => page.locator('.docx-thumbnails>button.selected').getAttribute('data-page')
+  await page.locator('.docx-thumbnails>button').first().click()
   const oldRevision = (await (await page.request.get(sessionUrl + '/documents')).json())[0].revision
   await poll(async () => (await (await page.request.get(sessionUrl + '/documents')).json())[0].revision > oldRevision + 2, 30000)
-  assert(await scroll.evaluate(el => el.scrollTop < 80), 'scroll jumped while browsing earlier pages')
+  assert.equal(await selectedPage(), '1', 'selection jumped while browsing an earlier page')
   await page.screenshot({ path: output + '/formatted-live.png' })
   const document = await poll(async () => {
     const state = await (await page.request.get(sessionUrl)).json()
@@ -78,12 +78,13 @@ try {
   assert(document.pages.length >= 10, 'fixture did not naturally reach ten pages')
   assert(document.pages.every(p => p.checks.automatic_passed && p.checks.visual_review === 'pending'))
   assert.equal(document.finalized, false, 'unseen pages were falsely finalized')
-  await poll(async () => await page.locator('.docx-paper>img').count() === document.pages.length)
-  const geometry = await page.locator('.docx-paper').evaluateAll(pages => pages.map(p => ({ top: p.getBoundingClientRect().top, bottom: p.getBoundingClientRect().bottom, ratio: p.querySelector('img').naturalWidth / p.querySelector('img').naturalHeight })))
-  assert(geometry.every(p => Math.abs(p.ratio - 210/297) < .005), 'paper aspect ratio is not A4')
-  assert(geometry.slice(1).every((p, i) => p.top - geometry[i].bottom >= 23), 'no physical gap between pages')
+  await poll(async () => await page.locator('.docx-thumbnails img').count() === document.pages.length)
+  assert(document.preview_page_hashes.length === document.pages.length, 'page hashes missing')
+  await page.locator('.docx-thumbnails>button').nth(2).click()
+  const ratio = await page.locator('.docx-paper>img').evaluate(img => img.decode().then(() => img.naturalWidth / img.naturalHeight))
+  assert(Math.abs(ratio - 210/297) < .005, 'paper aspect ratio is not A4')
   await page.reload(); await page.locator('.docx-paper>img').first().waitFor({ timeout: 20000 })
-  assert(await page.locator('.docx-preview-scroll').evaluate(el => el.scrollTop < 80), 'scroll position lost on reload')
+  assert.equal(await selectedPage(), '3', 'selected page lost on reload')
   await page.screenshot({ path: output + '/formatted-complete.png' })
   assert.deepEqual(errors, [])
   const journal = (await (await page.request.get(sessionUrl + '/journal')).json()).events
