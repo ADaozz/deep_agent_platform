@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from . import domain as d, models as m
 from .usage import runner_usage
 from . import format_plugins
+from . import itam_bridge
 from .workspace import resolve, SandboxPolicyBuilder
 
 router = APIRouter(prefix='/api/agent')
@@ -135,7 +136,10 @@ def changed_files(root, before):
 
 def find(session_id):
     try:
-        return d.get('session', session_id)
+        record = d.get('session', session_id)
+        if itam_bridge.is_enabled() and record.get('owner_user_id') != itam_bridge.owner():
+            raise HTTPException(404, '会话不存在')
+        return record
     except KeyError:
         raise HTTPException(404, '会话不存在')
 
@@ -552,11 +556,16 @@ def capabilities():
 
 @router.get('/sessions')
 def sessions():
-    return [public(r) for r in reversed(d.all_records('session'))]
+    records = reversed(d.all_records('session'))
+    if itam_bridge.is_enabled():
+        records = (r for r in records if r.get('owner_user_id') == itam_bridge.owner())
+    return [public(r) for r in records]
 
 
 @router.post('/sessions', status_code=201)
 def create_session(value: NewSession):
+    if itam_bridge.is_enabled() and value.sandbox_mode != 'restricted':
+        raise HTTPException(403, '多用户模式只允许 restricted 沙箱')
     if value.permission_mode == 'allow' and value.permission_confirmation != 'ALLOW':
         raise HTTPException(422, '请输入 ALLOW 确认自动批准模式')
     if value.sandbox_mode == 'full-access' and value.sandbox_confirmation != 'FULL_ACCESS':
@@ -568,7 +577,7 @@ def create_session(value: NewSession):
         raise HTTPException(503, str(exc))
     except ValueError:
         raise HTTPException(422, '模型、思考强度或密钥配置无效')
-    record = dict(id=uuid4().hex, config=config, model_snapshot=snapshot,
+    record = dict(id=uuid4().hex, owner_user_id=itam_bridge.owner() if itam_bridge.is_enabled() else None, config=config, model_snapshot=snapshot,
         model_id=snapshot['id'], reasoning_effort=snapshot['reasoning_effort'], status='idle', messages=[],
         output='', error=None, created_at=now(), updated_at=now(), event_seq=0,
         pending_tool_calls=[], human_input={}, permission_mode=value.permission_mode,
