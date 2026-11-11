@@ -136,10 +136,7 @@ def changed_files(root, before):
 
 def find(session_id):
     try:
-        record = d.get('session', session_id)
-        if itam_bridge.is_enabled() and record.get('owner_user_id') != itam_bridge.owner():
-            raise HTTPException(404, '会话不存在')
-        return record
+        return d.get('session', session_id)
     except KeyError:
         raise HTTPException(404, '会话不存在')
 
